@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "AI Стилист",
+    "slug": "ai-stylist-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F5F2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aistylist.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Нужно разрешение, чтобы сфотографировать одежду.",
+        "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F6F5F2"
+      },
+      "package": "com.aistylist.mobile"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
