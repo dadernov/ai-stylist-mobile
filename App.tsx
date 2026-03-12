@@ -2,12 +2,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
 import { OutfitBuilderScreen } from './src/screens/OutfitBuilderScreen';
@@ -39,9 +39,12 @@ const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
   { key: 'profile', icon: '👤', label: 'Профиль' }
 ];
 
+Text.defaultProps = Text.defaultProps || {};
+Text.defaultProps.allowFontScaling = false;
+
 function Onboarding({ onClose }: { onClose: () => void }) {
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.onboardingWrap}>
         <Text style={styles.eyebrow}>AI СТИЛИСТ</Text>
         <Text style={styles.heroTitle}>Подберем образ за 60 секунд</Text>
@@ -63,7 +66,8 @@ function Onboarding({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function App() {
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
   const [isAuthenticated, setAuthenticated] = useState(false);
@@ -152,7 +156,7 @@ export default function App() {
 
   if (!isReady) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
         <View style={styles.loadingWrap}>
           <Text style={styles.loadingText}>Загрузка…</Text>
         </View>
@@ -173,23 +177,25 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <>
-        <AuthScreen
-          onLogin={(name, phone, method) => {
-            setAuthenticated(true);
-            setDisplayName(name);
-            setContact(phone);
-            setAuthMethod(method);
-          }}
-        />
+        <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
+          <AuthScreen
+            onLogin={(name, phone, method) => {
+              setAuthenticated(true);
+              setDisplayName(name);
+              setContact(phone);
+              setAuthMethod(method);
+            }}
+          />
+        </SafeAreaView>
         <StatusBar style="dark" />
       </>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
       <View style={styles.content}>{screen}</View>
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {TABS.map((tab) => {
           const isActive = tab.key === activeTab;
           return (
@@ -206,6 +212,14 @@ export default function App() {
       </View>
       <StatusBar style="dark" />
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
@@ -277,8 +291,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 4,
     borderTopWidth: 1,
     borderTopColor: '#E9E5DC',
     backgroundColor: COLORS.background

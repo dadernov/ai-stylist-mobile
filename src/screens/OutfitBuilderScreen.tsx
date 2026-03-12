@@ -1,6 +1,7 @@
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
 import { ScreenTitle } from '../components/ScreenTitle';
+import { Chip } from '../components/Chip';
 import { COLORS } from '../constants/theme';
 import { generatedLooks } from '../data/mock';
 
@@ -19,41 +20,42 @@ export function OutfitBuilderScreen() {
       />
 
       <Text style={styles.groupTitle}>Стиль</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-        {stylePresets.map((preset) => {
-          const isActive = preset === activeStyle;
-          return (
-            <Pressable
-              key={preset}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setActiveStyle(preset)}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{preset}</Text>
-            </Pressable>
-          );
-        })}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.chipsRow, Platform.OS === 'android' && styles.chipsRowAndroid]}
+        style={styles.chipsScroll}
+      >
+        {stylePresets.map((preset) => (
+          <Chip
+            key={preset}
+            label={preset}
+            active={preset === activeStyle}
+            onPress={() => setActiveStyle(preset)}
+          />
+        ))}
       </ScrollView>
 
       <Text style={styles.groupTitle}>Мероприятие</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-        {events.map((event) => {
-          const isActive = event === activeEvent;
-          return (
-            <Pressable
-              key={event}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setActiveEvent(event)}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{event}</Text>
-            </Pressable>
-          );
-        })}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.chipsRow, Platform.OS === 'android' && styles.chipsRowAndroid]}
+        style={styles.chipsScroll}
+      >
+        {events.map((event) => (
+          <Chip
+            key={event}
+            label={event}
+            active={event === activeEvent}
+            onPress={() => setActiveEvent(event)}
+          />
+        ))}
       </ScrollView>
 
       <View style={styles.weatherCard}>
         <Text style={styles.weatherTitle}>Погода в Москве</Text>
         <Text style={styles.weatherText}>Сейчас +8°C, облачно, ветер умеренный</Text>
-        <Text style={styles.weatherHint}>ИИ не предложит легкие босоножки и летние ткани.</Text>
       </View>
 
       <Pressable
@@ -95,68 +97,47 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   chipsRow: {
-    gap: 10,
+    paddingBottom: 6,
+    marginBottom: 16,
+    paddingRight: 12
+  },
+  chipsRowAndroid: {
     paddingBottom: 10,
-    marginBottom: 8
+    marginBottom: 20
   },
-  chip: {
-    backgroundColor: COLORS.chip,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 36,
-    minWidth: 96
-  },
-  chipActive: {
-    backgroundColor: COLORS.text
-  },
-  chipText: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 20
-  },
-  chipTextActive: {
-    color: '#FFFFFF'
+  chipsScroll: {
+    minHeight: 48
   },
   weatherCard: {
     backgroundColor: COLORS.card,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 14,
-    marginBottom: 10
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12
   },
   weatherTitle: {
     color: COLORS.text,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700'
   },
   weatherText: {
     color: COLORS.muted,
-    fontSize: 13,
-    marginTop: 4
-  },
-  weatherHint: {
-    marginTop: 8,
-    color: COLORS.success,
     fontSize: 12,
-    fontWeight: '600'
+    marginTop: 4
   },
   generateButton: {
     backgroundColor: COLORS.text,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     marginBottom: 12
   },
   generateText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700'
   },
   looksWrap: {

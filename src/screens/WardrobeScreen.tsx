@@ -1,7 +1,21 @@
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 import { useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
+import { Chip } from '../components/Chip';
 import { COLORS } from '../constants/theme';
 import { WardrobeItem } from '../data/mock';
 
@@ -26,6 +40,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [draftStore, setDraftStore] = useState('');
   const [draftMaterial, setDraftMaterial] = useState('');
   const [draftSection, setDraftSection] = useState(sectionOptions[0]);
+  const [draftName, setDraftName] = useState('');
   const [isModalVisible, setModalVisible] = useState(false);
 
   const [editItemId, setEditItemId] = useState<string | null>(null);
@@ -33,6 +48,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [editColor, setEditColor] = useState(colorOptions[0]);
   const [editSeason, setEditSeason] = useState(seasonOptions[0]);
   const [editPattern, setEditPattern] = useState(patternOptions[0]);
+  const [editName, setEditName] = useState('');
   const [isEditModalVisible, setEditModalVisible] = useState(false);
 
   const filteredItems = useMemo(() => {
@@ -61,6 +77,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     const photo = await requestCamera();
     if (!photo) return;
     setDraftPhoto(photo);
+    setDraftName('');
     setDraftSize('');
     setDraftStore('');
     setDraftMaterial('');
@@ -72,7 +89,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     if (!draftPhoto) return;
     const newItem: WardrobeItem = {
       id: Date.now().toString(),
-      name: 'Новая вещь',
+      name: draftName.trim() || 'Новая вещь',
       category: 'Не определено',
       color: 'Не определено',
       season: 'Не определено',
@@ -95,6 +112,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
   const handleEditItem = (item: WardrobeItem) => {
     setEditItemId(item.id);
+    setEditName(item.name || '');
     setEditCategory(item.category || categoryOptions[0]);
     setEditColor(item.color || colorOptions[0]);
     setEditSeason(item.season || seasonOptions[0]);
@@ -109,6 +127,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         item.id === editItemId
           ? {
               ...item,
+              name: editName.trim() || item.name,
               category: editCategory,
               color: editColor,
               season: editSeason,
@@ -161,19 +180,20 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         subtitle="Загрузи фото вещи, проверь AI-анализ и при необходимости исправь данные."
       />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-        {categoryFilters.map((filter) => {
-          const isActive = filter === activeFilter;
-          return (
-            <Pressable
-              key={filter}
-              style={[styles.filterChip, isActive && styles.filterChipActive]}
-              onPress={() => setActiveFilter(filter)}
-            >
-              <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{filter}</Text>
-            </Pressable>
-          );
-        })}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.filterRow, Platform.OS === 'android' && styles.filterRowAndroid]}
+        style={styles.filterScroll}
+      >
+        {categoryFilters.map((filter) => (
+          <Chip
+            key={filter}
+            label={filter}
+            active={filter === activeFilter}
+            onPress={() => setActiveFilter(filter)}
+          />
+        ))}
       </ScrollView>
 
       <Pressable style={styles.uploadCard} onPress={handleAddItem}>
@@ -229,47 +249,63 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Новая вещь</Text>
-            {draftPhoto ? <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} /> : null}
-            <Pressable style={styles.retakeButton} onPress={handleRetake}>
-              <Text style={styles.retakeText}>Переснять фото</Text>
-            </Pressable>
-            <Text style={styles.modalLabel}>Раздел</Text>
-            {renderChips(sectionOptions, draftSection, setDraftSection)}
-            <Text style={styles.modalLabel}>Размер</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Например, M"
-              placeholderTextColor={COLORS.muted}
-              value={draftSize}
-              onChangeText={setDraftSize}
-            />
-            <Text style={styles.modalLabel}>Магазин</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Например, Zara"
-              placeholderTextColor={COLORS.muted}
-              value={draftStore}
-              onChangeText={setDraftStore}
-            />
-            <Text style={styles.modalLabel}>Материал</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Например, хлопок"
-              placeholderTextColor={COLORS.muted}
-              value={draftMaterial}
-              onChangeText={setDraftMaterial}
-            />
-            <Pressable style={styles.modalSave} onPress={handleSaveItem}>
-              <Text style={styles.modalSaveText}>Сохранить</Text>
-            </Pressable>
-            <Pressable style={styles.modalClose} onPress={() => setModalVisible(false)}>
-              <Text style={styles.modalCloseText}>Отмена</Text>
-            </Pressable>
-          </View>
-        </View>
+        <Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <ScrollView
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
+                <Text style={styles.modalTitle}>Новая вещь</Text>
+                {draftPhoto ? <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} /> : null}
+                <Pressable style={styles.retakeButton} onPress={handleRetake}>
+                  <Text style={styles.retakeText}>Переснять фото</Text>
+                </Pressable>
+                <Text style={styles.modalLabel}>Название вещи</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, Белая футболка"
+                  placeholderTextColor={COLORS.muted}
+                  value={draftName}
+                  onChangeText={setDraftName}
+                />
+                <Text style={styles.modalLabel}>Раздел</Text>
+                {renderChips(sectionOptions, draftSection, setDraftSection)}
+                <Text style={styles.modalLabel}>Размер</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, M"
+                  placeholderTextColor={COLORS.muted}
+                  value={draftSize}
+                  onChangeText={setDraftSize}
+                />
+                <Text style={styles.modalLabel}>Магазин</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, Zara"
+                  placeholderTextColor={COLORS.muted}
+                  value={draftStore}
+                  onChangeText={setDraftStore}
+                />
+                <Text style={styles.modalLabel}>Материал</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, хлопок"
+                  placeholderTextColor={COLORS.muted}
+                  value={draftMaterial}
+                  onChangeText={setDraftMaterial}
+                />
+                <Pressable style={styles.modalSave} onPress={handleSaveItem}>
+                  <Text style={styles.modalSaveText}>Сохранить</Text>
+                </Pressable>
+                <Pressable style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                  <Text style={styles.modalCloseText}>Отмена</Text>
+                </Pressable>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -278,25 +314,41 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         visible={isEditModalVisible}
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Редактировать параметры</Text>
-            <Text style={styles.modalLabel}>Категория</Text>
-            {renderChips(categoryOptions, editCategory, setEditCategory)}
-            <Text style={styles.modalLabel}>Цвет</Text>
-            {renderChips(colorOptions, editColor, setEditColor)}
-            <Text style={styles.modalLabel}>Сезон</Text>
-            {renderChips(seasonOptions, editSeason, setEditSeason)}
-            <Text style={styles.modalLabel}>Паттерн</Text>
-            {renderChips(patternOptions, editPattern, setEditPattern)}
-            <Pressable style={styles.modalSave} onPress={handleSaveEdit}>
-              <Text style={styles.modalSaveText}>Сохранить</Text>
-            </Pressable>
-            <Pressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
-              <Text style={styles.modalCloseText}>Отмена</Text>
-            </Pressable>
-          </View>
-        </View>
+        <Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <ScrollView
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
+                <Text style={styles.modalTitle}>Редактировать параметры</Text>
+                <Text style={styles.modalLabel}>Название вещи</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, Белая футболка"
+                  placeholderTextColor={COLORS.muted}
+                  value={editName}
+                  onChangeText={setEditName}
+                />
+                <Text style={styles.modalLabel}>Категория</Text>
+                {renderChips(categoryOptions, editCategory, setEditCategory)}
+                <Text style={styles.modalLabel}>Цвет</Text>
+                {renderChips(colorOptions, editColor, setEditColor)}
+                <Text style={styles.modalLabel}>Сезон</Text>
+                {renderChips(seasonOptions, editSeason, setEditSeason)}
+                <Text style={styles.modalLabel}>Паттерн</Text>
+                {renderChips(patternOptions, editPattern, setEditPattern)}
+                <Pressable style={styles.modalSave} onPress={handleSaveEdit}>
+                  <Text style={styles.modalSaveText}>Сохранить</Text>
+                </Pressable>
+                <Pressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
+                  <Text style={styles.modalCloseText}>Отмена</Text>
+                </Pressable>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -307,43 +359,27 @@ const styles = StyleSheet.create({
     flex: 1
   },
   filterRow: {
-    gap: 10,
+    paddingBottom: 6,
+    marginBottom: 16,
+    paddingRight: 12
+  },
+  filterRowAndroid: {
     paddingBottom: 10,
-    marginBottom: 8
+    marginBottom: 20
   },
-  filterChip: {
-    backgroundColor: COLORS.chip,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 36,
-    minWidth: 96
-  },
-  filterChipActive: {
-    backgroundColor: COLORS.text
-  },
-  filterText: {
-    fontSize: 15,
-    color: COLORS.text,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 20
-  },
-  filterTextActive: {
-    color: '#FFFFFF'
+  filterScroll: {
+    minHeight: 48
   },
   uploadCard: {
     backgroundColor: COLORS.accent,
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    marginTop: 24,
-    marginBottom: 14
+    marginTop: 12,
+    marginBottom: 12
   },
   uploadTitle: {
-    fontSize: 17,
+    fontSize: 16,
     color: COLORS.text,
     fontWeight: '700',
     marginBottom: 4
@@ -351,8 +387,8 @@ const styles = StyleSheet.create({
   uploadText: {
     color: COLORS.text,
     opacity: 0.85,
-    fontSize: 14,
-    lineHeight: 19
+    fontSize: 13,
+    lineHeight: 18
   },
   itemsWrap: {
     gap: 10,
@@ -463,6 +499,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     padding: 16,
     maxHeight: '85%'
+  },
+  modalContent: {
+    paddingBottom: 24
   },
   modalTitle: {
     fontSize: 16,

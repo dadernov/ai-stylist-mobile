@@ -14,7 +14,8 @@
       "bundleIdentifier": "com.aistylist.mobile",
       "infoPlist": {
         "NSCameraUsageDescription": "Нужно разрешение, чтобы сфотографировать одежду.",
-        "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды."
+        "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -25,6 +26,11 @@
     },
     "web": {
       "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c0772743-44f5-4023-b30d-673669bbba1d"
+      }
     }
   }
 }
