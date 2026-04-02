@@ -1,44 +1,84 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { COLORS } from '../constants/theme';
+import { GeneratedLook } from '../types/looks';
 
-const cards = [
+type RecommendationsProps = {
+  looks: GeneratedLook[];
+  context: { style: string; event: string; weather: string };
+};
+
+const beautyMap: Record<string, { makeup: string; hair: string }> = {
+  Совещание: {
+    makeup: 'Nude-тон, мягкая подводка и аккуратные брови.',
+    hair: 'Низкий хвост или гладкий пучок.'
+  },
+  Вечеринка: {
+    makeup: 'Smoky eyes или сияющие тени, акцент на губы.',
+    hair: 'Объемные локоны или высокий хвост.'
+  },
+  Свидание: {
+    makeup: 'Мягкий румянец и сияние, легкий акцент на губы.',
+    hair: 'Распущенные локоны или полупучок.'
+  },
+  Прогулка: {
+    makeup: 'Легкий BB/CC тон, бальзам и тушь.',
+    hair: 'Свободные волны или коса.'
+  },
+  Спортзал: {
+    makeup: 'Минимум: SPF и прозрачный бальзам.',
+    hair: 'Высокий хвост или пучок.'
+  }
+};
+
+const fallbackCards = [
   {
-    title: 'Макияж под офисный лук',
-    text: 'Nude-тон, мягкий контур и аккуратная подводка. Акцент на свежую кожу.'
+    title: 'Универсальный нюд',
+    text: 'Легкий тон, аккуратная тушь, бальзам или тинт. Подходит для большинства ситуаций.'
   },
   {
-    title: 'Укладка на совещание',
-    text: 'Низкий гладкий хвост или пучок. Чистый силуэт и минимум лишнего объема.'
-  },
-  {
-    title: 'Быстрый вечерний апгрейд',
-    text: 'Добавь smoky eyes и текстурные локоны, если после работы идешь на мероприятие.'
-  },
-  {
-    title: 'Капсула на неделю',
-    text: 'Собери 6–8 базовых вещей, которые комбинируются между собой. Это экономит время.'
-  },
-  {
-    title: 'Аксессуары без перегруза',
-    text: 'Выбери 1 акцент: серьги, сумку или обувь. Так образ остается аккуратным.'
+    title: 'Быстрая укладка',
+    text: 'Низкий хвост, легкие локоны или пучок — идеально, когда мало времени.'
   },
   {
     title: 'Цветовые пары',
-    text: 'Бежевый + черный, молочный + деним, оливковый + белый — универсальные сочетания.'
+    text: 'Бежевый + черный, молочный + деним, оливковый + белый.'
   }
 ];
 
-export function RecommendationsScreen() {
+export function RecommendationsScreen({ looks, context }: RecommendationsProps) {
+  const hasContext = context?.style && context?.event;
+  const beauty = hasContext ? beautyMap[context.event] || beautyMap['Прогулка'] : null;
+
   return (
     <View style={styles.container}>
       <ScreenTitle
         title="Рекомендации"
-        subtitle="Подборки по макияжу, волосам и стилизации. Позже добавим ИИ-блоки."
+        subtitle="Макияж, волосы и стилизация под выбранный стиль и событие."
       />
 
       <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
-        {cards.map((card) => (
+        {hasContext && beauty ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Для: {context.style} · {context.event}</Text>
+            <Text style={styles.cardText}>Макияж: {beauty.makeup}</Text>
+            <Text style={styles.cardText}>Укладка: {beauty.hair}</Text>
+            {context.weather ? <Text style={styles.cardHint}>{context.weather}</Text> : null}
+          </View>
+        ) : null}
+
+        {looks.length ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Последние луки</Text>
+            {looks.slice(0, 3).map((look) => (
+              <Text key={look.id} style={styles.cardText}>
+                • {look.title}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {fallbackCards.map((card) => (
           <View key={card.title} style={styles.card}>
             <Text style={styles.cardTitle}>{card.title}</Text>
             <Text style={styles.cardText}>{card.text}</Text>
@@ -74,5 +114,10 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontSize: 13,
     lineHeight: 18
+  },
+  cardHint: {
+    color: COLORS.muted,
+    fontSize: 12,
+    marginTop: 4
   }
 });

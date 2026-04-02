@@ -9,6 +9,7 @@ type ProfileScreenProps = {
   contact: string;
   authMethod: string;
   avatarUri?: string;
+  favoritesCount: number;
   onAvatarChange: (uri: string) => void;
   onLogout: () => void;
 };
@@ -37,6 +38,7 @@ export function ProfileScreen({
   contact,
   authMethod,
   avatarUri,
+  favoritesCount,
   onAvatarChange,
   onLogout
 }: ProfileScreenProps) {
@@ -47,7 +49,7 @@ export function ProfileScreen({
   const rows = [
     { label: 'Тип фигуры', value: bodyType, key: 'body' as const },
     { label: 'Цветотип', value: colorType, key: 'color' as const },
-    { label: 'Избранные образы', value: '0' },
+    { label: 'Избранные образы', value: String(favoritesCount) },
     { label: 'Способ входа', value: authMethod }
   ];
 

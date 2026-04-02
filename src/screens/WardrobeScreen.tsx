@@ -10,7 +10,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  ActivityIndicator
 } from 'react-native';
 import { useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,6 +19,7 @@ import { ScreenTitle } from '../components/ScreenTitle';
 import { Chip } from '../components/Chip';
 import { COLORS } from '../constants/theme';
 import { WardrobeItem } from '../data/mock';
+import { analyzeImage } from '../services/ai';
 
 type WardrobeScreenProps = {
   items: WardrobeItem[];
@@ -28,9 +30,86 @@ const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Ве�
 const categoryFilters = ['Все', ...sectionOptions];
 
 const categoryOptions = ['Платье', 'Юбка', 'Джинсы', 'Футболка', 'Пальто', 'Обувь', 'Сумка'];
-const colorOptions = ['Белый', 'Черный', 'Бежевый', 'Синий деним', 'Серый', 'Красный', 'Зеленый'];
 const seasonOptions = ['Лето', 'Зима', 'Демисезон', 'Круглый год'];
 const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный'];
+
+const namedColors = [
+  { name: 'Белый', hex: '#FFFFFF' },
+  { name: 'Молочный', hex: '#FFF8E7' },
+  { name: 'Кремовый', hex: '#FFF4D6' },
+  { name: 'Бежевый', hex: '#F5F5DC' },
+  { name: 'Песочный', hex: '#E6D1A3' },
+  { name: 'Карамельный', hex: '#CDAA7D' },
+  { name: 'Коричневый', hex: '#8B5A2B' },
+  { name: 'Черный', hex: '#000000' },
+  { name: 'Графит', hex: '#3A3A3A' },
+  { name: 'Серый', hex: '#808080' },
+  { name: 'Серебристый', hex: '#BFC5C9' },
+  { name: 'Синий', hex: '#1E88E5' },
+  { name: 'Синий деним', hex: '#2F4B7C' },
+  { name: 'Голубой', hex: '#4FC3F7' },
+  { name: 'Бирюзовый', hex: '#26C6DA' },
+  { name: 'Зеленый', hex: '#43A047' },
+  { name: 'Оливковый', hex: '#7D8F3B' },
+  { name: 'Хаки', hex: '#6B7B4A' },
+  { name: 'Желтый', hex: '#FDD835' },
+  { name: 'Горчичный', hex: '#C9A227' },
+  { name: 'Оранжевый', hex: '#FB8C00' },
+  { name: 'Красный', hex: '#E53935' },
+  { name: 'Бордовый', hex: '#7B1E3B' },
+  { name: 'Розовый', hex: '#F48FB1' },
+  { name: 'Пудровый', hex: '#E5B6C6' },
+  { name: 'Фиолетовый', hex: '#8E24AA' },
+  { name: 'Лавандовый', hex: '#B39DDB' }
+];
+
+const colorOptions = namedColors.map((item) => item.name);
+
+const normalizeHex = (value: string) => {
+  if (!value) return '';
+  const trimmed = value.trim().toUpperCase();
+  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  if (withHash.length === 4) {
+    const r = withHash[1];
+    const g = withHash[2];
+    const b = withHash[3];
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  if (/^#[0-9A-F]{6}$/.test(withHash)) return withHash;
+  return '';
+};
+
+const hexToRgb = (hex: string) => {
+  const clean = normalizeHex(hex);
+  if (!clean) return null;
+  const r = parseInt(clean.slice(1, 3), 16);
+  const g = parseInt(clean.slice(3, 5), 16);
+  const b = parseInt(clean.slice(5, 7), 16);
+  return { r, g, b };
+};
+
+const getClosestColorName = (hex: string) => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 'Не определено';
+  let best = namedColors[0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  namedColors.forEach((candidate) => {
+    const c = hexToRgb(candidate.hex);
+    if (!c) return;
+    const dist = (rgb.r - c.r) ** 2 + (rgb.g - c.g) ** 2 + (rgb.b - c.b) ** 2;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidate;
+    }
+  });
+  return best.name;
+};
+
+const tagToLabel = (tag: string) => {
+  const hex = normalizeHex(tag);
+  if (hex) return getClosestColorName(hex);
+  return tag;
+};
 
 export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [activeFilter, setActiveFilter] = useState('Все');
@@ -41,6 +120,13 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [draftMaterial, setDraftMaterial] = useState('');
   const [draftSection, setDraftSection] = useState(sectionOptions[0]);
   const [draftName, setDraftName] = useState('');
+  const [draftColor, setDraftColor] = useState('');
+  const [draftColorHex, setDraftColorHex] = useState('');
+  const [draftPalette, setDraftPalette] = useState<string[]>([]);
+  const [draftCategory, setDraftCategory] = useState(categoryOptions[0]);
+  const [draftSeason, setDraftSeason] = useState(seasonOptions[0]);
+  const [draftPattern, setDraftPattern] = useState(patternOptions[0]);
+  const [isAnalyzing, setAnalyzing] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
 
   const [editItemId, setEditItemId] = useState<string | null>(null);
@@ -49,6 +135,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [editSeason, setEditSeason] = useState(seasonOptions[0]);
   const [editPattern, setEditPattern] = useState(patternOptions[0]);
   const [editName, setEditName] = useState('');
+  const [editSize, setEditSize] = useState('');
+  const [editStore, setEditStore] = useState('');
+  const [editMaterial, setEditMaterial] = useState('');
   const [isEditModalVisible, setEditModalVisible] = useState(false);
 
   const filteredItems = useMemo(() => {
@@ -78,11 +167,18 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     if (!photo) return;
     setDraftPhoto(photo);
     setDraftName('');
+    setDraftColor(colorOptions[0]);
+    setDraftColorHex('');
+    setDraftPalette([]);
+    setDraftCategory(categoryOptions[0]);
+    setDraftSeason(seasonOptions[0]);
+    setDraftPattern(patternOptions[0]);
     setDraftSize('');
     setDraftStore('');
     setDraftMaterial('');
     setDraftSection(activeFilter === 'Все' ? sectionOptions[0] : activeFilter);
     setModalVisible(true);
+    void applyAi(photo);
   };
 
   const handleSaveItem = () => {
@@ -90,12 +186,12 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     const newItem: WardrobeItem = {
       id: Date.now().toString(),
       name: draftName.trim() || 'Новая вещь',
-      category: 'Не определено',
-      color: 'Не определено',
-      season: 'Не определено',
-      pattern: 'Не определено',
+      category: draftCategory || 'Не определено',
+      color: draftColor || 'Не определено',
+      season: draftSeason || 'Не определено',
+      pattern: draftPattern || 'Не определено',
       section: draftSection,
-      tags: [],
+      tags: draftPalette.length ? draftPalette : [],
       imageUri: draftPhoto,
       size: draftSize,
       store: draftStore,
@@ -107,7 +203,42 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
   const handleRetake = async () => {
     const photo = await requestCamera();
-    if (photo) setDraftPhoto(photo);
+    if (photo) {
+      setDraftPhoto(photo);
+      void applyAi(photo);
+    }
+  };
+
+  const applyAi = async (photoUri: string) => {
+    try {
+      setAnalyzing(true);
+      const result = await analyzeImage(photoUri);
+      const hex = normalizeHex(result.dominantColor);
+      const named = hex ? getClosestColorName(hex) : 'Не определено';
+      setDraftColor(named);
+      setDraftColorHex(hex);
+      const normalizedPalette = (result.palette || []).map((color) => normalizeHex(color)).filter(Boolean);
+      const paletteNames = normalizedPalette
+        .map((color) => getClosestColorName(color))
+        .filter((name) => name && name !== 'Не определено');
+      const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
+      setDraftPalette(uniquePalette);
+      if (result.category) setDraftCategory(result.category);
+      if (result.season) setDraftSeason(result.season);
+      if (result.pattern) setDraftPattern(result.pattern);
+      if (result.bgRemovedBase64) {
+        setDraftPhoto(result.bgRemovedBase64);
+      }
+    } catch (error) {
+      Alert.alert('AI анализ не удался', 'Проверь, что AI сервер запущен.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!draftPhoto) return;
+    await applyAi(draftPhoto);
   };
 
   const handleEditItem = (item: WardrobeItem) => {
@@ -117,6 +248,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     setEditColor(item.color || colorOptions[0]);
     setEditSeason(item.season || seasonOptions[0]);
     setEditPattern(item.pattern || patternOptions[0]);
+    setEditSize(item.size || '');
+    setEditStore(item.store || '');
+    setEditMaterial(item.material || '');
     setEditModalVisible(true);
   };
 
@@ -131,7 +265,10 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
               category: editCategory,
               color: editColor,
               season: editSeason,
-              pattern: editPattern
+              pattern: editPattern,
+              size: editSize,
+              store: editStore,
+              material: editMaterial
             }
           : item
       )
@@ -206,7 +343,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
           <View key={item.id} style={styles.itemCard}>
             {item.imageUri ? (
               <View style={styles.photoBlock}>
-                <Image source={{ uri: item.imageUri }} style={styles.photo} />
+                <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
                 <View style={styles.photoActions}>
                   <Pressable style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
                     <Text style={styles.retakeText}>Переснять</Text>
@@ -229,9 +366,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
             </View>
             <Text style={styles.itemMeta}>AI: {item.category} · {item.color} · {item.season} · {item.pattern}</Text>
             <View style={styles.tagsRow}>
-              {item.tags.map((tag) => (
-                <View key={tag} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
+              {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, index) => (
+                <View key={`${label}-${index}`} style={styles.tag}>
+                  <Text style={styles.tagText}>{label}</Text>
                 </View>
               ))}
             </View>
@@ -258,7 +395,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 keyboardDismissMode="on-drag"
               >
                 <Text style={styles.modalTitle}>Новая вещь</Text>
-                {draftPhoto ? <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} /> : null}
+                {draftPhoto ? (
+                  <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
+                ) : null}
                 <Pressable style={styles.retakeButton} onPress={handleRetake}>
                   <Text style={styles.retakeText}>Переснять фото</Text>
                 </Pressable>
@@ -270,6 +409,24 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   value={draftName}
                   onChangeText={setDraftName}
                 />
+                <Pressable style={styles.aiButton} onPress={handleAnalyze} disabled={isAnalyzing}>
+                  {isAnalyzing ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.aiButtonText}>AI-анализ</Text>
+                  )}
+                </Pressable>
+                {draftColor ? (
+                  <Text style={styles.aiHint}>AI цвет: {draftColor}</Text>
+                ) : null}
+                <Text style={styles.modalLabel}>Категория</Text>
+                {renderChips(categoryOptions, draftCategory, setDraftCategory)}
+                <Text style={styles.modalLabel}>Цвет</Text>
+                {renderChips(colorOptions, draftColor || colorOptions[0], setDraftColor)}
+                <Text style={styles.modalLabel}>Сезон</Text>
+                {renderChips(seasonOptions, draftSeason, setDraftSeason)}
+                <Text style={styles.modalLabel}>Паттерн</Text>
+                {renderChips(patternOptions, draftPattern, setDraftPattern)}
                 <Text style={styles.modalLabel}>Раздел</Text>
                 {renderChips(sectionOptions, draftSection, setDraftSection)}
                 <Text style={styles.modalLabel}>Размер</Text>
@@ -280,7 +437,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   value={draftSize}
                   onChangeText={setDraftSize}
                 />
-                <Text style={styles.modalLabel}>Магазин</Text>
+                <Text style={styles.modalLabel}>Бренд / магазин</Text>
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, Zara"
@@ -339,6 +496,30 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 {renderChips(seasonOptions, editSeason, setEditSeason)}
                 <Text style={styles.modalLabel}>Паттерн</Text>
                 {renderChips(patternOptions, editPattern, setEditPattern)}
+                <Text style={styles.modalLabel}>Размер</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, M"
+                  placeholderTextColor={COLORS.muted}
+                  value={editSize}
+                  onChangeText={setEditSize}
+                />
+                <Text style={styles.modalLabel}>Бренд / магазин</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, Zara"
+                  placeholderTextColor={COLORS.muted}
+                  value={editStore}
+                  onChangeText={setEditStore}
+                />
+                <Text style={styles.modalLabel}>Материал</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Например, хлопок"
+                  placeholderTextColor={COLORS.muted}
+                  value={editMaterial}
+                  onChangeText={setEditMaterial}
+                />
                 <Pressable style={styles.modalSave} onPress={handleSaveEdit}>
                   <Text style={styles.modalSaveText}>Сохранить</Text>
                 </Pressable>
@@ -360,12 +541,12 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     paddingBottom: 6,
-    marginBottom: 16,
+    marginBottom: 0,
     paddingRight: 12
   },
   filterRowAndroid: {
-    paddingBottom: 10,
-    marginBottom: 20
+    paddingBottom: 6,
+    marginBottom: 0
   },
   filterScroll: {
     minHeight: 48
@@ -375,7 +556,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    marginTop: 12,
+    marginTop: 4,
     marginBottom: 12
   },
   uploadTitle: {
@@ -532,6 +713,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: COLORS.text
+  },
+  aiButton: {
+    marginTop: 10,
+    backgroundColor: COLORS.text,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center'
+  },
+  aiButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  aiHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: COLORS.muted
   },
   modalSave: {
     marginTop: 14,

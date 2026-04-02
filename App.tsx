@@ -12,12 +12,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
 import { OutfitBuilderScreen } from './src/screens/OutfitBuilderScreen';
 import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
+import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { COLORS } from './src/constants/theme';
 import { WardrobeItem, wardrobeItems } from './src/data/mock';
+import { GeneratedLook, SavedLook } from './src/types/looks';
 
-type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'profile';
+type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
 type ProfileState = {
   isAuthenticated: boolean;
@@ -29,13 +31,18 @@ type ProfileState = {
 
 const STORAGE_KEYS = {
   profile: 'profileState',
-  wardrobe: 'wardrobeItems'
+  wardrobe: 'wardrobeItems',
+  favorites: 'favoriteLooks',
+  lastContext: 'lastContext',
+  lastLooks: 'lastLooks',
+  savedLooks: 'savedLooks'
 };
 
 const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
   { key: 'wardrobe', icon: '👗', label: 'Гардероб' },
   { key: 'builder', icon: '✨', label: 'Конструктор' },
   { key: 'recommendations', icon: '💡', label: 'Рекомендации' },
+  { key: 'favorites', icon: '⭐️', label: 'Избранное' },
   { key: 'profile', icon: '👤', label: 'Профиль' }
 ];
 
@@ -76,14 +83,26 @@ function AppContent() {
   const [authMethod, setAuthMethod] = useState('Не выбран');
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [items, setItems] = useState<WardrobeItem[]>(wardrobeItems);
+  const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
+  const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
+  const [lastContext, setLastContext] = useState<{ style: string; event: string; weather: string }>({
+    style: '',
+    event: '',
+    weather: ''
+  });
+  const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
   const [isReady, setReady] = useState(false);
 
   useEffect(() => {
     const hydrate = async () => {
       try {
-        const [profileRaw, itemsRaw] = await Promise.all([
+        const [profileRaw, itemsRaw, favoritesRaw, contextRaw, looksRaw, savedRaw] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.profile),
-          AsyncStorage.getItem(STORAGE_KEYS.wardrobe)
+          AsyncStorage.getItem(STORAGE_KEYS.wardrobe),
+          AsyncStorage.getItem(STORAGE_KEYS.favorites),
+          AsyncStorage.getItem(STORAGE_KEYS.lastContext),
+          AsyncStorage.getItem(STORAGE_KEYS.lastLooks),
+          AsyncStorage.getItem(STORAGE_KEYS.savedLooks)
         ]);
 
         if (profileRaw) {
@@ -98,6 +117,34 @@ function AppContent() {
         if (itemsRaw) {
           const storedItems: WardrobeItem[] = JSON.parse(itemsRaw);
           setItems(storedItems);
+        }
+
+        if (favoritesRaw) {
+          const storedFavorites: GeneratedLook[] = JSON.parse(favoritesRaw);
+          const normalizedFavorites = storedFavorites.map((look) => ({
+            ...look,
+            itemIds: look.itemIds ?? []
+          }));
+          setFavoriteLooks(normalizedFavorites);
+        }
+
+        if (contextRaw) {
+          const storedContext: { style: string; event: string; weather: string } = JSON.parse(contextRaw);
+          setLastContext(storedContext);
+        }
+
+        if (looksRaw) {
+          const storedLooks: GeneratedLook[] = JSON.parse(looksRaw);
+          const normalized = storedLooks.map((look) => ({
+            ...look,
+            itemIds: look.itemIds ?? []
+          }));
+          setLastLooks(normalized);
+        }
+
+        if (savedRaw) {
+          const storedSaved: SavedLook[] = JSON.parse(savedRaw);
+          setSavedLooks(storedSaved);
         }
       } catch (error) {
         console.warn('Failed to load local state', error);
@@ -130,18 +177,70 @@ function AppContent() {
     );
   }, [isReady, items]);
 
+  useEffect(() => {
+    if (!isReady) return;
+    AsyncStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favoriteLooks)).catch((error) =>
+      console.warn('Failed to save favorites', error)
+    );
+  }, [isReady, favoriteLooks]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    AsyncStorage.setItem(STORAGE_KEYS.lastContext, JSON.stringify(lastContext)).catch((error) =>
+      console.warn('Failed to save last context', error)
+    );
+  }, [isReady, lastContext]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    AsyncStorage.setItem(STORAGE_KEYS.lastLooks, JSON.stringify(lastLooks)).catch((error) =>
+      console.warn('Failed to save last looks', error)
+    );
+  }, [isReady, lastLooks]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    AsyncStorage.setItem(STORAGE_KEYS.savedLooks, JSON.stringify(savedLooks)).catch((error) =>
+      console.warn('Failed to save saved looks', error)
+    );
+  }, [isReady, savedLooks]);
+
   const screen = useMemo(() => {
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={setItems} />;
     }
-    if (activeTab === 'builder') return <OutfitBuilderScreen />;
-    if (activeTab === 'recommendations') return <RecommendationsScreen />;
+    if (activeTab === 'builder')
+      return (
+        <OutfitBuilderScreen
+          items={items}
+          savedLooks={savedLooks}
+          onSavedLooksChange={setSavedLooks}
+          onLooksGenerated={(looks, context) => {
+            setLastLooks(looks);
+            setLastContext(context);
+          }}
+          onFavoriteAdd={(look) => {
+            setFavoriteLooks((prev) => [look, ...prev]);
+          }}
+        />
+      );
+    if (activeTab === 'recommendations')
+      return <RecommendationsScreen looks={lastLooks} context={lastContext} />;
+    if (activeTab === 'favorites')
+      return (
+        <FavoritesScreen
+          looks={favoriteLooks}
+          items={items}
+          onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
+        />
+      );
     return (
       <ProfileScreen
         displayName={displayName}
         contact={contact}
         authMethod={authMethod}
         avatarUri={avatarUri}
+        favoritesCount={favoriteLooks.length}
         onAvatarChange={setAvatarUri}
         onLogout={() => {
           setAuthenticated(false);

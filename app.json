@@ -15,6 +15,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Нужно разрешение, чтобы сфотографировать одежду.",
         "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды.",
+        "NSLocationWhenInUseUsageDescription": "Нужно разрешение, чтобы получить погоду рядом с вами.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -22,7 +23,8 @@
       "adaptiveIcon": {
         "backgroundColor": "#F6F5F2"
       },
-      "package": "com.aistylist.mobile"
+      "package": "com.aistylist.mobile",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro"
