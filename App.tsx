@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -41,8 +41,9 @@ const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
   { key: 'profile', icon: '👤', label: 'Профиль' }
 ];
 
-Text.defaultProps = Text.defaultProps || {};
-Text.defaultProps.allowFontScaling = false;
+const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?: boolean } };
+textWithDefaults.defaultProps = textWithDefaults.defaultProps || {};
+textWithDefaults.defaultProps.allowFontScaling = false;
 
 function Onboarding({ onClose }: { onClose: () => void }) {
   return (
@@ -222,7 +223,7 @@ function AppContent() {
     }, 1400);
   };
 
-  const screen = useMemo(() => {
+  const screen = (() => {
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={setItems} />;
     }
@@ -270,7 +271,7 @@ function AppContent() {
         }}
       />
     );
-  }, [activeTab, displayName, contact, authMethod, avatarUri, items]);
+  })();
 
   if (!isReady) {
     return (
