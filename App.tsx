@@ -1,12 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
@@ -18,6 +12,7 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { COLORS } from './src/constants/theme';
 import { WardrobeItem, wardrobeItems } from './src/data/mock';
 import { GeneratedLook, SavedLook } from './src/types/looks';
+import { AppPressable } from './src/components/AppPressable';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
@@ -41,7 +36,7 @@ const STORAGE_KEYS = {
 const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
   { key: 'wardrobe', icon: '👗', label: 'Гардероб' },
   { key: 'builder', icon: '✨', label: 'Конструктор' },
-  { key: 'recommendations', icon: '💡', label: 'Рекомендации' },
+  { key: 'recommendations', icon: '💡', label: 'Идеи' },
   { key: 'favorites', icon: '⭐️', label: 'Избранное' },
   { key: 'profile', icon: '👤', label: 'Профиль' }
 ];
@@ -65,9 +60,9 @@ function Onboarding({ onClose }: { onClose: () => void }) {
           <Text style={styles.stepItem}>3. Получи 3-5 готовых образов</Text>
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={onClose}>
+        <AppPressable style={styles.primaryButton} onPress={onClose}>
           <Text style={styles.primaryButtonText}>Начать</Text>
-        </Pressable>
+        </AppPressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -92,6 +87,9 @@ function AppContent() {
   });
   const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
   const [isReady, setReady] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -205,6 +203,25 @@ function AppContent() {
     );
   }, [isReady, savedLooks]);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    };
+  }, []);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    toastAnim.stopAnimation();
+    toastAnim.setValue(0);
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    Animated.timing(toastAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    toastTimeout.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
+        setToastMessage(null);
+      });
+    }, 1400);
+  };
+
   const screen = useMemo(() => {
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={setItems} />;
@@ -218,9 +235,11 @@ function AppContent() {
           onLooksGenerated={(looks, context) => {
             setLastLooks(looks);
             setLastContext(context);
+            showToast('Образы готовы');
           }}
           onFavoriteAdd={(look) => {
             setFavoriteLooks((prev) => [look, ...prev]);
+            showToast('Добавлено в избранное');
           }}
         />
       );
@@ -298,17 +317,39 @@ function AppContent() {
         {TABS.map((tab) => {
           const isActive = tab.key === activeTab;
           return (
-            <Pressable
+            <AppPressable
               key={tab.key}
               style={[styles.tabItem, isActive && styles.tabItemActive]}
               onPress={() => setActiveTab(tab.key)}
             >
               <Text style={styles.tabIcon}>{tab.icon}</Text>
               <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
-            </Pressable>
+            </AppPressable>
           );
         })}
       </View>
+      {toastMessage ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              opacity: toastAnim,
+              transform: [
+                {
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [8, 0]
+                  })
+                }
+              ],
+              bottom: Math.max(insets.bottom, 8) + 56
+            }
+          ]}
+        >
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      ) : null}
       <StatusBar style="dark" />
     </SafeAreaView>
   );
@@ -415,5 +456,20 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: COLORS.text
+  },
+  toast: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#1E1C19',
+    alignItems: 'center'
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600'
   }
 });

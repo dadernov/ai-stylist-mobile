@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +16,7 @@ import { useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Chip } from '../components/Chip';
+import { AppPressable } from '../components/AppPressable';
 import { COLORS } from '../constants/theme';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage } from '../services/ai';
@@ -298,13 +298,13 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       {options.map((option) => {
         const isActive = option === selected;
         return (
-          <Pressable
+          <AppPressable
             key={option}
             style={[styles.modalChip, isActive && styles.modalChipActive]}
             onPress={() => onSelect(option)}
           >
             <Text style={[styles.modalChipText, isActive && styles.modalChipTextActive]}>{option}</Text>
-          </Pressable>
+          </AppPressable>
         );
       })}
     </ScrollView>
@@ -333,10 +333,10 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         ))}
       </ScrollView>
 
-      <Pressable style={styles.uploadCard} onPress={handleAddItem}>
+      <AppPressable style={styles.uploadCard} onPress={handleAddItem}>
         <Text style={styles.uploadTitle}>+ Добавить вещь</Text>
         <Text style={styles.uploadText}>Фото на белом фоне или на себе, затем автоматическое вырезание фона.</Text>
-      </Pressable>
+      </AppPressable>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.itemsWrap}>
         {filteredItems.map((item) => (
@@ -345,24 +345,24 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
               <View style={styles.photoBlock}>
                 <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
                 <View style={styles.photoActions}>
-                  <Pressable style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
+                  <AppPressable style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
                     <Text style={styles.retakeText}>Переснять</Text>
-                  </Pressable>
-                  <Pressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
+                  </AppPressable>
+                  <AppPressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
                     <Text style={styles.deleteText}>Удалить</Text>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
             ) : (
-              <Pressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
+              <AppPressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
                 <Text style={styles.deleteText}>Удалить</Text>
-              </Pressable>
+              </AppPressable>
             )}
             <View style={styles.itemHeader}>
               <Text style={styles.itemName}>{item.name}</Text>
-              <Pressable style={styles.editButton} onPress={() => handleEditItem(item)}>
+              <AppPressable style={styles.editButton} onPress={() => handleEditItem(item)}>
                 <Text style={styles.editButtonText}>Исправить</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             <Text style={styles.itemMeta}>AI: {item.category} · {item.color} · {item.season} · {item.pattern}</Text>
             <View style={styles.tagsRow}>
@@ -386,8 +386,8 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
+        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
+          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
@@ -398,9 +398,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 {draftPhoto ? (
                   <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
                 ) : null}
-                <Pressable style={styles.retakeButton} onPress={handleRetake}>
+                <AppPressable style={styles.retakeButton} onPress={handleRetake}>
                   <Text style={styles.retakeText}>Переснять фото</Text>
-                </Pressable>
+                </AppPressable>
                 <Text style={styles.modalLabel}>Название вещи</Text>
                 <TextInput
                   style={styles.modalInput}
@@ -409,13 +409,13 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   value={draftName}
                   onChangeText={setDraftName}
                 />
-                <Pressable style={styles.aiButton} onPress={handleAnalyze} disabled={isAnalyzing}>
+                <AppPressable style={styles.aiButton} onPress={handleAnalyze} disabled={isAnalyzing}>
                   {isAnalyzing ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.aiButtonText}>AI-анализ</Text>
                   )}
-                </Pressable>
+                </AppPressable>
                 {draftColor ? (
                   <Text style={styles.aiHint}>AI цвет: {draftColor}</Text>
                 ) : null}
@@ -453,16 +453,16 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   value={draftMaterial}
                   onChangeText={setDraftMaterial}
                 />
-                <Pressable style={styles.modalSave} onPress={handleSaveItem}>
+                <AppPressable style={styles.modalSave} onPress={handleSaveItem}>
                   <Text style={styles.modalSaveText}>Сохранить</Text>
-                </Pressable>
-                <Pressable style={styles.modalClose} onPress={() => setModalVisible(false)}>
+                </AppPressable>
+                <AppPressable style={styles.modalClose} onPress={() => setModalVisible(false)}>
                   <Text style={styles.modalCloseText}>Отмена</Text>
-                </Pressable>
+                </AppPressable>
               </ScrollView>
             </KeyboardAvoidingView>
-          </Pressable>
-        </Pressable>
+          </AppPressable>
+        </AppPressable>
       </Modal>
 
       <Modal
@@ -471,8 +471,8 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         visible={isEditModalVisible}
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
+        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
+          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
@@ -520,16 +520,16 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   value={editMaterial}
                   onChangeText={setEditMaterial}
                 />
-                <Pressable style={styles.modalSave} onPress={handleSaveEdit}>
+                <AppPressable style={styles.modalSave} onPress={handleSaveEdit}>
                   <Text style={styles.modalSaveText}>Сохранить</Text>
-                </Pressable>
-                <Pressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
+                </AppPressable>
+                <AppPressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
                   <Text style={styles.modalCloseText}>Отмена</Text>
-                </Pressable>
+                </AppPressable>
               </ScrollView>
             </KeyboardAvoidingView>
-          </Pressable>
-        </Pressable>
+          </AppPressable>
+        </AppPressable>
       </Modal>
     </View>
   );

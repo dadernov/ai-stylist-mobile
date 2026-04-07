@@ -1,10 +1,10 @@
 import {
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import * as Location from 'expo-location';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
+import { AppPressable } from '../components/AppPressable';
 import { COLORS } from '../constants/theme';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook } from '../types/looks';
@@ -174,12 +175,16 @@ const buildLooks = (
 
   const combos: { items: WardrobeItem[]; score: number }[] = [];
 
+  const uniqueById = (list: WardrobeItem[]) =>
+    Array.from(new Map(list.map((item) => [item.id, item])).values());
+
   safeTops.forEach((top) => {
     safeBottoms.forEach((bottom) => {
       safeShoes.forEach((shoe) => {
         safeOuter.forEach((outerwear) => {
           safeBags.forEach((bag) => {
-            const selection = [top, bottom, shoe, outerwear, bag].filter(Boolean) as WardrobeItem[];
+            const selectionRaw = [top, bottom, shoe, outerwear, bag].filter(Boolean) as WardrobeItem[];
+            const selection = uniqueById(selectionRaw);
             const colors = selection.map((item) => item.color);
             const score =
               scoreColors(colors) +
@@ -199,7 +204,7 @@ const buildLooks = (
     return {
       id: `look-${Date.now()}-${index}`,
       title: `Лук ${index + 1} · ${style}`,
-      itemIds: combo.items.map((item) => item.id),
+      itemIds: uniqueById(combo.items).map((item) => item.id),
       weather: weatherText || 'Погода недоступна',
       style,
       event,
@@ -251,8 +256,10 @@ export function OutfitBuilderScreen({
     [items]
   );
 
-  const getLookItems = (ids: string[]) =>
-    ids.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
+  const getLookItems = (ids: string[]) => {
+    const uniqueIds = Array.from(new Set(ids));
+    return uniqueIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
+  };
 
   useEffect(() => {
     if (!selectedTop && tops.length) setSelectedTop(tops[0]);
@@ -396,7 +403,7 @@ export function OutfitBuilderScreen({
         {list.map((item) => {
           const active = selected?.id === item.id;
           return (
-            <Pressable
+            <AppPressable
               key={item.id}
               style={[styles.selectorCard, active && styles.selectorCardActive]}
               onPress={() => onSelect(item)}
@@ -407,7 +414,7 @@ export function OutfitBuilderScreen({
               <Text style={styles.selectorLabel} numberOfLines={1}>
                 {item.name}
               </Text>
-            </Pressable>
+            </AppPressable>
           );
         })}
       </ScrollView>
@@ -423,20 +430,20 @@ export function OutfitBuilderScreen({
         />
 
         <View style={styles.segment}>
-          <Pressable
+          <AppPressable
             style={[styles.segmentTab, activeTab === 'builder' && styles.segmentTabActive]}
             onPress={() => setActiveTab('builder')}
           >
             <Text style={[styles.segmentText, activeTab === 'builder' && styles.segmentTextActive]}>
               Конструктор
             </Text>
-          </Pressable>
-          <Pressable
+          </AppPressable>
+          <AppPressable
             style={[styles.segmentTab, activeTab === 'looks' && styles.segmentTabActive]}
             onPress={() => setActiveTab('looks')}
           >
             <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>Луки</Text>
-          </Pressable>
+          </AppPressable>
         </View>
 
         {activeTab === 'builder' ? (
@@ -480,9 +487,9 @@ export function OutfitBuilderScreen({
               <Text style={styles.weatherText}>{weatherText}</Text>
             </View>
 
-            <Pressable style={styles.generateButton} onPress={handleGenerateLooks}>
+            <AppPressable style={styles.generateButton} onPress={handleGenerateLooks}>
               <Text style={styles.generateText}>Сгенерировать 3-5 образов</Text>
-            </Pressable>
+            </AppPressable>
 
             <View style={styles.manualWrap}>
               <Text style={styles.manualTitle}>Собери образ вручную</Text>
@@ -501,9 +508,9 @@ export function OutfitBuilderScreen({
                 onChangeText={setManualName}
               />
 
-              <Pressable style={styles.addLookButton} onPress={handleSaveManualLook}>
+              <AppPressable style={styles.addLookButton} onPress={handleSaveManualLook}>
                 <Text style={styles.addLookText}>Добавить в образы</Text>
-              </Pressable>
+              </AppPressable>
 
               <View style={styles.manualResult}>
                 <Text style={styles.manualResultTitle}>Текущий образ</Text>
@@ -525,12 +532,12 @@ export function OutfitBuilderScreen({
                     <View style={styles.lookHeader}>
                       <Text style={styles.lookTitle}>{look.title}</Text>
                       <View style={styles.lookActions}>
-                        <Pressable style={styles.secondaryButton} onPress={() => handleSaveGeneratedLook(look)}>
+                        <AppPressable style={styles.secondaryButton} onPress={() => handleSaveGeneratedLook(look)}>
                           <Text style={styles.secondaryButtonText}>В луки</Text>
-                        </Pressable>
-                        <Pressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(look)}>
+                        </AppPressable>
+                        <AppPressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(look)}>
                           <Text style={styles.favoriteText}>В избранное</Text>
-                        </Pressable>
+                        </AppPressable>
                       </View>
                     </View>
                     <Text style={styles.lookWeather}>{look.weather}</Text>
@@ -566,12 +573,12 @@ export function OutfitBuilderScreen({
                   <View style={styles.lookHeader}>
                     <Text style={styles.lookTitle}>{look.name}</Text>
                     <View style={styles.lookActions}>
-                      <Pressable style={styles.secondaryButton} onPress={() => openEditLook(look)}>
+                      <AppPressable style={styles.secondaryButton} onPress={() => openEditLook(look)}>
                         <Text style={styles.secondaryButtonText}>Изменить</Text>
-                      </Pressable>
-                      <Pressable style={styles.deleteButton} onPress={() => handleDeleteLook(look.id)}>
+                      </AppPressable>
+                      <AppPressable style={styles.deleteButton} onPress={() => handleDeleteLook(look.id)}>
                         <Text style={styles.deleteButtonText}>Удалить</Text>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   </View>
                   <LookPreview items={lookItems} />
@@ -588,8 +595,8 @@ export function OutfitBuilderScreen({
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={isEditModalVisible} onRequestClose={() => setEditModalVisible(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
+        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
+          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
                 <Text style={styles.modalTitle}>Редактировать лук</Text>
@@ -606,16 +613,16 @@ export function OutfitBuilderScreen({
                 {renderPicker('Обувь', shoes, editShoes, setEditShoes)}
                 {renderPicker('Верхняя одежда', outer, editOuter, setEditOuter)}
                 {renderPicker('Сумка', bags, editBag, setEditBag)}
-                <Pressable style={styles.modalSave} onPress={handleSaveEditedLook}>
+                <AppPressable style={styles.modalSave} onPress={handleSaveEditedLook}>
                   <Text style={styles.modalSaveText}>Сохранить</Text>
-                </Pressable>
-                <Pressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
+                </AppPressable>
+                <AppPressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
                   <Text style={styles.modalCloseText}>Отмена</Text>
-                </Pressable>
+                </AppPressable>
               </ScrollView>
             </KeyboardAvoidingView>
-          </Pressable>
-        </Pressable>
+          </AppPressable>
+        </AppPressable>
       </Modal>
     </View>
   );

@@ -26,7 +26,7 @@ export function LookPreview({ items }: LookPreviewProps) {
   return (
     <View style={styles.preview}>
       {sorted.map((item, index) => (
-        <View key={item.id} style={[styles.previewItem, index > 0 && styles.previewOverlap]}>
+        <View key={item.id} style={[styles.previewItem, index > 0 && styles.previewGap]}>
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.previewImage} resizeMode="contain" />
           ) : (
@@ -50,13 +50,13 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   previewItem: {
-    width: '90%',
-    height: 70,
+    width: '100%',
+    height: 92,
     alignItems: 'center',
     justifyContent: 'center'
   },
-  previewOverlap: {
-    marginTop: -24
+  previewGap: {
+    marginTop: 8
   },
   previewImage: {
     width: '100%',

@@ -1,9 +1,10 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { COLORS } from '../constants/theme';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
+import { AppPressable } from '../components/AppPressable';
 
 type FavoritesScreenProps = {
   looks: GeneratedLook[];
@@ -29,9 +30,9 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
           <View key={look.id} style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>{look.title}</Text>
-              <Pressable style={styles.deleteButton} onPress={() => onRemove(look.id)}>
+              <AppPressable style={styles.deleteButton} onPress={() => onRemove(look.id)}>
                 <Text style={styles.deleteText}>Удалить</Text>
-              </Pressable>
+              </AppPressable>
             </View>
             <Text style={styles.cardMeta}>{look.weather}</Text>
             <LookPreview items={look.itemIds.map((id) => itemsById[id]).filter(Boolean)} />

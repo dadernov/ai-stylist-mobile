@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { COLORS } from '../constants/theme';
+import { AppPressable } from '../components/AppPressable';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -83,7 +84,7 @@ export function ProfileScreen({
             </Text>
             <ScrollView contentContainerStyle={styles.modalList}>
               {options.map((option) => (
-                <Pressable
+                <AppPressable
                   key={option}
                   style={styles.modalOption}
                   onPress={() => {
@@ -93,12 +94,12 @@ export function ProfileScreen({
                   }}
                 >
                   <Text style={styles.modalOptionText}>{option}</Text>
-                </Pressable>
+                </AppPressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalClose} onPress={() => setActiveModal(null)}>
+            <AppPressable style={styles.modalClose} onPress={() => setActiveModal(null)}>
               <Text style={styles.modalCloseText}>Закрыть</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         </View>
       </Modal>
@@ -116,13 +117,13 @@ export function ProfileScreen({
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileCard}>
-          <Pressable style={styles.avatarWrap} onPress={handlePickAvatar}>
+          <AppPressable style={styles.avatarWrap} onPress={handlePickAvatar}>
             {avatarUri ? (
               <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
             ) : (
               <Text style={styles.avatarPlaceholder}>+</Text>
             )}
-          </Pressable>
+          </AppPressable>
           <View style={styles.profileInfo}>
             <Text style={styles.userName}>{displayName}</Text>
             <Text style={styles.userMeta}>{contact || 'Контакт не указан'}</Text>
@@ -133,7 +134,7 @@ export function ProfileScreen({
           {rows.map((row) => {
             const isSelectable = row.key === 'body' || row.key === 'color';
             return (
-              <Pressable
+              <AppPressable
                 key={row.label}
                 style={styles.settingRow}
                 onPress={() => {
@@ -143,14 +144,14 @@ export function ProfileScreen({
               >
                 <Text style={styles.settingLabel}>{row.label}</Text>
                 <Text style={[styles.settingValue, isSelectable && styles.settingValueSelectable]}>{row.value}</Text>
-              </Pressable>
+              </AppPressable>
             );
           })}
         </View>
 
-        <Pressable style={styles.logoutButton} onPress={onLogout}>
+        <AppPressable style={styles.logoutButton} onPress={onLogout}>
           <Text style={styles.logoutText}>Выйти из аккаунта</Text>
-        </Pressable>
+        </AppPressable>
       </ScrollView>
     </View>
   );

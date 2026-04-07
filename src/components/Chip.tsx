@@ -1,5 +1,6 @@
-import { Platform, Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, StyleSheet, Text } from 'react-native';
 import { COLORS } from '../constants/theme';
+import { AppPressable } from './AppPressable';
 
 type ChipProps = {
   label: string;
@@ -9,9 +10,9 @@ type ChipProps = {
 
 export function Chip({ label, active = false, onPress }: ChipProps) {
   return (
-    <Pressable style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
+    <AppPressable style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
+    </AppPressable>
   );
 }
 

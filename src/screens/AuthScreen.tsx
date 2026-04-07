@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { COLORS } from '../constants/theme';
+import { AppPressable } from '../components/AppPressable';
 
 type AuthScreenProps = {
   onLogin: (displayName: string, phone: string, method: string) => void;
@@ -102,9 +103,9 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
             onChangeText={handlePhoneChange}
           />
           {phoneError ? <Text style={styles.errorText}>{phoneError}</Text> : null}
-          <Pressable style={styles.primaryButton} onPress={requestOtp}>
+          <AppPressable style={styles.primaryButton} onPress={requestOtp}>
             <Text style={styles.primaryButtonText}>Отправить код</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       ) : (
         <View style={styles.form}>
@@ -119,12 +120,12 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
             maxLength={4}
           />
           {otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
-          <Pressable style={styles.primaryButton} onPress={verifyOtp}>
+          <AppPressable style={styles.primaryButton} onPress={verifyOtp}>
             <Text style={styles.primaryButtonText}>Подтвердить</Text>
-          </Pressable>
-          <Pressable style={styles.linkButton} onPress={() => setStep('phone')}>
+          </AppPressable>
+          <AppPressable style={styles.linkButton} onPress={() => setStep('phone')}>
             <Text style={styles.linkText}>Изменить номер</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       )}
 
