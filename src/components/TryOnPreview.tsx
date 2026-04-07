@@ -1,8 +1,8 @@
-import { Image, LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { useMemo, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { COLORS } from '../constants/theme';
-import { TryOnModelResult, TryOnPoint } from '../services/ai';
+import { TryOnModelResult } from '../services/ai';
 
 type TryOnPreviewProps = {
   modelUri?: string;
@@ -11,7 +11,6 @@ type TryOnPreviewProps = {
   isModelLoading?: boolean;
 };
 
-type PixelPoint = { x: number; y: number };
 type PixelBox = { x: number; y: number; width: number; height: number };
 type LayerBox = PixelBox & { rotateDeg: number; zIndex: number };
 
@@ -26,41 +25,6 @@ const sortBySection = (items: WardrobeItem[]) => {
   });
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const dist = (a: PixelPoint, b: PixelPoint) => Math.hypot(a.x - b.x, a.y - b.y);
-
-const center = (a: PixelPoint, b: PixelPoint): PixelPoint => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-
-const getContainFrame = (
-  containerW: number,
-  containerH: number,
-  sourceW: number | undefined,
-  sourceH: number | undefined
-): PixelBox => {
-  if (!sourceW || !sourceH || sourceW <= 0 || sourceH <= 0) {
-    return { x: 0, y: 0, width: containerW, height: containerH };
-  }
-  const sourceAspect = sourceW / sourceH;
-  const containerAspect = containerW / containerH;
-  if (sourceAspect > containerAspect) {
-    const width = containerW;
-    const height = width / sourceAspect;
-    return { x: 0, y: (containerH - height) / 2, width, height };
-  }
-  const height = containerH;
-  const width = height * sourceAspect;
-  return { x: (containerW - width) / 2, y: 0, width, height };
-};
-
-const toPixel = (point: TryOnPoint | undefined, frame: PixelBox, fallback: PixelPoint): PixelPoint => {
-  if (!point) return fallback;
-  return {
-    x: frame.x + clamp(point.x, 0, 1) * frame.width,
-    y: frame.y + clamp(point.y, 0, 1) * frame.height
-  };
-};
-
 const buildLayer = (x: number, y: number, width: number, height: number, rotateDeg: number, zIndex: number): LayerBox => ({
   x,
   y,
@@ -70,9 +34,8 @@ const buildLayer = (x: number, y: number, width: number, height: number, rotateD
   zIndex
 });
 
-export function TryOnPreview({ modelUri, items, modelLayout, isModelLoading }: TryOnPreviewProps) {
+export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLayout, isModelLoading }: TryOnPreviewProps) {
   const [box, setBox] = useState({ width: 0, height: 0 });
-  const isAvatarMode = Boolean(modelLayout?.avatarModelBase64);
   const sorted = useMemo(() => {
     const uniqueItems = Array.from(new Map(items.map((item) => [item.id, item])).values());
     return sortBySection(uniqueItems);
@@ -85,124 +48,67 @@ export function TryOnPreview({ modelUri, items, modelLayout, isModelLoading }: T
 
   const layerBySection = useMemo(() => {
     if (!box.width || !box.height) return {} as Record<string, LayerBox>;
-    const frame = getContainFrame(box.width, box.height, modelLayout?.sourceWidth, modelLayout?.sourceHeight);
-
-    const fallbackPoints = {
-      ls: { x: frame.x + frame.width * 0.38, y: frame.y + frame.height * 0.2 },
-      rs: { x: frame.x + frame.width * 0.62, y: frame.y + frame.height * 0.2 },
-      lh: { x: frame.x + frame.width * 0.42, y: frame.y + frame.height * 0.5 },
-      rh: { x: frame.x + frame.width * 0.58, y: frame.y + frame.height * 0.5 },
-      la: { x: frame.x + frame.width * 0.44, y: frame.y + frame.height * 0.9 },
-      ra: { x: frame.x + frame.width * 0.56, y: frame.y + frame.height * 0.9 },
-      nose: { x: frame.x + frame.width * 0.5, y: frame.y + frame.height * 0.08 }
+    const frame = {
+      x: box.width * 0.23,
+      y: box.height * 0.07,
+      width: box.width * 0.54,
+      height: box.height * 0.88
     };
 
-    const pose = modelLayout?.pose;
-    const ls = toPixel(pose?.leftShoulder, frame, fallbackPoints.ls);
-    const rs = toPixel(pose?.rightShoulder, frame, fallbackPoints.rs);
-    const lh = toPixel(pose?.leftHip, frame, fallbackPoints.lh);
-    const rh = toPixel(pose?.rightHip, frame, fallbackPoints.rh);
-    const la = toPixel(pose?.leftAnkle, frame, fallbackPoints.la);
-    const ra = toPixel(pose?.rightAnkle, frame, fallbackPoints.ra);
-    const nose = toPixel(pose?.nose, frame, fallbackPoints.nose);
+    return {
+      Верх: buildLayer(frame.x + frame.width * 0.1, frame.y + frame.height * 0.2, frame.width * 0.8, frame.height * 0.26, 0, 4),
+      'Верхняя одежда': buildLayer(frame.x + frame.width * 0.06, frame.y + frame.height * 0.17, frame.width * 0.88, frame.height * 0.31, 0, 5),
+      Низ: buildLayer(frame.x + frame.width * 0.16, frame.y + frame.height * 0.49, frame.width * 0.68, frame.height * 0.3, 0, 3),
+      Обувь: buildLayer(frame.x + frame.width * 0.15, frame.y + frame.height * 0.82, frame.width * 0.7, frame.height * 0.12, 0, 2),
+      Сумки: buildLayer(frame.x + frame.width * 0.72, frame.y + frame.height * 0.41, frame.width * 0.24, frame.height * 0.18, 0, 6)
+    } as Record<string, LayerBox>;
+  }, [box.height, box.width]);
 
-    const shoulderCenter = center(ls, rs);
-    const hipCenter = center(lh, rh);
-    const ankleCenter = center(la, ra);
-
-    const shoulderWidth = Math.max(frame.width * 0.2, dist(ls, rs));
-    const hipWidth = Math.max(frame.width * 0.18, dist(lh, rh));
-    const torsoLength = Math.max(frame.height * 0.16, dist(shoulderCenter, hipCenter));
-    const legLength = Math.max(frame.height * 0.2, dist(hipCenter, ankleCenter));
-    const torsoRotate = clamp(modelLayout?.torsoAngleDeg ?? 0, -20, 20);
-    const facing = modelLayout?.orientation ?? 'front';
-    const sideFactor = facing === 'front' ? 1 : 0.82;
-
-    const topWidth = shoulderWidth * 1.46 * sideFactor;
-    const topHeight = torsoLength * 1.58;
-    const outerWidth = topWidth * 1.08;
-    const outerHeight = topHeight * 1.08;
-    const bottomWidth = Math.max(hipWidth * 1.55, shoulderWidth * 1.1) * sideFactor;
-    const bottomHeight = legLength * 0.92;
-    const shoesWidth = hipWidth * 1.04 * sideFactor;
-    const shoesHeight = Math.max(42, legLength * 0.34);
-    const bagWidth = shoulderWidth * 0.62;
-    const bagHeight = torsoLength * 0.92;
-    const bagLeft = facing === 'left' ? shoulderCenter.x - bagWidth * 0.9 : shoulderCenter.x + bagWidth * 0.15;
-    const bagTop = hipCenter.y - bagHeight * 0.5;
-
-    const layers: Record<string, LayerBox> = {
-      Верх: buildLayer(
-        shoulderCenter.x - topWidth / 2,
-        shoulderCenter.y - topHeight * 0.18,
-        topWidth,
-        topHeight,
-        torsoRotate,
-        4
-      ),
-      'Верхняя одежда': buildLayer(
-        shoulderCenter.x - outerWidth / 2,
-        shoulderCenter.y - outerHeight * 0.2,
-        outerWidth,
-        outerHeight,
-        torsoRotate,
-        5
-      ),
-      Низ: buildLayer(
-        hipCenter.x - bottomWidth / 2,
-        hipCenter.y - bottomHeight * 0.12,
-        bottomWidth,
-        bottomHeight,
-        torsoRotate * 0.55,
-        3
-      ),
-      Обувь: buildLayer(
-        ankleCenter.x - shoesWidth / 2,
-        ankleCenter.y - shoesHeight * 0.5,
-        shoesWidth,
-        shoesHeight,
-        torsoRotate * 0.2,
-        2
-      ),
-      Сумки: buildLayer(bagLeft, bagTop, bagWidth, bagHeight, torsoRotate * 0.4, 6)
-    };
-
-    // If nose is very low, user probably cropped head. Shift overlays down less.
-    if (nose.y > frame.y + frame.height * 0.2) {
-      layers.Верх.y += 10;
-      layers['Верхняя одежда'].y += 8;
+  const bySection = useMemo(() => {
+    const result: Record<string, WardrobeItem> = {};
+    for (const item of sorted) {
+      if (!result[item.section]) result[item.section] = item;
     }
+    return result;
+  }, [sorted]);
 
-    return layers;
-  }, [box.height, box.width, modelLayout]);
-
-  if (!modelUri) {
-    return (
-      <View style={[styles.preview, styles.emptyPreview]}>
-        <Text style={styles.emptyTitle}>Нет фото для примерки</Text>
-        <Text style={styles.emptyText}>Добавь фото в полный рост в профиле, и образы появятся на тебе.</Text>
-      </View>
-    );
-  }
+  const colorFromLabel = (label: string): string => {
+    const normalized = label.toLowerCase();
+    if (normalized.includes('черн')) return '#2F2F2F';
+    if (normalized.includes('бел')) return '#F1EEE6';
+    if (normalized.includes('беж')) return '#D8C5A7';
+    if (normalized.includes('син')) return '#4A618E';
+    if (normalized.includes('голуб')) return '#7EA6D9';
+    if (normalized.includes('сер')) return '#9C9A94';
+    if (normalized.includes('корич')) return '#8B6647';
+    if (normalized.includes('зел')) return '#667D4A';
+    if (normalized.includes('крас')) return '#B8564E';
+    if (normalized.includes('роз')) return '#C98B93';
+    if (normalized.includes('оранж')) return '#CD7A3A';
+    return '#B6AAA0';
+  };
 
   return (
     <View style={styles.preview} onLayout={onLayout}>
-      <Image source={{ uri: modelUri }} style={styles.modelPhoto} resizeMode="contain" />
-      <View style={[styles.overlayShade, isAvatarMode && styles.overlayShadeAvatar]} />
+      <View style={styles.mannequinFrame}>
+        <View style={styles.head} />
+        <View style={styles.torso} />
+        <View style={[styles.arm, styles.armLeft]} />
+        <View style={[styles.arm, styles.armRight]} />
+        <View style={[styles.leg, styles.legLeft]} />
+        <View style={[styles.leg, styles.legRight]} />
+      </View>
       {isModelLoading ? (
         <View style={styles.loadingBadge}>
-          <Text style={styles.loadingText}>{isAvatarMode ? 'Готовим аватар для примерки...' : 'Подстраиваем образ под позу...'}</Text>
+          <Text style={styles.loadingText}>Собираем образ на манекене...</Text>
         </View>
       ) : null}
-      {sorted.map((item) => {
-        if (!item.imageUri) return null;
-        const layer = layerBySection[item.section];
+      {Object.entries(bySection).map(([section, item]) => {
+        const layer = layerBySection[section];
         if (!layer) return null;
         return (
-          <Image
-            key={item.id}
-            source={{ uri: item.imageUri }}
-            resizeMode="contain"
+          <View
+            key={`${section}-${item.id}`}
             style={[
               styles.layerItem,
               {
@@ -211,13 +117,18 @@ export function TryOnPreview({ modelUri, items, modelLayout, isModelLoading }: T
                 width: layer.width,
                 height: layer.height,
                 zIndex: layer.zIndex,
-                transform: [{ rotate: `${layer.rotateDeg}deg` }]
+                transform: [{ rotate: `${layer.rotateDeg}deg` }],
+                backgroundColor: colorFromLabel(item.color),
+                borderColor: '#C8BCAF'
               }
             ]}
-          />
+          >
+            <Text style={styles.layerLabel} numberOfLines={1}>
+              {item.category}
+            </Text>
+          </View>
         );
       })}
-      {isAvatarMode ? <Image source={{ uri: modelUri }} style={styles.foregroundAvatar} resizeMode="contain" /> : null}
     </View>
   );
 }
@@ -229,42 +140,78 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: 'hidden',
-    backgroundColor: '#F4F0E8',
+    backgroundColor: '#F7F3EC',
     marginBottom: 8
   },
-  emptyPreview: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 22,
-    gap: 6
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text
-  },
-  emptyText: {
-    fontSize: 12,
-    textAlign: 'center',
-    color: COLORS.muted,
-    lineHeight: 18
-  },
-  modelPhoto: {
+  mannequinFrame: {
     ...StyleSheet.absoluteFillObject
   },
-  overlayShade: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.12)'
+  head: {
+    position: 'absolute',
+    top: '8%',
+    left: '44%',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E5DBCC',
+    borderWidth: 1,
+    borderColor: '#D8CBB8'
   },
-  overlayShadeAvatar: {
-    backgroundColor: 'rgba(255,255,255,0.04)'
+  torso: {
+    position: 'absolute',
+    top: '23%',
+    left: '35%',
+    width: '30%',
+    height: '33%',
+    borderRadius: 18,
+    backgroundColor: '#ECE3D6',
+    borderWidth: 1,
+    borderColor: '#D8CBB8'
   },
-  foregroundAvatar: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.16
+  arm: {
+    position: 'absolute',
+    top: '27%',
+    width: '8.5%',
+    height: '30%',
+    borderRadius: 14,
+    backgroundColor: '#E8DECF',
+    borderWidth: 1,
+    borderColor: '#D8CBB8'
+  },
+  armLeft: {
+    left: '28%'
+  },
+  armRight: {
+    right: '28%'
+  },
+  leg: {
+    position: 'absolute',
+    top: '56%',
+    width: '12%',
+    height: '34%',
+    borderRadius: 14,
+    backgroundColor: '#E8DECF',
+    borderWidth: 1,
+    borderColor: '#D8CBB8'
+  },
+  legLeft: {
+    left: '38%'
+  },
+  legRight: {
+    right: '38%'
   },
   layerItem: {
-    position: 'absolute'
+    position: 'absolute',
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 8,
+    paddingVertical: 5
+  },
+  layerLabel: {
+    fontSize: 10,
+    color: '#312B24',
+    fontWeight: '700'
   },
   loadingBadge: {
     position: 'absolute',
