@@ -162,8 +162,41 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     return result.assets[0]?.uri ?? null;
   };
 
+  const requestGallery = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Нужен доступ к галерее', 'Разреши доступ, чтобы выбрать фото вещи.');
+      return null;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images
+    });
+
+    if (result.canceled) return null;
+    return result.assets[0]?.uri ?? null;
+  };
+
+  const choosePhotoSource = () =>
+    new Promise<'camera' | 'gallery' | null>((resolve) => {
+      Alert.alert('Источник фото', 'Откуда загрузить фото вещи?', [
+        { text: 'Камера', onPress: () => resolve('camera') },
+        { text: 'Галерея', onPress: () => resolve('gallery') },
+        { text: 'Отмена', style: 'cancel', onPress: () => resolve(null) }
+      ]);
+    });
+
+  const requestPhoto = async () => {
+    const source = await choosePhotoSource();
+    if (source === 'camera') return requestCamera();
+    if (source === 'gallery') return requestGallery();
+    return null;
+  };
+
   const handleAddItem = async () => {
-    const photo = await requestCamera();
+    const photo = await requestPhoto();
     if (!photo) return;
     setDraftPhoto(photo);
     setDraftName('');
@@ -202,7 +235,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const handleRetake = async () => {
-    const photo = await requestCamera();
+    const photo = await requestPhoto();
     if (photo) {
       setDraftPhoto(photo);
       void applyAi(photo);
@@ -288,7 +321,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const handleRetakeExisting = async (id: string) => {
-    const photo = await requestCamera();
+    const photo = await requestPhoto();
     if (!photo) return;
     onItemsChange(items.map((item) => (item.id === id ? { ...item, imageUri: photo } : item)));
   };

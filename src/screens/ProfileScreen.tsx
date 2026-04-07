@@ -10,8 +10,10 @@ type ProfileScreenProps = {
   contact: string;
   authMethod: string;
   avatarUri?: string;
+  modelUri?: string;
   favoritesCount: number;
   onAvatarChange: (uri: string) => void;
+  onModelChange: (uri: string) => void;
   onLogout: () => void;
 };
 
@@ -39,8 +41,10 @@ export function ProfileScreen({
   contact,
   authMethod,
   avatarUri,
+  modelUri,
   favoritesCount,
   onAvatarChange,
+  onModelChange,
   onLogout
 }: ProfileScreenProps) {
   const [bodyType, setBodyType] = useState('Не задано');
@@ -54,11 +58,11 @@ export function ProfileScreen({
     { label: 'Способ входа', value: authMethod }
   ];
 
-  const handlePickAvatar = async () => {
+  const pickImageFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Нужен доступ', 'Разреши доступ к фото, чтобы выбрать аватар.');
-      return;
+      Alert.alert('Нужен доступ', 'Разреши доступ к фото, чтобы выбрать изображение.');
+      return null;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -67,9 +71,18 @@ export function ProfileScreen({
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
 
-    if (!result.canceled) {
-      onAvatarChange(result.assets[0]?.uri ?? '');
-    }
+    if (result.canceled) return null;
+    return result.assets[0]?.uri ?? null;
+  };
+
+  const handlePickAvatar = async () => {
+    const uri = await pickImageFromGallery();
+    if (uri) onAvatarChange(uri);
+  };
+
+  const handlePickModel = async () => {
+    const uri = await pickImageFromGallery();
+    if (uri) onModelChange(uri);
   };
 
   const renderModal = () => {
@@ -128,6 +141,24 @@ export function ProfileScreen({
             <Text style={styles.userName}>{displayName}</Text>
             <Text style={styles.userMeta}>{contact || 'Контакт не указан'}</Text>
           </View>
+        </View>
+
+        <View style={styles.modelCard}>
+          <Text style={styles.modelTitle}>Фото для виртуальной примерки</Text>
+          <Text style={styles.modelText}>
+            Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем
+            накладывать избранные образы.
+          </Text>
+          <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
+            {modelUri ? (
+              <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="cover" />
+            ) : (
+              <Text style={styles.modelPlaceholder}>+ Добавить фото модели</Text>
+            )}
+          </AppPressable>
+          <AppPressable style={styles.modelButton} onPress={handlePickModel}>
+            <Text style={styles.modelButtonText}>{modelUri ? 'Заменить фото' : 'Выбрать из галереи'}</Text>
+          </AppPressable>
         </View>
 
         <View style={styles.settingsBlock}>
@@ -195,6 +226,52 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     flex: 1
+  },
+  modelCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 14,
+    gap: 8
+  },
+  modelTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.text
+  },
+  modelText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  modelPreview: {
+    height: 260,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F2EEE6',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  modelImage: {
+    width: '100%',
+    height: '100%'
+  },
+  modelPlaceholder: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.muted
+  },
+  modelButton: {
+    backgroundColor: '#EFEAE1',
+    borderRadius: 10,
+    alignItems: 'center',
+    paddingVertical: 10
+  },
+  modelButtonText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '600'
   },
   userName: {
     fontSize: 22,

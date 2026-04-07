@@ -22,6 +22,7 @@ type ProfileState = {
   contact: string;
   authMethod: string;
   avatarUri?: string;
+  modelUri?: string;
 };
 
 const STORAGE_KEYS = {
@@ -78,6 +79,7 @@ function AppContent() {
   const [contact, setContact] = useState('');
   const [authMethod, setAuthMethod] = useState('Не выбран');
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
+  const [modelUri, setModelUri] = useState<string | undefined>(undefined);
   const [items, setItems] = useState<WardrobeItem[]>(wardrobeItems);
   const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
   const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
@@ -111,6 +113,7 @@ function AppContent() {
           setContact(profile.contact || '');
           setAuthMethod(profile.authMethod || 'Не выбран');
           setAvatarUri(profile.avatarUri);
+          setModelUri(profile.modelUri);
         }
 
         if (itemsRaw) {
@@ -162,12 +165,13 @@ function AppContent() {
       displayName,
       contact,
       authMethod,
-      avatarUri
+      avatarUri,
+      modelUri
     };
     AsyncStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile)).catch((error) =>
       console.warn('Failed to save profile', error)
     );
-  }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri]);
+  }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri, modelUri]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -224,6 +228,7 @@ function AppContent() {
   };
 
   const screen = (() => {
+    const tryOnModelUri = modelUri || avatarUri;
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={setItems} />;
     }
@@ -251,6 +256,7 @@ function AppContent() {
         <FavoritesScreen
           looks={favoriteLooks}
           items={items}
+          modelUri={tryOnModelUri}
           onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
         />
       );
@@ -260,14 +266,20 @@ function AppContent() {
         contact={contact}
         authMethod={authMethod}
         avatarUri={avatarUri}
+        modelUri={modelUri}
         favoritesCount={favoriteLooks.length}
-        onAvatarChange={setAvatarUri}
+        onAvatarChange={(uri) => {
+          setAvatarUri(uri);
+          setModelUri((prev) => prev || uri);
+        }}
+        onModelChange={setModelUri}
         onLogout={() => {
           setAuthenticated(false);
           setDisplayName('Гость');
           setContact('');
           setAuthMethod('Не выбран');
           setAvatarUri(undefined);
+          setModelUri(undefined);
         }}
       />
     );
