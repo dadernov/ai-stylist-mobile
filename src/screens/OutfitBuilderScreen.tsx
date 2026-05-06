@@ -16,16 +16,19 @@ import * as Location from 'expo-location';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
+import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { AppPressable } from '../components/AppPressable';
 import { COLORS } from '../constants/theme';
 import { WardrobeItem } from '../data/mock';
-import { GeneratedLook, SavedLook } from '../types/looks';
+import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
+import { TryOnQualityMode, TuckMode } from '../services/ai';
 
 const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
 const events = ['Свидание', 'Прогулка', 'Совещание', 'Вечеринка', 'Спортзал'];
 
 type OutfitBuilderProps = {
   items: WardrobeItem[];
+  modelUri?: string;
   savedLooks: SavedLook[];
   onSavedLooksChange: (looks: SavedLook[]) => void;
   onLooksGenerated: (looks: GeneratedLook[], context: { style: string; event: string; weather: string }) => void;
@@ -69,6 +72,98 @@ const patternPreferences: Record<string, string[]> = {
   Бохо: ['Цветочный', 'Клетка'],
   'Спорт-шик': ['Однотонный', 'Полоска'],
   Кэжуал: ['Однотонный', 'Клетка']
+};
+
+type PaletteGroup = 'neutral' | 'warm' | 'cool';
+
+type LookPreferenceProfile = {
+  preferredCategories?: string[];
+  avoidedCategories?: string[];
+  preferredPatterns?: string[];
+  avoidedPatterns?: string[];
+  preferredColorGroups?: PaletteGroup[];
+  requiredSections?: string[];
+  discouragedSections?: string[];
+};
+
+const styleProfiles: Record<string, LookPreferenceProfile> = {
+  Кэжуал: {
+    preferredCategories: ['Футболка', 'Лонгслив', 'Рубашка', 'Джинсы', 'Брюки', 'Кеды', 'Кроссовки', 'Лоферы'],
+    preferredPatterns: ['Однотонный', 'Клетка', 'Полоска'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  'Спорт-шик': {
+    preferredCategories: ['Футболка', 'Майка', 'Топ', 'Худи', 'Свитшот', 'Джоггеры', 'Леггинсы', 'Шорты', 'Кроссовки', 'Кеды', 'Бомбер'],
+    avoidedCategories: ['Туфли', 'Балетки', 'Пальто'],
+    preferredPatterns: ['Однотонный', 'Полоска'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь'],
+    discouragedSections: ['Сумки']
+  },
+  Романтичный: {
+    preferredCategories: ['Блуза', 'Топ', 'Юбка', 'Платье', 'Сарафан', 'Кардиган', 'Туфли', 'Балетки', 'Сандалии'],
+    preferredPatterns: ['Цветочный', 'Горох', 'Однотонный'],
+    preferredColorGroups: ['warm', 'neutral'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Бохо: {
+    preferredCategories: ['Кардиган', 'Платье', 'Сарафан', 'Юбка', 'Шорты', 'Ботинки', 'Сандалии', 'Сумка'],
+    preferredPatterns: ['Цветочный', 'Клетка'],
+    preferredColorGroups: ['warm', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Минимализм: {
+    preferredCategories: ['Футболка', 'Рубашка', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли'],
+    preferredPatterns: ['Однотонный'],
+    avoidedPatterns: ['Цветочный', 'Горох'],
+    preferredColorGroups: ['neutral'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Офисный: {
+    preferredCategories: ['Рубашка', 'Блуза', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли', 'Ботинки'],
+    avoidedCategories: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Майка'],
+    preferredPatterns: ['Однотонный', 'Полоска'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  }
+};
+
+const eventProfiles: Record<string, LookPreferenceProfile> = {
+  Свидание: {
+    preferredCategories: ['Блуза', 'Топ', 'Юбка', 'Платье', 'Сарафан', 'Туфли', 'Балетки', 'Лоферы'],
+    preferredPatterns: ['Однотонный', 'Цветочный'],
+    preferredColorGroups: ['warm', 'neutral'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Прогулка: {
+    preferredCategories: ['Футболка', 'Лонгслив', 'Рубашка', 'Джинсы', 'Шорты', 'Кеды', 'Кроссовки', 'Бомбер'],
+    preferredPatterns: ['Однотонный', 'Клетка', 'Полоска'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Совещание: {
+    preferredCategories: ['Рубашка', 'Блуза', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли', 'Ботинки'],
+    avoidedCategories: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Кроссовки'],
+    preferredPatterns: ['Однотонный', 'Полоска'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Вечеринка: {
+    preferredCategories: ['Топ', 'Блуза', 'Платье', 'Юбка', 'Пиджак', 'Туфли', 'Сапоги', 'Балетки'],
+    avoidedCategories: ['Джоггеры', 'Леггинсы'],
+    preferredPatterns: ['Однотонный', 'Горох'],
+    preferredColorGroups: ['warm', 'neutral'],
+    requiredSections: ['Верх', 'Низ', 'Обувь']
+  },
+  Спортзал: {
+    preferredCategories: ['Майка', 'Футболка', 'Топ', 'Леггинсы', 'Джоггеры', 'Шорты', 'Кроссовки', 'Кеды'],
+    avoidedCategories: ['Пиджак', 'Пальто', 'Юбка', 'Туфли', 'Лоферы'],
+    preferredPatterns: ['Однотонный'],
+    preferredColorGroups: ['neutral', 'cool'],
+    requiredSections: ['Верх', 'Низ', 'Обувь'],
+    discouragedSections: ['Верхняя одежда', 'Сумки']
+  }
 };
 
 const beautyMap: Record<string, { makeup: string; hair: string }> = {
@@ -129,27 +224,260 @@ const seasonScore = (item: WardrobeItem, temp: number | null) => {
   return 0;
 };
 
-const styleScore = (items: WardrobeItem[], style: string) => {
-  const preferred = patternPreferences[style] || [];
+const onePieceCategories = new Set(['Платье', 'Сарафан', 'Комбинезон']);
+
+const strictEventDisallowedCategories: Record<string, string[]> = {
+  Совещание: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Майка'],
+  Спортзал: ['Пиджак', 'Пальто', 'Туфли', 'Лоферы', 'Сапоги', 'Юбка'],
+  Вечеринка: ['Джоггеры'],
+  Свидание: [],
+  Прогулка: []
+};
+
+const strictStyleDisallowedPatterns: Record<string, string[]> = {
+  Минимализм: ['Цветочный', 'Горох']
+};
+
+const alwaysUntuckedCategories = new Set([
+  'Худи',
+  'Свитшот',
+  'Свитер',
+  'Кардиган',
+  'Пиджак',
+  'Бомбер',
+  'Куртка',
+  'Пальто',
+  'Тренч',
+  'Плащ',
+  'Пуховик',
+  'Парка'
+]);
+
+const isIn = (value: string, list?: string[]) => Boolean(list?.includes(value));
+
+const hasOnePiece = (items: WardrobeItem[]) => items.some((item) => onePieceCategories.has(item.category));
+
+const sectionSatisfied = (items: WardrobeItem[], section: string) => {
+  if (section === 'Верх') {
+    return items.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
+  }
+  if (section === 'Низ' && hasOnePiece(items)) return true;
+  return items.some((item) => item.section === section);
+};
+
+const scoreItemByProfile = (item: WardrobeItem, profile?: LookPreferenceProfile) => {
+  if (!profile) return 0;
   let score = 0;
-  items.forEach((item) => {
-    if (preferred.includes(item.pattern)) score += 1;
-    if (style === 'Минимализм' && getColorGroup(item.color) === 'neutral') score += 1;
-    if (style === 'Офисный' && ['Юбка', 'Пальто', 'Джинсы'].includes(item.category)) score += 1;
-    if (style === 'Романтичный' && ['Розовый', 'Пудровый', 'Лавандовый'].includes(item.color)) score += 1;
-    if (style === 'Бохо' && ['Оливковый', 'Коричневый', 'Бежевый'].includes(item.color)) score += 1;
+  if (isIn(item.category, profile.preferredCategories)) score += 6;
+  if (isIn(item.category, profile.avoidedCategories)) score -= 10;
+  if (isIn(item.pattern, profile.preferredPatterns)) score += 3;
+  if (isIn(item.pattern, profile.avoidedPatterns)) score -= 5;
+  if (profile.preferredColorGroups?.length) {
+    score += profile.preferredColorGroups.includes(getColorGroup(item.color) as PaletteGroup) ? 2 : -2;
+  }
+  if (item.imageUri) score += 1;
+  return score;
+};
+
+const scoreSectionExpectations = (
+  selection: WardrobeItem[],
+  profile: LookPreferenceProfile | undefined,
+  wardrobe: WardrobeItem[]
+) => {
+  if (!profile) return 0;
+  const wardrobeHasSection = (section: string) => {
+    if (section === 'Верх') {
+      return wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
+    }
+    if (section === 'Низ') {
+      return wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
+    }
+    return wardrobe.some((item) => item.section === section);
+  };
+
+  let score = 0;
+  (profile.requiredSections || []).forEach((section) => {
+    if (!wardrobeHasSection(section)) return;
+    score += sectionSatisfied(selection, section) ? 6 : -12;
+  });
+  (profile.discouragedSections || []).forEach((section) => {
+    if (sectionSatisfied(selection, section)) score -= 4;
   });
   return score;
 };
 
-const eventScore = (items: WardrobeItem[], event: string) => {
-  let score = 0;
-  items.forEach((item) => {
-    if (event === 'Совещание' && item.pattern === 'Цветочный') score -= 1;
-    if (event === 'Вечеринка' && getColorGroup(item.color) === 'warm') score += 1;
-    if (event === 'Спортзал' && ['Пальто', 'Юбка'].includes(item.category)) score -= 1;
+const styleScore = (selection: WardrobeItem[], style: string, wardrobe: WardrobeItem[]) => {
+  const profile = styleProfiles[style];
+  const preferred = patternPreferences[style] || [];
+  let score = selection.reduce((sum, item) => sum + scoreItemByProfile(item, profile), 0);
+  score += scoreSectionExpectations(selection, profile, wardrobe);
+  selection.forEach((item) => {
+    if (preferred.includes(item.pattern)) score += 2;
+    if (style === 'Минимализм' && getColorGroup(item.color) === 'neutral') score += 2;
+    if (style === 'Романтичный' && ['Розовый', 'Пудровый', 'Лавандовый'].includes(item.color)) score += 2;
+    if (style === 'Бохо' && ['Оливковый', 'Коричневый', 'Бежевый'].includes(item.color)) score += 2;
   });
   return score;
+};
+
+const eventScore = (selection: WardrobeItem[], event: string, wardrobe: WardrobeItem[]) => {
+  const profile = eventProfiles[event];
+  let score = selection.reduce((sum, item) => sum + scoreItemByProfile(item, profile), 0);
+  score += scoreSectionExpectations(selection, profile, wardrobe);
+  if (event === 'Совещание' && selection.some((item) => item.pattern === 'Цветочный')) score -= 4;
+  if (event === 'Вечеринка' && selection.some((item) => getColorGroup(item.color) === 'warm')) score += 3;
+  if (event === 'Спортзал' && selection.some((item) => ['Пальто', 'Юбка'].includes(item.category))) score -= 5;
+  return score;
+};
+
+const scoreCompleteness = (selection: WardrobeItem[], wardrobe: WardrobeItem[]) => {
+  const wardrobeHasTop = wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
+  const wardrobeHasBottom = wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
+  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
+
+  const hasTop = sectionSatisfied(selection, 'Верх');
+  const hasBottom = sectionSatisfied(selection, 'Низ');
+  const hasShoes = sectionSatisfied(selection, 'Обувь');
+
+  let score = 0;
+  if (wardrobeHasTop) score += hasTop ? 5 : -14;
+  if (wardrobeHasBottom) score += hasBottom ? 5 : -14;
+  if (wardrobeHasShoes) score += hasShoes ? 4 : -10;
+  return score;
+};
+
+const evaluateStrictRules = (selection: WardrobeItem[], style: string, event: string, wardrobe: WardrobeItem[]) => {
+  const wardrobeHasTop = wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
+  const wardrobeHasBottom = wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
+  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
+
+  const hasTop = sectionSatisfied(selection, 'Верх');
+  const hasBottom = sectionSatisfied(selection, 'Низ');
+  const hasShoes = sectionSatisfied(selection, 'Обувь');
+
+  if (wardrobeHasTop && !hasTop) return false;
+  if (wardrobeHasBottom && !hasBottom) return false;
+  if (wardrobeHasShoes && !hasShoes) return false;
+
+  const strictDisallowedCategories = new Set([
+    ...(strictEventDisallowedCategories[event] || []),
+    ...((eventProfiles[event]?.avoidedCategories || []).slice(0, 5))
+  ]);
+  if (selection.some((item) => strictDisallowedCategories.has(item.category))) return false;
+
+  const strictDisallowedPatterns = new Set(strictStyleDisallowedPatterns[style] || []);
+  if (selection.some((item) => strictDisallowedPatterns.has(item.pattern))) return false;
+
+  return true;
+};
+
+const resolveTuckDecision = (selection: WardrobeItem[], style: string, event: string) => {
+  const top = selection.find((item) => item.section === 'Верх');
+  if (!top || !sectionSatisfied(selection, 'Низ') || onePieceCategories.has(top.category)) {
+    return { mode: 'auto' as TuckMode, tip: null as string | null };
+  }
+
+  if (alwaysUntuckedCategories.has(top.category)) {
+    return {
+      mode: 'untucked' as TuckMode,
+      tip: 'Этот верх лучше носить навыпуск: так силуэт выглядит естественнее.'
+    };
+  }
+
+  let tuckScore = 0;
+  if (['Рубашка', 'Блуза'].includes(top.category)) tuckScore += 2;
+  if (top.category === 'Поло') tuckScore += 1;
+  if (['Офисный', 'Минимализм'].includes(style)) tuckScore += 2;
+  if (style === 'Романтичный') tuckScore += 1;
+  if (['Кэжуал', 'Бохо'].includes(style)) tuckScore -= 1;
+  if (style === 'Спорт-шик') tuckScore -= 2;
+  if (event === 'Совещание') tuckScore += 2;
+  if (['Свидание', 'Вечеринка'].includes(event)) tuckScore += 1;
+  if (event === 'Прогулка') tuckScore -= 1;
+  if (event === 'Спортзал') tuckScore -= 3;
+
+  if (tuckScore >= 4) {
+    return {
+      mode: 'tucked' as TuckMode,
+      tip: 'Лучше заправить верх полностью: образ будет собраннее и аккуратнее.'
+    };
+  }
+  if (tuckScore >= 2) {
+    return {
+      mode: 'tucked' as TuckMode,
+      tip: 'Оптимально сделать частичную заправку спереди — баланс строгости и расслабленности.'
+    };
+  }
+  if (tuckScore <= -2) {
+    return {
+      mode: 'untucked' as TuckMode,
+      tip: 'Лучше оставить верх навыпуск: так лук выглядит живее и комфортнее.'
+    };
+  }
+  return {
+    mode: 'auto' as TuckMode,
+    tip: 'Можно носить и заправленным, и навыпуск: выбери по настроению дня.'
+  };
+};
+
+const buildFitReasons = (
+  selection: WardrobeItem[],
+  style: string,
+  event: string,
+  temp: number | null,
+  wardrobe: WardrobeItem[],
+  totalScore: number
+) => {
+  const styleProfile = styleProfiles[style];
+  const eventProfile = eventProfiles[event];
+  const top = sectionSatisfied(selection, 'Верх');
+  const bottom = sectionSatisfied(selection, 'Низ');
+  const shoes = sectionSatisfied(selection, 'Обувь');
+
+  const reasons: string[] = [];
+
+  if (top && bottom && shoes) {
+    reasons.push('Полный комплект: верх, низ и обувь в одном образе.');
+  }
+
+  const tuckTip = resolveTuckDecision(selection, style, event).tip;
+  if (tuckTip) reasons.push(tuckTip);
+
+  const preferredMatches = selection.filter(
+    (item) =>
+      isIn(item.category, styleProfile?.preferredCategories) || isIn(item.category, eventProfile?.preferredCategories)
+  ).length;
+  if (preferredMatches > 0) {
+    reasons.push(`${preferredMatches} вещ${preferredMatches === 1 ? 'ь' : preferredMatches < 5 ? 'и' : 'ей'} попадает в приоритеты «${style}» и «${event}».`);
+  }
+
+  const avoidedMatches = selection.filter(
+    (item) =>
+      isIn(item.category, styleProfile?.avoidedCategories) || isIn(item.category, eventProfile?.avoidedCategories)
+  ).length;
+  if (avoidedMatches === 0) {
+    reasons.push('Нет конфликтующих категорий для выбранного события.');
+  }
+
+  const seasonTotal = selection.reduce((sum, item) => sum + seasonScore(item, temp), 0);
+  if (typeof temp === 'number') {
+    if (seasonTotal >= 2) reasons.push(`Сезонность подходит под текущую погоду (${temp}°C).`);
+    if (seasonTotal <= -2) reasons.push(`Сезонность спорная для текущей погоды (${temp}°C).`);
+  }
+
+  const groups = Array.from(new Set(selection.map((item) => getColorGroup(item.color))));
+  if (groups.length <= 2) {
+    reasons.push('Палитра образа выглядит цельно по цветовым группам.');
+  }
+
+  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
+  if (wardrobeHasShoes && !shoes) {
+    reasons.push('В гардеробе есть обувь, но в этот вариант она не попала.');
+  }
+
+  if (totalScore >= 55) reasons.push('Сильное совпадение с контекстом — один из лучших вариантов.');
+
+  return reasons.slice(0, 4);
 };
 
 const pickBeauty = (event: string) => beautyMap[event] || beautyMap['Прогулка'];
@@ -161,22 +489,64 @@ const buildLooks = (
   weatherText: string,
   temp: number | null
 ) => {
-  const tops = items.filter((item) => item.section === 'Верх');
-  const bottoms = items.filter((item) => item.section === 'Низ');
-  const shoes = items.filter((item) => item.section === 'Обувь');
-  const outer = items.filter((item) => item.section === 'Верхняя одежда');
-  const bags = items.filter((item) => item.section === 'Сумки');
-
-  const safeTops = tops.length ? tops : items;
-  const safeBottoms = bottoms.length ? bottoms : items;
-  const safeShoes = shoes.length ? shoes : items;
-  const safeOuter = outer.length ? outer : [null];
-  const safeBags = bags.length ? bags : [null];
-
-  const combos: { items: WardrobeItem[]; score: number }[] = [];
+  const styleProfile = styleProfiles[style];
+  const eventProfile = eventProfiles[event];
 
   const uniqueById = (list: WardrobeItem[]) =>
     Array.from(new Map(list.map((item) => [item.id, item])).values());
+
+  const rankForContext = (item: WardrobeItem) =>
+    scoreItemByProfile(item, styleProfile) + scoreItemByProfile(item, eventProfile) + (item.imageUri ? 1 : 0);
+
+  const prioritizeForContext = (list: WardrobeItem[]) => {
+    const unique = uniqueById(list);
+    const withPhotoFirst = [...unique].sort((a, b) => Number(Boolean(b.imageUri)) - Number(Boolean(a.imageUri)));
+    const preferred = withPhotoFirst
+      .filter(
+        (item) =>
+          (isIn(item.category, styleProfile?.preferredCategories) || isIn(item.category, eventProfile?.preferredCategories)) &&
+          !isIn(item.category, styleProfile?.avoidedCategories) &&
+          !isIn(item.category, eventProfile?.avoidedCategories)
+      )
+      .sort((a, b) => rankForContext(b) - rankForContext(a));
+    const neutral = withPhotoFirst
+      .filter(
+        (item) =>
+          !isIn(item.category, styleProfile?.avoidedCategories) && !isIn(item.category, eventProfile?.avoidedCategories)
+      )
+      .sort((a, b) => rankForContext(b) - rankForContext(a));
+    const ranked = (preferred.length ? preferred : neutral.length ? neutral : withPhotoFirst).slice(0, 7);
+    return ranked;
+  };
+
+  const tops = prioritizeForContext(items.filter((item) => item.section === 'Верх'));
+  const bottoms = prioritizeForContext(items.filter((item) => item.section === 'Низ'));
+  const shoes = prioritizeForContext(items.filter((item) => item.section === 'Обувь'));
+  const outer = prioritizeForContext(items.filter((item) => item.section === 'Верхняя одежда'));
+  const bags = prioritizeForContext(items.filter((item) => item.section === 'Сумки'));
+
+  const safeTops = tops.length ? tops : [null];
+  const safeBottoms = bottoms.length ? bottoms : [null];
+  const safeShoes = shoes.length ? shoes : [null];
+  const safeOuter = outer.length ? outer : [null];
+  const safeBags = bags.length ? bags : [null];
+
+  type ScoredCombo = {
+    items: WardrobeItem[];
+    score: number;
+    strictValid: boolean;
+    signature: string;
+    reasons: string[];
+    tuckMode: TuckMode;
+  };
+  const combos: ScoredCombo[] = [];
+
+  const makeSignature = (selection: WardrobeItem[]) => {
+    const bySection = (section: string) => selection.find((item) => item.section === section)?.id || '_';
+    const topId = bySection('Верх') !== '_' ? bySection('Верх') : bySection('Верхняя одежда');
+    const bottomKey = hasOnePiece(selection) ? 'one-piece' : bySection('Низ');
+    return [topId, bottomKey, bySection('Обувь'), bySection('Верхняя одежда')].join('|');
+  };
 
   safeTops.forEach((top) => {
     safeBottoms.forEach((bottom) => {
@@ -185,39 +555,73 @@ const buildLooks = (
           safeBags.forEach((bag) => {
             const selectionRaw = [top, bottom, shoe, outerwear, bag].filter(Boolean) as WardrobeItem[];
             const selection = uniqueById(selectionRaw);
+            if (!selection.length) return;
+
+            const strictValid = evaluateStrictRules(selection, style, event, items);
             const colors = selection.map((item) => item.color);
             const score =
-              scoreColors(colors) +
-              selection.reduce((sum, item) => sum + seasonScore(item, temp), 0) +
-              styleScore(selection, style) +
-              eventScore(selection, event);
-            combos.push({ items: selection, score });
+              scoreColors(colors) * 2 +
+              selection.reduce((sum, item) => sum + seasonScore(item, temp), 0) * 2 +
+              styleScore(selection, style, items) +
+              eventScore(selection, event, items) +
+              scoreCompleteness(selection, items);
+            const tuckDecision = resolveTuckDecision(selection, style, event);
+
+            combos.push({
+              items: selection,
+              score,
+              strictValid,
+              signature: makeSignature(selection),
+              reasons: buildFitReasons(selection, style, event, temp, items, score),
+              tuckMode: tuckDecision.mode
+            });
           });
         });
       });
     });
   });
 
-  combos.sort((a, b) => b.score - a.score);
-  const selected = combos.slice(0, 5).map((combo, index) => {
-    const beauty = pickBeauty(event);
-    return {
-      id: `look-${Date.now()}-${index}`,
-      title: `Лук ${index + 1} · ${style}`,
-      itemIds: uniqueById(combo.items).map((item) => item.id),
-      weather: weatherText || 'Погода недоступна',
-      style,
-      event,
-      makeup: beauty.makeup,
-      hair: beauty.hair
-    };
-  });
+  const ranked = [...combos].sort((a, b) => b.score - a.score);
+  const strictOnly = ranked.filter((combo) => combo.strictValid);
+  const pool = strictOnly.length ? strictOnly : ranked;
+  if (!pool.length) return [];
 
-  return selected.length ? selected : [];
+  const uniqueBySignature: ScoredCombo[] = [];
+  const signatures = new Set<string>();
+  for (const combo of pool) {
+    if (signatures.has(combo.signature)) continue;
+    signatures.add(combo.signature);
+    uniqueBySignature.push(combo);
+  }
+  if (!uniqueBySignature.length) return [];
+
+  const bestScore = uniqueBySignature[0].score;
+  const minAcceptableScore = Math.max(10, bestScore - 10);
+  const qualityCombos = uniqueBySignature.filter((combo) => combo.score >= minAcceptableScore);
+  const finalCombos = qualityCombos.length ? qualityCombos : uniqueBySignature.slice(0, 1);
+
+  const dynamicLimit = bestScore >= 55 ? 5 : bestScore >= 42 ? 4 : bestScore >= 28 ? 3 : 2;
+  const selectedCombos = finalCombos.slice(0, dynamicLimit);
+  const beauty = pickBeauty(event);
+
+  return selectedCombos.map((combo, index) => ({
+    id: `look-${Date.now()}-${index}`,
+    title: `Лук ${index + 1} · ${style}`,
+    itemIds: uniqueById(combo.items).map((item) => item.id),
+    weather: weatherText || 'Погода недоступна',
+    style,
+    event,
+    fitScore: combo.score,
+    fitReasons: combo.reasons,
+    tuckMode: combo.tuckMode,
+    makeup: beauty.makeup,
+    hair: beauty.hair
+  }));
 };
 
 export function OutfitBuilderScreen({
   items,
+  modelUri,
   savedLooks,
   onSavedLooksChange,
   onLooksGenerated,
@@ -340,10 +744,74 @@ export function OutfitBuilderScreen({
       id: Date.now().toString(),
       name,
       itemIds: look.itemIds,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      fitScore: look.fitScore,
+      fitReasons: look.fitReasons,
+      tuckMode: look.tuckMode,
+      tryOnImageUri: look.tryOnImageUri,
+      tryOnWarning: look.tryOnWarning,
+      tryOnUpdatedAt: look.tryOnUpdatedAt,
+      tryOnQualityMode: look.tryOnQualityMode,
+      tryOnHistory: look.tryOnHistory
     };
     onSavedLooksChange([newLook, ...savedLooks]);
     setActiveTab('looks');
+  };
+
+  const updateSavedLookTryOn = (
+    lookId: string,
+    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+  ) => {
+    onSavedLooksChange(
+      savedLooks.map((look) => {
+        if (look.id !== lookId) return look;
+        const historyItem: TryOnHistoryItem = {
+          id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
+          imageUri: payload.imageUri,
+          updatedAt: payload.updatedAt,
+          tuckMode: payload.tuckMode,
+          qualityMode: payload.qualityMode
+        };
+        if (payload.warning) historyItem.warning = payload.warning;
+        return {
+          ...look,
+          tuckMode: payload.tuckMode,
+          tryOnImageUri: payload.imageUri,
+          tryOnWarning: payload.warning,
+          tryOnUpdatedAt: payload.updatedAt,
+          tryOnQualityMode: payload.qualityMode,
+          tryOnHistory: [historyItem, ...(look.tryOnHistory || [])].slice(0, 8)
+        };
+      })
+    );
+  };
+
+  const updateGeneratedLookTryOn = (
+    lookId: string,
+    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+  ) => {
+    setLooks((prev) =>
+      prev.map((look) => {
+        if (look.id !== lookId) return look;
+        const historyItem: TryOnHistoryItem = {
+          id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
+          imageUri: payload.imageUri,
+          updatedAt: payload.updatedAt,
+          tuckMode: payload.tuckMode,
+          qualityMode: payload.qualityMode
+        };
+        if (payload.warning) historyItem.warning = payload.warning;
+        return {
+          ...look,
+          tuckMode: payload.tuckMode,
+          tryOnImageUri: payload.imageUri,
+          tryOnWarning: payload.warning,
+          tryOnUpdatedAt: payload.updatedAt,
+          tryOnQualityMode: payload.qualityMode,
+          tryOnHistory: [historyItem, ...(look.tryOnHistory || [])].slice(0, 8)
+        };
+      })
+    );
   };
 
   const openEditLook = (look: SavedLook) => {
@@ -372,7 +840,15 @@ export function OutfitBuilderScreen({
         ? {
             ...look,
             name: editName.trim() || look.name,
-            itemIds: selection.map((item) => item.id)
+            itemIds: selection.map((item) => item.id),
+            fitScore: undefined,
+            fitReasons: undefined,
+            tuckMode: undefined,
+            tryOnImageUri: undefined,
+            tryOnWarning: undefined,
+            tryOnUpdatedAt: undefined,
+            tryOnQualityMode: undefined,
+            tryOnHistory: undefined
           }
         : look
     );
@@ -420,6 +896,21 @@ export function OutfitBuilderScreen({
       </ScrollView>
     </View>
   );
+
+  const renderFitReasons = (reasons?: string[], score?: number) => {
+    if (!reasons?.length && typeof score !== 'number') return null;
+    return (
+      <View style={styles.reasonBlock}>
+        <Text style={styles.reasonTitle}>Почему этот лук подходит</Text>
+        {typeof score === 'number' ? <Text style={styles.reasonScore}>Оценка совпадения: {Math.round(score)}</Text> : null}
+        {(reasons || []).map((reason, index) => (
+          <Text key={`${reason}-${index}`} style={styles.reasonText}>
+            • {reason}
+          </Text>
+        ))}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -488,8 +979,9 @@ export function OutfitBuilderScreen({
             </View>
 
             <AppPressable style={styles.generateButton} onPress={handleGenerateLooks}>
-              <Text style={styles.generateText}>Сгенерировать 3-5 образов</Text>
+              <Text style={styles.generateText}>Сгенерировать подходящие образы</Text>
             </AppPressable>
+            <Text style={styles.generateHint}>Покажем только те варианты, которые реально подходят под стиль и событие.</Text>
 
             <View style={styles.manualWrap}>
               <Text style={styles.manualTitle}>Собери образ вручную</Text>
@@ -542,11 +1034,22 @@ export function OutfitBuilderScreen({
                     </View>
                     <Text style={styles.lookWeather}>{look.weather}</Text>
                     <LookPreview items={lookItems} />
+                    <AiTryOnPreview
+                      modelUri={modelUri}
+                      items={lookItems}
+                      tuckMode={look.tuckMode}
+                      resultUri={look.tryOnImageUri}
+                      warningMessage={look.tryOnWarning}
+                      qualityMode={look.tryOnQualityMode}
+                      history={look.tryOnHistory}
+                      onGenerated={(payload) => updateGeneratedLookTryOn(look.id, payload)}
+                    />
                     {lookItems.map((item) => (
                       <Text key={item.id} style={styles.lookItem}>
                         • {item.name}
                       </Text>
                     ))}
+                    {renderFitReasons(look.fitReasons, look.fitScore)}
                     <View style={styles.beautyBlock}>
                       <Text style={styles.beautyTitle}>Макияж</Text>
                       <Text style={styles.beautyText}>{look.makeup}</Text>
@@ -582,11 +1085,22 @@ export function OutfitBuilderScreen({
                     </View>
                   </View>
                   <LookPreview items={lookItems} />
+                  <AiTryOnPreview
+                    modelUri={modelUri}
+                    items={lookItems}
+                    tuckMode={look.tuckMode}
+                    resultUri={look.tryOnImageUri}
+                    warningMessage={look.tryOnWarning}
+                    qualityMode={look.tryOnQualityMode}
+                    history={look.tryOnHistory}
+                    onGenerated={(payload) => updateSavedLookTryOn(look.id, payload)}
+                  />
                   {lookItems.map((item) => (
                     <Text key={item.id} style={styles.lookItem}>
                       • {item.name}
                     </Text>
                   ))}
+                  {renderFitReasons(look.fitReasons, look.fitScore)}
                 </View>
               );
             })}
@@ -709,6 +1223,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700'
+  },
+  generateHint: {
+    color: COLORS.muted,
+    fontSize: 12,
+    marginTop: -4,
+    marginBottom: 12
   },
   manualWrap: {
     backgroundColor: COLORS.card,
@@ -871,6 +1391,31 @@ const styles = StyleSheet.create({
   lookItem: {
     color: COLORS.text,
     fontSize: 13
+  },
+  reasonBlock: {
+    marginTop: 6,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#F6F2EA',
+    borderWidth: 1,
+    borderColor: '#E6DED1',
+    gap: 2
+  },
+  reasonTitle: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  reasonScore: {
+    color: COLORS.muted,
+    fontSize: 11,
+    marginBottom: 2
+  },
+  reasonText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 16
   },
   beautyBlock: {
     marginTop: 6,

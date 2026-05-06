@@ -36,6 +36,20 @@ const colorTypes = [
   'Холодная зима'
 ];
 
+type CropPreset = {
+  key: string;
+  label: string;
+  allowsEditing: boolean;
+  aspect?: [number, number];
+};
+
+const profileCropPresets: CropPreset[] = [
+  { key: 'nocrop', label: 'Без обрезки (оригинал)', allowsEditing: false },
+  { key: 'fullbody', label: 'Полный рост 3:4', allowsEditing: true, aspect: [3, 4] },
+  { key: 'tight', label: 'Плотный кадр 4:5', allowsEditing: true, aspect: [4, 5] },
+  { key: 'square', label: 'Квадрат 1:1', allowsEditing: true, aspect: [1, 1] }
+];
+
 export function ProfileScreen({
   displayName,
   contact,
@@ -50,6 +64,7 @@ export function ProfileScreen({
   const [bodyType, setBodyType] = useState('Не задано');
   const [colorType, setColorType] = useState('Не задано');
   const [activeModal, setActiveModal] = useState<'body' | 'color' | null>(null);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const rows = [
     { label: 'Тип фигуры', value: bodyType, key: 'body' as const },
@@ -58,6 +73,14 @@ export function ProfileScreen({
     { label: 'Способ входа', value: authMethod }
   ];
 
+  const chooseCropPreset = () =>
+    new Promise<CropPreset | null>((resolve) => {
+      Alert.alert('Кадрирование фото', 'Выбери удобный формат выделенной области.', [
+        ...profileCropPresets.map((preset) => ({ text: preset.label, onPress: () => resolve(preset) })),
+        { text: 'Отмена', style: 'cancel', onPress: () => resolve(null) }
+      ]);
+    });
+
   const pickImageFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -65,8 +88,12 @@ export function ProfileScreen({
       return null;
     }
 
+    const preset = await chooseCropPreset();
+    if (!preset) return null;
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
+      allowsEditing: preset.allowsEditing,
+      aspect: preset.aspect,
       quality: 0.8,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
@@ -119,6 +146,20 @@ export function ProfileScreen({
     );
   };
 
+  const renderPreviewModal = () => {
+    if (!previewUri) return null;
+    return (
+      <Modal transparent animationType="fade" visible onRequestClose={() => setPreviewUri(null)}>
+        <View style={styles.previewBackdrop}>
+          <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" />
+          <AppPressable style={styles.previewClose} onPress={() => setPreviewUri(null)}>
+            <Text style={styles.previewCloseText}>Закрыть</Text>
+          </AppPressable>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <ScreenTitle
@@ -127,6 +168,7 @@ export function ProfileScreen({
       />
 
       {renderModal()}
+      {renderPreviewModal()}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileCard}>
@@ -149,9 +191,9 @@ export function ProfileScreen({
             Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем
             накладывать избранные образы.
           </Text>
-          <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
+          <AppPressable style={styles.modelPreview} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}>
             {modelUri ? (
-              <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="cover" />
+              <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="contain" />
             ) : (
               <Text style={styles.modelPlaceholder}>+ Добавить фото модели</Text>
             )}
@@ -246,7 +288,7 @@ const styles = StyleSheet.create({
     lineHeight: 17
   },
   modelPreview: {
-    height: 260,
+    height: 420,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#F2EEE6',
@@ -361,5 +403,28 @@ const styles = StyleSheet.create({
   modalCloseText: {
     color: COLORS.muted,
     fontSize: 14
+  },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    padding: 16
+  },
+  previewImageFull: {
+    width: '100%',
+    height: '86%'
+  },
+  previewClose: {
+    alignSelf: 'center',
+    marginTop: 12,
+    backgroundColor: '#EFEAE1',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  previewCloseText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

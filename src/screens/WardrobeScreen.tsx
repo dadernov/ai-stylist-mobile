@@ -29,9 +29,119 @@ type WardrobeScreenProps = {
 const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Верхняя одежда'];
 const categoryFilters = ['Все', ...sectionOptions];
 
-const categoryOptions = ['Платье', 'Юбка', 'Джинсы', 'Футболка', 'Пальто', 'Обувь', 'Сумка'];
+const categoryOptions = [
+  'Футболка',
+  'Поло',
+  'Лонгслив',
+  'Рубашка',
+  'Блуза',
+  'Топ',
+  'Майка',
+  'Водолазка',
+  'Свитер',
+  'Худи',
+  'Свитшот',
+  'Кардиган',
+  'Жилет',
+  'Пиджак',
+  'Бомбер',
+  'Куртка',
+  'Пальто',
+  'Тренч',
+  'Плащ',
+  'Пуховик',
+  'Парка',
+  'Платье',
+  'Сарафан',
+  'Комбинезон',
+  'Юбка',
+  'Мини-юбка',
+  'Миди-юбка',
+  'Макси-юбка',
+  'Джинсы',
+  'Брюки',
+  'Шорты',
+  'Леггинсы',
+  'Джоггеры',
+  'Обувь',
+  'Кроссовки',
+  'Кеды',
+  'Лоферы',
+  'Туфли',
+  'Ботинки',
+  'Сандалии',
+  'Сапоги',
+  'Балетки',
+  'Сумка',
+  'Рюкзак',
+  'Клатч'
+];
 const seasonOptions = ['Лето', 'Зима', 'Демисезон', 'Круглый год'];
 const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный'];
+
+type CropPreset = {
+  key: string;
+  label: string;
+  allowsEditing: boolean;
+  aspect?: [number, number];
+};
+
+const cropPresets: CropPreset[] = [
+  { key: 'nocrop', label: 'Без обрезки (оригинал)', allowsEditing: false },
+  { key: 'portrait', label: 'Портрет 3:4 (для человека)', allowsEditing: true, aspect: [3, 4] },
+  { key: 'garment', label: 'Вещь 4:5 (для одежды)', allowsEditing: true, aspect: [4, 5] },
+  { key: 'square', label: 'Квадрат 1:1', allowsEditing: true, aspect: [1, 1] }
+];
+
+const sectionByCategory: Record<string, string> = {
+  Футболка: 'Верх',
+  Поло: 'Верх',
+  Лонгслив: 'Верх',
+  Рубашка: 'Верх',
+  Блуза: 'Верх',
+  Топ: 'Верх',
+  Майка: 'Верх',
+  Водолазка: 'Верх',
+  Свитер: 'Верх',
+  Худи: 'Верх',
+  Свитшот: 'Верх',
+  Кардиган: 'Верх',
+  Жилет: 'Верх',
+  Пиджак: 'Верхняя одежда',
+  Бомбер: 'Верхняя одежда',
+  Куртка: 'Верхняя одежда',
+  Пальто: 'Верхняя одежда',
+  Тренч: 'Верхняя одежда',
+  Плащ: 'Верхняя одежда',
+  Пуховик: 'Верхняя одежда',
+  Парка: 'Верхняя одежда',
+  Платье: 'Верх',
+  Сарафан: 'Верх',
+  Комбинезон: 'Верх',
+  Юбка: 'Низ',
+  'Мини-юбка': 'Низ',
+  'Миди-юбка': 'Низ',
+  'Макси-юбка': 'Низ',
+  Джинсы: 'Низ',
+  Брюки: 'Низ',
+  Шорты: 'Низ',
+  Леггинсы: 'Низ',
+  Джоггеры: 'Низ',
+  Обувь: 'Обувь',
+  Кроссовки: 'Обувь',
+  Кеды: 'Обувь',
+  Лоферы: 'Обувь',
+  Туфли: 'Обувь',
+  Ботинки: 'Обувь',
+  Сандалии: 'Обувь',
+  Сапоги: 'Обувь',
+  Балетки: 'Обувь',
+  Сумка: 'Сумки',
+  Рюкзак: 'Сумки',
+  Клатч: 'Сумки'
+};
+
+const getSectionByCategory = (category: string) => sectionByCategory[category] || 'Верх';
 
 const namedColors = [
   { name: 'Белый', hex: '#FFFFFF' },
@@ -134,6 +244,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [editColor, setEditColor] = useState(colorOptions[0]);
   const [editSeason, setEditSeason] = useState(seasonOptions[0]);
   const [editPattern, setEditPattern] = useState(patternOptions[0]);
+  const [editSection, setEditSection] = useState(sectionOptions[0]);
   const [editName, setEditName] = useState('');
   const [editSize, setEditSize] = useState('');
   const [editStore, setEditStore] = useState('');
@@ -145,7 +256,15 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     return items.filter((item) => item.section === activeFilter);
   }, [items, activeFilter]);
 
-  const requestCamera = async () => {
+  const chooseCropPreset = () =>
+    new Promise<CropPreset | null>((resolve) => {
+      Alert.alert('Кадрирование', 'Выбери форму выделенной области.', [
+        ...cropPresets.map((preset) => ({ text: preset.label, onPress: () => resolve(preset) })),
+        { text: 'Отмена', style: 'cancel', onPress: () => resolve(null) }
+      ]);
+    });
+
+  const requestCamera = async (preset: CropPreset) => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Нужен доступ к камере', 'Разреши доступ, чтобы сфотографировать вещь.');
@@ -153,7 +272,8 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
+      allowsEditing: preset.allowsEditing,
+      aspect: preset.aspect,
       quality: 0.8,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
@@ -162,7 +282,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     return result.assets[0]?.uri ?? null;
   };
 
-  const requestGallery = async () => {
+  const requestGallery = async (preset: CropPreset) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Нужен доступ к галерее', 'Разреши доступ, чтобы выбрать фото вещи.');
@@ -170,7 +290,8 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
+      allowsEditing: preset.allowsEditing,
+      aspect: preset.aspect,
       quality: 0.8,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
@@ -190,8 +311,11 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
   const requestPhoto = async () => {
     const source = await choosePhotoSource();
-    if (source === 'camera') return requestCamera();
-    if (source === 'gallery') return requestGallery();
+    if (!source) return null;
+    const preset = await chooseCropPreset();
+    if (!preset) return null;
+    if (source === 'camera') return requestCamera(preset);
+    if (source === 'gallery') return requestGallery(preset);
     return null;
   };
 
@@ -216,6 +340,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
   const handleSaveItem = () => {
     if (!draftPhoto) return;
+    const resolvedSection = draftSection || getSectionByCategory(draftCategory);
     const newItem: WardrobeItem = {
       id: Date.now().toString(),
       name: draftName.trim() || 'Новая вещь',
@@ -223,7 +348,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       color: draftColor || 'Не определено',
       season: draftSeason || 'Не определено',
       pattern: draftPattern || 'Не определено',
-      section: draftSection,
+      section: resolvedSection,
       tags: draftPalette.length ? draftPalette : [],
       imageUri: draftPhoto,
       size: draftSize,
@@ -256,7 +381,10 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         .filter((name) => name && name !== 'Не определено');
       const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
       setDraftPalette(uniquePalette);
-      if (result.category) setDraftCategory(result.category);
+      if (result.category) {
+        setDraftCategory(result.category);
+        setDraftSection(getSectionByCategory(result.category));
+      }
       if (result.season) setDraftSeason(result.season);
       if (result.pattern) setDraftPattern(result.pattern);
       if (result.bgRemovedBase64) {
@@ -281,6 +409,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     setEditColor(item.color || colorOptions[0]);
     setEditSeason(item.season || seasonOptions[0]);
     setEditPattern(item.pattern || patternOptions[0]);
+    setEditSection(item.section || sectionOptions[0]);
     setEditSize(item.size || '');
     setEditStore(item.store || '');
     setEditMaterial(item.material || '');
@@ -299,6 +428,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
               color: editColor,
               season: editSeason,
               pattern: editPattern,
+              section: editSection,
               size: editSize,
               store: editStore,
               material: editMaterial
@@ -324,6 +454,16 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     const photo = await requestPhoto();
     if (!photo) return;
     onItemsChange(items.map((item) => (item.id === id ? { ...item, imageUri: photo } : item)));
+  };
+
+  const handleDraftCategoryChange = (value: string) => {
+    setDraftCategory(value);
+    setDraftSection(getSectionByCategory(value));
+  };
+
+  const handleEditCategoryChange = (value: string) => {
+    setEditCategory(value);
+    setEditSection(getSectionByCategory(value));
   };
 
   const renderChips = (options: string[], selected: string, onSelect: (value: string) => void) => (
@@ -453,7 +593,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   <Text style={styles.aiHint}>AI цвет: {draftColor}</Text>
                 ) : null}
                 <Text style={styles.modalLabel}>Категория</Text>
-                {renderChips(categoryOptions, draftCategory, setDraftCategory)}
+                {renderChips(categoryOptions, draftCategory, handleDraftCategoryChange)}
                 <Text style={styles.modalLabel}>Цвет</Text>
                 {renderChips(colorOptions, draftColor || colorOptions[0], setDraftColor)}
                 <Text style={styles.modalLabel}>Сезон</Text>
@@ -522,13 +662,15 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   onChangeText={setEditName}
                 />
                 <Text style={styles.modalLabel}>Категория</Text>
-                {renderChips(categoryOptions, editCategory, setEditCategory)}
+                {renderChips(categoryOptions, editCategory, handleEditCategoryChange)}
                 <Text style={styles.modalLabel}>Цвет</Text>
                 {renderChips(colorOptions, editColor, setEditColor)}
                 <Text style={styles.modalLabel}>Сезон</Text>
                 {renderChips(seasonOptions, editSeason, setEditSeason)}
                 <Text style={styles.modalLabel}>Паттерн</Text>
                 {renderChips(patternOptions, editPattern, setEditPattern)}
+                <Text style={styles.modalLabel}>Раздел</Text>
+                {renderChips(sectionOptions, editSection, setEditSection)}
                 <Text style={styles.modalLabel}>Размер</Text>
                 <TextInput
                   style={styles.modalInput}

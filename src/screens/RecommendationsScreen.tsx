@@ -46,9 +46,28 @@ const fallbackCards = [
   }
 ];
 
+const styleTips: Record<string, string[]> = {
+  Кэжуал: ['Сочетай 1 базовую и 1 акцентную вещь.', 'Лучше работают однотонные и клетчатые сочетания.'],
+  'Спорт-шик': ['Добавляй чистые спортивные силуэты.', 'Избегай строгих туфель и перегруженных фактур.'],
+  Романтичный: ['Ставь в центр мягкие ткани и плавные линии.', 'Лучше смотрятся светлые и теплые оттенки.'],
+  Бохо: ['Комбинируй фактуры: хлопок, деним, трикотаж.', 'Используй естественные и приглушенные тона.'],
+  Минимализм: ['Держи палитру в 2-3 оттенках.', 'Максимум один акцентный элемент в луке.'],
+  Офисный: ['Выбирай структурный верх и чистый низ.', 'Палитра нейтральная или холодная: белый, графит, синий.']
+};
+
+const eventTips: Record<string, string[]> = {
+  Свидание: ['Силуэт должен быть аккуратным и не перегруженным.', 'Добавь одну более выразительную вещь по цвету.'],
+  Прогулка: ['Ставка на комфорт: кеды/кроссовки и дышащие ткани.', 'Можно больше свободы в слоях и фактурах.'],
+  Совещание: ['Лучше однотонный или полосатый верх.', 'Избегай спортивных и слишком расслабленных категорий.'],
+  Вечеринка: ['Разрешен более контрастный верх или низ.', 'Лучше выбрать более выразительную обувь.'],
+  Спортзал: ['Фокус на функциональности и удобной посадке.', 'Лучше спортивная обувь и простой однотонный верх.']
+};
+
 export function RecommendationsScreen({ looks, context }: RecommendationsProps) {
   const hasContext = context?.style && context?.event;
   const beauty = hasContext ? beautyMap[context.event] || beautyMap['Прогулка'] : null;
+  const styleCardTips = hasContext ? styleTips[context.style] || [] : [];
+  const eventCardTips = hasContext ? eventTips[context.event] || [] : [];
 
   return (
     <View style={styles.container}>
@@ -71,14 +90,37 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Последние луки</Text>
             {looks.slice(0, 3).map((look) => (
-              <Text key={look.id} style={styles.cardText}>
-                • {look.title}
+              <View key={look.id} style={styles.lookReasonRow}>
+                <Text style={styles.cardText}>• {look.title}</Text>
+                {look.fitReasons?.[0] ? <Text style={styles.cardHint}>↳ {look.fitReasons[0]}</Text> : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {hasContext && styleCardTips.length ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Под стиль: {context.style}</Text>
+            {styleCardTips.map((tip) => (
+              <Text key={tip} style={styles.cardText}>
+                • {tip}
               </Text>
             ))}
           </View>
         ) : null}
 
-        {fallbackCards.map((card) => (
+        {hasContext && eventCardTips.length ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Под событие: {context.event}</Text>
+            {eventCardTips.map((tip) => (
+              <Text key={tip} style={styles.cardText}>
+                • {tip}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+
+        {(hasContext ? [] : fallbackCards).map((card) => (
           <View key={card.title} style={styles.card}>
             <Text style={styles.cardTitle}>{card.title}</Text>
             <Text style={styles.cardText}>{card.text}</Text>
@@ -119,5 +161,8 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontSize: 12,
     marginTop: 4
+  },
+  lookReasonRow: {
+    gap: 2
   }
 });

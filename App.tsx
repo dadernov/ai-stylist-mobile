@@ -10,7 +10,7 @@ import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { COLORS } from './src/constants/theme';
-import { WardrobeItem, wardrobeItems } from './src/data/mock';
+import { WardrobeItem } from './src/data/mock';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 
@@ -31,7 +31,8 @@ const STORAGE_KEYS = {
   favorites: 'favoriteLooks',
   lastContext: 'lastContext',
   lastLooks: 'lastLooks',
-  savedLooks: 'savedLooks'
+  savedLooks: 'savedLooks',
+  onboardingSeen: 'onboardingSeen'
 };
 
 const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
@@ -46,24 +47,78 @@ const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?
 textWithDefaults.defaultProps = textWithDefaults.defaultProps || {};
 textWithDefaults.defaultProps.allowFontScaling = false;
 
+const LEGACY_DEFAULT_ITEM_SIGNATURES = new Set([
+  '1|Белая футболка oversize|Футболка|Верх',
+  '2|Синие джинсы mom-fit|Джинсы|Низ',
+  '3|Черный жакет|Пиджак|Верхняя одежда',
+  '4|Бежевые лоферы|Обувь|Обувь'
+]);
+
+const isLegacyDefaultItem = (item: WardrobeItem) =>
+  LEGACY_DEFAULT_ITEM_SIGNATURES.has(`${item.id}|${item.name}|${item.category}|${item.section}`);
+
+const normalizeGeneratedLook = (look: GeneratedLook): GeneratedLook => ({
+  ...look,
+  itemIds: look.itemIds ?? [],
+  fitScore: typeof look.fitScore === 'number' ? look.fitScore : undefined,
+  fitReasons: Array.isArray(look.fitReasons) ? look.fitReasons.filter((item) => typeof item === 'string') : undefined,
+  tuckMode:
+    look.tuckMode === 'tucked' || look.tuckMode === 'untucked' || look.tuckMode === 'auto'
+      ? look.tuckMode
+      : undefined,
+  tryOnImageUri: typeof look.tryOnImageUri === 'string' ? look.tryOnImageUri : undefined,
+  tryOnWarning: typeof look.tryOnWarning === 'string' ? look.tryOnWarning : undefined,
+  tryOnUpdatedAt: typeof look.tryOnUpdatedAt === 'number' ? look.tryOnUpdatedAt : undefined,
+  tryOnQualityMode: look.tryOnQualityMode === 'fast' || look.tryOnQualityMode === 'quality' ? look.tryOnQualityMode : undefined,
+  tryOnHistory: Array.isArray(look.tryOnHistory)
+    ? look.tryOnHistory.filter((item) => typeof item?.imageUri === 'string' && typeof item?.updatedAt === 'number')
+    : undefined
+});
+
+const normalizeSavedLook = (look: SavedLook): SavedLook => ({
+  ...look,
+  itemIds: look.itemIds ?? [],
+  fitScore: typeof look.fitScore === 'number' ? look.fitScore : undefined,
+  fitReasons: Array.isArray(look.fitReasons) ? look.fitReasons.filter((item) => typeof item === 'string') : undefined,
+  tuckMode:
+    look.tuckMode === 'tucked' || look.tuckMode === 'untucked' || look.tuckMode === 'auto'
+      ? look.tuckMode
+      : undefined,
+  tryOnImageUri: typeof look.tryOnImageUri === 'string' ? look.tryOnImageUri : undefined,
+  tryOnWarning: typeof look.tryOnWarning === 'string' ? look.tryOnWarning : undefined,
+  tryOnUpdatedAt: typeof look.tryOnUpdatedAt === 'number' ? look.tryOnUpdatedAt : undefined,
+  tryOnQualityMode: look.tryOnQualityMode === 'fast' || look.tryOnQualityMode === 'quality' ? look.tryOnQualityMode : undefined,
+  tryOnHistory: Array.isArray(look.tryOnHistory)
+    ? look.tryOnHistory.filter((item) => typeof item?.imageUri === 'string' && typeof item?.updatedAt === 'number')
+    : undefined
+});
+
 function Onboarding({ onClose }: { onClose: () => void }) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.onboardingWrap}>
         <Text style={styles.eyebrow}>AI СТИЛИСТ</Text>
-        <Text style={styles.heroTitle}>Подберем образ за 60 секунд</Text>
+        <Text style={styles.heroTitle}>Собери гардероб и примеряй луки на себе</Text>
         <Text style={styles.heroSubtitle}>
-          Загружай вещи, выбирай стиль и мероприятие, получай готовые луки с учетом погоды.
+          Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает
+          сгенерированную примерку.
         </Text>
 
         <View style={styles.stepsCard}>
-          <Text style={styles.stepItem}>1. Добавь фото вещей в гардероб</Text>
-          <Text style={styles.stepItem}>2. Укажи стиль и формат мероприятия</Text>
-          <Text style={styles.stepItem}>3. Получи 3-5 готовых образов</Text>
+          <Text style={styles.stepTitle}>Как начать</Text>
+          <Text style={styles.stepItem}>1. В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.</Text>
+          <Text style={styles.stepItem}>2. В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.</Text>
+          <Text style={styles.stepItem}>3. В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.</Text>
+          <Text style={styles.stepItem}>4. Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.</Text>
+        </View>
+
+        <View style={styles.tipCard}>
+          <Text style={styles.tipTitle}>Для лучшего результата</Text>
+          <Text style={styles.tipText}>Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.</Text>
         </View>
 
         <AppPressable style={styles.primaryButton} onPress={onClose}>
-          <Text style={styles.primaryButtonText}>Начать</Text>
+          <Text style={styles.primaryButtonText}>Понятно, начать</Text>
         </AppPressable>
       </ScrollView>
     </SafeAreaView>
@@ -80,7 +135,7 @@ function AppContent() {
   const [authMethod, setAuthMethod] = useState('Не выбран');
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
-  const [items, setItems] = useState<WardrobeItem[]>(wardrobeItems);
+  const [items, setItems] = useState<WardrobeItem[]>([]);
   const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
   const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
   const [lastContext, setLastContext] = useState<{ style: string; event: string; weather: string }>({
@@ -97,14 +152,17 @@ function AppContent() {
   useEffect(() => {
     const hydrate = async () => {
       try {
-        const [profileRaw, itemsRaw, favoritesRaw, contextRaw, looksRaw, savedRaw] = await Promise.all([
+        const [profileRaw, itemsRaw, favoritesRaw, contextRaw, looksRaw, savedRaw, onboardingSeenRaw] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.profile),
           AsyncStorage.getItem(STORAGE_KEYS.wardrobe),
           AsyncStorage.getItem(STORAGE_KEYS.favorites),
           AsyncStorage.getItem(STORAGE_KEYS.lastContext),
           AsyncStorage.getItem(STORAGE_KEYS.lastLooks),
-          AsyncStorage.getItem(STORAGE_KEYS.savedLooks)
+          AsyncStorage.getItem(STORAGE_KEYS.savedLooks),
+          AsyncStorage.getItem(STORAGE_KEYS.onboardingSeen)
         ]);
+
+        setOnboardingVisible(onboardingSeenRaw !== 'true');
 
         if (profileRaw) {
           const profile: ProfileState = JSON.parse(profileRaw);
@@ -118,15 +176,17 @@ function AppContent() {
 
         if (itemsRaw) {
           const storedItems: WardrobeItem[] = JSON.parse(itemsRaw);
-          setItems(storedItems);
+          const cleanedItems = (Array.isArray(storedItems) ? storedItems : []).filter(
+            (item) => !isLegacyDefaultItem(item)
+          );
+          setItems(cleanedItems);
         }
 
         if (favoritesRaw) {
           const storedFavorites: GeneratedLook[] = JSON.parse(favoritesRaw);
-          const normalizedFavorites = storedFavorites.map((look) => ({
-            ...look,
-            itemIds: look.itemIds ?? []
-          }));
+          const normalizedFavorites = (Array.isArray(storedFavorites) ? storedFavorites : []).map(
+            normalizeGeneratedLook
+          );
           setFavoriteLooks(normalizedFavorites);
         }
 
@@ -137,16 +197,13 @@ function AppContent() {
 
         if (looksRaw) {
           const storedLooks: GeneratedLook[] = JSON.parse(looksRaw);
-          const normalized = storedLooks.map((look) => ({
-            ...look,
-            itemIds: look.itemIds ?? []
-          }));
+          const normalized = (Array.isArray(storedLooks) ? storedLooks : []).map(normalizeGeneratedLook);
           setLastLooks(normalized);
         }
 
         if (savedRaw) {
           const storedSaved: SavedLook[] = JSON.parse(savedRaw);
-          setSavedLooks(storedSaved);
+          setSavedLooks((Array.isArray(storedSaved) ? storedSaved : []).map(normalizeSavedLook));
         }
       } catch (error) {
         console.warn('Failed to load local state', error);
@@ -227,6 +284,13 @@ function AppContent() {
     }, 1400);
   };
 
+  const closeOnboarding = () => {
+    setOnboardingVisible(false);
+    AsyncStorage.setItem(STORAGE_KEYS.onboardingSeen, 'true').catch((error) =>
+      console.warn('Failed to save onboarding state', error)
+    );
+  };
+
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
     if (activeTab === 'wardrobe') {
@@ -236,6 +300,7 @@ function AppContent() {
       return (
         <OutfitBuilderScreen
           items={items}
+          modelUri={tryOnModelUri}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
           onLooksGenerated={(looks, context) => {
@@ -256,7 +321,6 @@ function AppContent() {
         <FavoritesScreen
           looks={favoriteLooks}
           items={items}
-          modelUri={tryOnModelUri}
           onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
         />
       );
@@ -299,7 +363,7 @@ function AppContent() {
   if (isOnboardingVisible) {
     return (
       <>
-        <Onboarding onClose={() => setOnboardingVisible(false)} />
+        <Onboarding onClose={closeOnboarding} />
         <StatusBar style="dark" />
       </>
     );
@@ -420,14 +484,37 @@ const styles = StyleSheet.create({
   },
   stepsCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 14,
     padding: 16,
     gap: 10
+  },
+  stepTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '700'
   },
   stepItem: {
     color: COLORS.text,
     fontSize: 15,
     lineHeight: 21
+  },
+  tipCard: {
+    backgroundColor: '#F5F1EA',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 14,
+    gap: 6
+  },
+  tipTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  tipText: {
+    color: COLORS.muted,
+    fontSize: 13,
+    lineHeight: 18
   },
   primaryButton: {
     marginTop: 8,

@@ -79,3 +79,43 @@ Response:
   "sourceHeight": 1920
 }
 ```
+
+`POST /tryon-generate` (multipart form: `person_file`, `garment_file`) - генеративная примерка через FASHN API.
+
+`POST /tryon-generate-look` (multipart form: `person_file`, `top_file?`, `bottom_file?`, `shoes_file?`) -
+генерирует полный образ в одной итоговой картинке (слои применяются последовательно: верх -> низ -> обувь).
+
+Нужны переменные окружения:
+
+```bash
+export FASHN_API_KEY=...
+export FASHN_MODEL_NAME=tryon-v1.6
+# для tryon-v1.6:
+export FASHN_MODE=balanced
+export FASHN_CATEGORY=auto
+export FASHN_GARMENT_PHOTO_TYPE=auto
+export FASHN_SEGMENTATION_FREE=false
+export FASHN_NUM_SAMPLES=1
+export FASHN_CATEGORY_TOP_CANDIDATES=tops,auto
+export FASHN_CATEGORY_BOTTOM_CANDIDATES=bottoms,auto
+export FASHN_CATEGORY_SHOES_CANDIDATES=auto
+# для полного лука (tryon-generate-look) рекомендуем:
+export FASHN_LOOK_MODEL_NAME=tryon-max
+export FASHN_LOOK_MODE=quality
+# если используешь tryon-max:
+# export FASHN_LOOK_GENERATION_MODE=balanced
+# для tryon-max (опционально):
+# export FASHN_MODEL_NAME=tryon-max
+# export FASHN_GENERATION_MODE=balanced
+# export FASHN_RESOLUTION=1k
+```
+
+Response:
+```json
+{
+  "status": "succeeded",
+  "predictionId": "....",
+  "outputUrl": "https://...",
+  "webUrl": "https://..."
+}
+```

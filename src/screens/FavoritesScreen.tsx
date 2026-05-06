@@ -1,20 +1,20 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { COLORS } from '../constants/theme';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
 import { AppPressable } from '../components/AppPressable';
-import { TryOnPreview } from '../components/TryOnPreview';
 
 type FavoritesScreenProps = {
   looks: GeneratedLook[];
   items: WardrobeItem[];
-  modelUri?: string;
   onRemove: (id: string) => void;
 };
 
-export function FavoritesScreen({ looks, items, modelUri, onRemove }: FavoritesScreenProps) {
+export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps) {
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
   const itemsById = Object.fromEntries(items.map((item) => [item.id, item]));
   return (
     <View style={styles.container}>
@@ -41,8 +41,16 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove }: FavoritesS
               <Text style={styles.cardMeta}>{look.weather}</Text>
               <Text style={styles.blockTitle}>Образ из вещей</Text>
               <LookPreview items={lookItems} />
-              <Text style={styles.blockTitle}>Образ на манекене</Text>
-              <TryOnPreview modelUri={modelUri} items={lookItems} />
+              <Text style={styles.blockTitle}>Сгенерированный образ</Text>
+              {look.tryOnImageUri ? (
+                <AppPressable style={styles.generatedWrap} onPress={() => setPreviewUri(look.tryOnImageUri || null)}>
+                  <Image source={{ uri: look.tryOnImageUri }} style={styles.generatedImage} resizeMode="contain" />
+                </AppPressable>
+              ) : (
+                <View style={styles.generatedPlaceholder}>
+                  <Text style={styles.generatedPlaceholderText}>Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.</Text>
+                </View>
+              )}
               <View style={styles.beautyBlock}>
                 <Text style={styles.beautyTitle}>Макияж</Text>
                 <Text style={styles.beautyText}>{look.makeup}</Text>
@@ -53,6 +61,15 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove }: FavoritesS
           );
         })}
       </ScrollView>
+
+      <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
+        <View style={styles.previewBackdrop}>
+          {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}
+          <AppPressable style={styles.previewClose} onPress={() => setPreviewUri(null)}>
+            <Text style={styles.previewCloseText}>Закрыть</Text>
+          </AppPressable>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -123,6 +140,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4
   },
+  generatedWrap: {
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  generatedImage: {
+    width: '100%',
+    height: 360,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#EEE8DC'
+  },
+  generatedPlaceholder: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#F5F1EA',
+    paddingHorizontal: 12,
+    paddingVertical: 20
+  },
+  generatedPlaceholderText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 16
+  },
   beautyBlock: {
     marginTop: 6,
     gap: 4
@@ -136,5 +178,28 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontSize: 12,
     lineHeight: 16
+  },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    padding: 16
+  },
+  previewImage: {
+    width: '100%',
+    height: '86%'
+  },
+  previewClose: {
+    alignSelf: 'center',
+    marginTop: 12,
+    backgroundColor: '#EFEAE1',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  previewCloseText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });
