@@ -15,6 +15,7 @@ type ProfileScreenProps = {
   favoritesCount: number;
   onAvatarChange: (uri: string) => void;
   onModelChange: (uri: string) => void;
+  onShowGuide: () => void;
   onLogout: () => void;
 };
 
@@ -60,6 +61,7 @@ export function ProfileScreen({
   favoritesCount,
   onAvatarChange,
   onModelChange,
+  onShowGuide,
   onLogout
 }: ProfileScreenProps) {
   const styles = useThemedStyles(makeStyles);
@@ -246,6 +248,11 @@ export function ProfileScreen({
           </View>
         </View>
 
+        <AppPressable style={styles.guideButton} onPress={onShowGuide}>
+          <Text style={styles.guideTitle}>Как пользоваться приложением</Text>
+          <Text style={styles.guideText}>Короткая инструкция: фото, гардероб, генерация образов.</Text>
+        </AppPressable>
+
         <AppPressable style={styles.logoutButton} onPress={onLogout}>
           <Text style={styles.logoutText}>Выйти из аккаунта</Text>
         </AppPressable>
@@ -409,6 +416,24 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   themeOptionTextActive: {
     color: c.buttonPrimaryText
+  },
+  guideButton: {
+    backgroundColor: c.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: 14,
+    gap: 4
+  },
+  guideTitle: {
+    color: c.text,
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  guideText: {
+    color: c.muted,
+    fontSize: 12,
+    lineHeight: 17
   },
   logoutButton: {
     backgroundColor: c.chip,

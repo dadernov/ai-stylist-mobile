@@ -341,6 +341,7 @@ function AppContent() {
           setModelUri((prev) => prev || uri);
         }}
         onModelChange={setModelUri}
+        onShowGuide={() => setOnboardingVisible(true)}
         onLogout={() => {
           setAuthenticated(false);
           setDisplayName('Гость');
