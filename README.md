@@ -50,6 +50,22 @@ npm run android
 EXPO_PUBLIC_AI_BASE_URL=http://<your-host>:8000
 ```
 
+## Проверка на iPhone
+
+- Для своей отладки на iPhone используйте `npm run build:ios:development`.
+- Для регулярной проверки iPhone-сборок используйте `npm run build:ios:preview`.
+- Для релиза в TestFlight используйте `npm run build:ios:production`, затем `npm run submit:ios`.
+- Адрес AI-сервера уже подставляется в EAS build profiles через `eas.json`, так что собранный iPhone-билд не зависит от локального `expo start --tunnel`.
+- Если нужен быстрый локальный запуск на одном Wi‑Fi, остаётся `npm run start:lan:mac`, а туннель — только запасной вариант.
+
+> Важно: `preview` build на iPhone обычно подходит для внутренней проверки, а для внешнего заказчика чаще удобнее TestFlight.
+
+## Быстрые обновления
+
+- Проект уже подготовлен к EAS Update: можно публиковать JS-фиксы в канал `preview`, не собирая новый бинарник.
+- После правок в JS достаточно выполнить `npx eas update --channel preview --message "..."`.
+- Когда решение готово к выпуску, используйте канал `production` вместе с `npm run build:ios:production`.
+
 ## Ближайшие шаги по ТЗ
 
 1. Подключить реальную загрузку фото и кроп фона (`expo-image-picker` + сегментация).

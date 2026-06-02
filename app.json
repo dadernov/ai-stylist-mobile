@@ -2,9 +2,13 @@
   "expo": {
     "name": "AI Стилист",
     "slug": "ai-stylist-mobile",
+    "scheme": "aistylist",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#F6F5F2"
@@ -33,6 +37,9 @@
       "eas": {
         "projectId": "c0772743-44f5-4023-b30d-673669bbba1d"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c0772743-44f5-4023-b30d-673669bbba1d"
     }
   }
 }
