@@ -236,6 +236,36 @@ const seasonScore = (item: WardrobeItem, temp: number | null) => {
   return 0;
 };
 
+// Решение о слоях. Верхняя одежда нужна только когда реально прохладно/холодно.
+// В тепле куртка/пальто — лишний слой, поэтому образ без верхней одежды должен
+// выигрывать. Это убирает поведение «всегда максимум слоёв».
+const layeringScore = (selection: WardrobeItem[], temp: number | null) => {
+  const hasOuter = selection.some((item) => item.section === 'Верхняя одежда');
+  if (temp === null) {
+    // Погода неизвестна — не навязываем верхнюю одежду.
+    return hasOuter ? -3 : 1;
+  }
+  if (temp >= 20) return hasOuter ? -18 : 5; // жарко: верхняя одежда не нужна
+  if (temp >= 14) return hasOuter ? -10 : 4; // тепло: обычно без куртки
+  if (temp >= 8) return hasOuter ? 0 : 2; // прохладно: куртка по желанию, без неё ок
+  if (temp >= 2) return hasOuter ? 6 : -4; // холодно: лучше с верхней одеждой
+  return hasOuter ? 12 : -12; // мороз: верхняя одежда обязательна
+};
+
+// Тяжёлая верхняя одежда (пуховик/пальто/шуба) в относительно тёплую погоду
+// выглядит неуместно — отдельно штрафуем, чтобы не предлагать пуховик в +10.
+const heavyOuterCategories = new Set(['Пуховик', 'Шуба', 'Парка', 'Пальто']);
+const outerWeightScore = (selection: WardrobeItem[], temp: number | null) => {
+  if (temp === null) return 0;
+  const heavy = selection.some(
+    (item) => item.section === 'Верхняя одежда' && heavyOuterCategories.has(item.category)
+  );
+  if (!heavy) return 0;
+  if (temp >= 12) return -10;
+  if (temp >= 6) return -4;
+  return 4;
+};
+
 const onePieceCategories = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
 const strictEventDisallowedCategories: Record<string, string[]> = {
@@ -477,6 +507,12 @@ const buildFitReasons = (
     if (seasonTotal <= -2) reasons.push(`Сезонность спорная для текущей погоды (${temp}°C).`);
   }
 
+  const hasOuter = selection.some((item) => item.section === 'Верхняя одежда');
+  if (typeof temp === 'number') {
+    if (!hasOuter && temp >= 14) reasons.push(`При ${temp}°C верхняя одежда не нужна — без лишних слоёв.`);
+    if (hasOuter && temp <= 7) reasons.push(`Добавили верхнюю одежду: при ${temp}°C без неё прохладно.`);
+  }
+
   const groups = Array.from(new Set(selection.map((item) => getColorGroup(item.color))));
   if (groups.length <= 2) {
     reasons.push('Палитра образа выглядит цельно по цветовым группам.');
@@ -540,8 +576,10 @@ const buildLooks = (
   const safeTops = tops.length ? tops : [null];
   const safeBottoms = bottoms.length ? bottoms : [null];
   const safeShoes = shoes.length ? shoes : [null];
-  const safeOuter = outer.length ? outer : [null];
-  const safeBags = bags.length ? bags : [null];
+  // Верхняя одежда и сумка — необязательные слои: всегда оставляем вариант «без них»,
+  // чтобы конструктор не лепил максимум слоёв, когда они не нужны (например, в тепло).
+  const safeOuter = [null, ...outer];
+  const safeBags = [null, ...bags];
 
   type ScoredCombo = {
     items: WardrobeItem[];
@@ -574,6 +612,8 @@ const buildLooks = (
             const score =
               scoreColors(colors) * 2 +
               selection.reduce((sum, item) => sum + seasonScore(item, temp), 0) * 2 +
+              layeringScore(selection, temp) * 2 +
+              outerWeightScore(selection, temp) +
               styleScore(selection, style, items) +
               eventScore(selection, event, items) +
               scoreCompleteness(selection, items);
