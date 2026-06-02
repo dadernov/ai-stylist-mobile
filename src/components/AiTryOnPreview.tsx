@@ -58,6 +58,24 @@ const inferImageExtension = (uri: string) => {
 const mergeMessages = (...messages: Array<string | null | undefined>) =>
   messages.filter(Boolean).join(' · ') || undefined;
 
+// Локальные файлы примерки хранятся по абсолютному пути documentDirectory.
+// При обновлении приложения контейнерный префикс пути может смениться, поэтому
+// старый абсолютный путь перестаёт указывать на файл. Здесь мы синхронно
+// «перепривязываем» путь к актуальной папке try-ons по имени файла. Это не
+// делает запросов к ФС (никаких ложных ошибок) — для обычного перезапуска
+// возвращается тот же путь, а сам <Image> остаётся источником правды о том,
+// можно ли реально отрисовать картинку.
+export const reanchorTryOnUri = (uri?: string | null): string | null => {
+  if (!uri) return null;
+  if (isRemoteUri(uri) || isDataImageUri(uri)) return uri;
+  const marker = '/try-ons/';
+  const idx = uri.lastIndexOf(marker);
+  if (idx === -1 || !FileSystem.documentDirectory) return uri;
+  const fileName = uri.slice(idx + marker.length);
+  if (!fileName) return uri;
+  return `${TRY_ON_DIR}${fileName}`;
+};
+
 const cacheTryOnImage = async (sourceUri: string, timestamp: number) => {
   if (!FileSystem.documentDirectory) {
     return { imageUri: sourceUri };
@@ -111,7 +129,7 @@ export function AiTryOnPreview({
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const [isLoading, setLoading] = useState(false);
-  const [resultUri, setResultUri] = useState<string | null>(controlledResultUri || null);
+  const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(warningMessage || null);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
@@ -146,8 +164,9 @@ export function AiTryOnPreview({
   ].filter(Boolean) as string[];
 
   useEffect(() => {
-    setResultUri(controlledResultUri || null);
+    setResultUri(reanchorTryOnUri(controlledResultUri));
     setResultImageError(null);
+    setResultImageLoading(false);
   }, [controlledResultUri]);
 
   useEffect(() => {
@@ -181,6 +200,22 @@ export function AiTryOnPreview({
       cancelled = true;
     };
   }, [controlledResultUri, controlledUpdatedAt, warningMessage]);
+
+  // Страховка от «вечного» спиннера для протухших удалённых ссылок FASHN,
+  // которые могут «зависнуть» и не вызвать ни onLoadEnd, ни onError. Для
+  // локальных файлов спиннер не трогаем по таймеру: там onLoadEnd/onError
+  // срабатывают надёжно, а ложная ошибка на медленной декодировке не нужна.
+  useEffect(() => {
+    if (!resultImageLoading) return;
+    const current = resultUri;
+    const timeout = setTimeout(() => {
+      setResultImageLoading(false);
+      if (current && isRemoteUri(current)) {
+        setResultImageError('Не удалось загрузить картинку по временной ссылке. Перегенерируй образ — новая версия сохранится локально.');
+      }
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [resultImageLoading, resultUri]);
 
   const runGenerate = async () => {
     const generated = await analyzeTryOnGenerateLook(
@@ -243,7 +278,7 @@ export function AiTryOnPreview({
               setResultImageError('Эта старая картинка больше недоступна. Перегенерируй образ, новая версия сохранится локально.');
             }}
           />
-          {resultImageLoading ? (
+          {resultImageLoading && !resultImageError ? (
             <View style={styles.imageOverlay}>
               <ActivityIndicator color="#1F1D1A" />
             </View>
@@ -278,15 +313,17 @@ export function AiTryOnPreview({
                 key={item.id}
                 style={styles.historyCard}
                 onPress={() => {
-                  setResultUri(item.imageUri);
+                  const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
+                  setResultUri(anchored);
                   setWarning(item.warning || null);
-                  setPreviewUri(item.imageUri);
+                  setResultImageError(null);
+                  setPreviewUri(anchored);
                   setPreviewOpen(true);
                 }}
               >
                 <View style={styles.historyImageWrap}>
                   <Image
-                    source={{ uri: item.imageUri }}
+                    source={{ uri: reanchorTryOnUri(item.imageUri) || item.imageUri }}
                     style={styles.historyImage}
                     resizeMode="cover"
                     onError={() => setBrokenHistoryUris((prev) => ({ ...prev, [item.imageUri]: true }))}

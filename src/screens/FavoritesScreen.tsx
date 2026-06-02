@@ -7,6 +7,7 @@ import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
 import { AppPressable } from '../components/AppPressable';
+import { reanchorTryOnUri } from '../components/AiTryOnPreview';
 
 type FavoritesScreenProps = {
   looks: GeneratedLook[];
@@ -32,6 +33,7 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
 
         {looks.map((look) => {
           const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
+          const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
           return (
             <View key={look.id} style={styles.card}>
               <View style={styles.cardHeader}>
@@ -44,9 +46,9 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
               <Text style={styles.blockTitle}>Образ из вещей</Text>
               <LookPreview items={lookItems} />
               <Text style={styles.blockTitle}>Сгенерированный образ</Text>
-              {look.tryOnImageUri ? (
-                <AppPressable style={styles.generatedWrap} onPress={() => setPreviewUri(look.tryOnImageUri || null)}>
-                  <Image source={{ uri: look.tryOnImageUri }} style={styles.generatedImage} resizeMode="contain" />
+              {tryOnUri ? (
+                <AppPressable style={styles.generatedWrap} onPress={() => setPreviewUri(tryOnUri)}>
+                  <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />
                 </AppPressable>
               ) : (
                 <View style={styles.generatedPlaceholder}>
