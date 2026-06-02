@@ -744,12 +744,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   uploadTitle: {
     fontSize: 16,
-    color: c.text,
+    // Карточка всегда бежевая (c.accent) в обеих темах, поэтому текст держим
+    // тёмным независимо от темы — иначе в тёмной теме белое по бежевому не читается.
+    color: '#1F1D1A',
     fontWeight: '700',
     marginBottom: 4
   },
   uploadText: {
-    color: c.text,
+    color: '#1F1D1A',
     opacity: 0.85,
     fontSize: 13,
     lineHeight: 18
