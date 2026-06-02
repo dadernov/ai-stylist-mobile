@@ -9,7 +9,8 @@ import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { COLORS } from './src/constants/theme';
+import { ThemeColors } from './src/constants/theme';
+import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { WardrobeItem } from './src/data/mock';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
@@ -94,6 +95,7 @@ const normalizeSavedLook = (look: SavedLook): SavedLook => ({
 });
 
 function Onboarding({ onClose }: { onClose: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.onboardingWrap}>
@@ -127,6 +129,8 @@ function Onboarding({ onClose }: { onClose: () => void }) {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
   const [isAuthenticated, setAuthenticated] = useState(false);
@@ -355,7 +359,7 @@ function AppContent() {
         <View style={styles.loadingWrap}>
           <Text style={styles.loadingText}>Загрузка…</Text>
         </View>
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </SafeAreaView>
     );
   }
@@ -364,7 +368,7 @@ function AppContent() {
     return (
       <>
         <Onboarding onClose={closeOnboarding} />
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </>
     );
   }
@@ -382,7 +386,7 @@ function AppContent() {
             }}
           />
         </SafeAreaView>
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </>
     );
   }
@@ -427,7 +431,7 @@ function AppContent() {
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       ) : null}
-      <StatusBar style="dark" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
     </SafeAreaView>
   );
 }
@@ -435,15 +439,17 @@ function AppContent() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppContent />
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background
+    backgroundColor: c.background
   },
   content: {
     flex: 1,
@@ -457,7 +463,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: COLORS.muted
+    color: c.muted
   },
   onboardingWrap: {
     flexGrow: 1,
@@ -466,65 +472,65 @@ const styles = StyleSheet.create({
     gap: 14
   },
   eyebrow: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     letterSpacing: 2,
     fontWeight: '700'
   },
   heroTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 34,
     lineHeight: 40,
     fontWeight: '700'
   },
   heroSubtitle: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 16,
     lineHeight: 22
   },
   stepsCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 16,
     gap: 10
   },
   stepTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 16,
     fontWeight: '700'
   },
   stepItem: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 15,
     lineHeight: 21
   },
   tipCard: {
-    backgroundColor: '#F5F1EA',
+    backgroundColor: c.surface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 14,
     gap: 6
   },
   tipTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700'
   },
   tipText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13,
     lineHeight: 18
   },
   primaryButton: {
     marginTop: 8,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center'
   },
   primaryButtonText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 16,
     fontWeight: '600'
   },
@@ -533,8 +539,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#E9E5DC',
-    backgroundColor: COLORS.background
+    borderTopColor: c.tabBarBorder,
+    backgroundColor: c.background
   },
   tabItem: {
     flex: 1,
@@ -544,18 +550,18 @@ const styles = StyleSheet.create({
     borderRadius: 12
   },
   tabItemActive: {
-    backgroundColor: '#EDE8DD'
+    backgroundColor: c.tabActiveBg
   },
   tabIcon: {
     fontSize: 18
   },
   tabLabel: {
     fontSize: 11,
-    color: COLORS.muted,
+    color: c.muted,
     fontWeight: '600'
   },
   tabLabelActive: {
-    color: COLORS.text
+    color: c.text
   },
   toast: {
     position: 'absolute',
@@ -564,11 +570,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: '#1E1C19',
+    backgroundColor: c.toastBg,
     alignItems: 'center'
   },
   toastText: {
-    color: '#FFFFFF',
+    color: c.toastText,
     fontSize: 14,
     fontWeight: '600'
   }

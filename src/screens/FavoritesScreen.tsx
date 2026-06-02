@@ -1,7 +1,8 @@
 import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
 import { ScreenTitle } from '../components/ScreenTitle';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
@@ -14,6 +15,7 @@ type FavoritesScreenProps = {
 };
 
 export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps) {
+  const styles = useThemedStyles(makeStyles);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const itemsById = Object.fromEntries(items.map((item) => [item.id, item]));
   return (
@@ -74,7 +76,7 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
@@ -83,27 +85,27 @@ const styles = StyleSheet.create({
     paddingBottom: 20
   },
   emptyState: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 16
   },
   emptyTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4
   },
   emptyText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12
   },
   card: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 14,
     gap: 6
   },
@@ -114,7 +116,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   cardTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 15,
     fontWeight: '700',
     flex: 1
@@ -131,11 +133,11 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   cardMeta: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12
   },
   blockTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '700',
     marginTop: 4
@@ -149,19 +151,19 @@ const styles = StyleSheet.create({
     height: 360,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#EEE8DC'
+    borderColor: c.border,
+    backgroundColor: c.surface
   },
   generatedPlaceholder: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#F5F1EA',
+    borderColor: c.border,
+    backgroundColor: c.surface,
     paddingHorizontal: 12,
     paddingVertical: 20
   },
   generatedPlaceholderText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     lineHeight: 16
   },
@@ -170,12 +172,12 @@ const styles = StyleSheet.create({
     gap: 4
   },
   beautyTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '700'
   },
   beautyText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     lineHeight: 16
   },
@@ -192,13 +194,13 @@ const styles = StyleSheet.create({
   previewClose: {
     alignSelf: 'center',
     marginTop: 12,
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   previewCloseText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 13,
     fontWeight: '700'
   }

@@ -18,7 +18,8 @@ import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { AppPressable } from '../components/AppPressable';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
@@ -84,6 +85,17 @@ type LookPreferenceProfile = {
   preferredColorGroups?: PaletteGroup[];
   requiredSections?: string[];
   discouragedSections?: string[];
+};
+
+const mergeTryOnHistory = (nextItem: TryOnHistoryItem, history: TryOnHistoryItem[] = []) => {
+  const nextKey = nextItem.id || `${nextItem.updatedAt}-${nextItem.tuckMode || 'auto'}-${nextItem.qualityMode || 'quality'}`;
+  return [
+    nextItem,
+    ...history.filter((item) => {
+      const itemKey = item.id || `${item.updatedAt}-${item.tuckMode || 'auto'}-${item.qualityMode || 'quality'}`;
+      return itemKey !== nextKey && item.imageUri !== nextItem.imageUri;
+    })
+  ].slice(0, 8);
 };
 
 const styleProfiles: Record<string, LookPreferenceProfile> = {
@@ -627,6 +639,8 @@ export function OutfitBuilderScreen({
   onLooksGenerated,
   onFavoriteAdd
 }: OutfitBuilderProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors: themeColors } = useTheme();
   const [activeTab, setActiveTab] = useState<'builder' | 'looks'>('builder');
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
@@ -780,7 +794,7 @@ export function OutfitBuilderScreen({
           tryOnWarning: payload.warning,
           tryOnUpdatedAt: payload.updatedAt,
           tryOnQualityMode: payload.qualityMode,
-          tryOnHistory: [historyItem, ...(look.tryOnHistory || [])].slice(0, 8)
+          tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
         };
       })
     );
@@ -808,7 +822,7 @@ export function OutfitBuilderScreen({
           tryOnWarning: payload.warning,
           tryOnUpdatedAt: payload.updatedAt,
           tryOnQualityMode: payload.qualityMode,
-          tryOnHistory: [historyItem, ...(look.tryOnHistory || [])].slice(0, 8)
+          tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
         };
       })
     );
@@ -995,7 +1009,7 @@ export function OutfitBuilderScreen({
               <TextInput
                 style={styles.manualInput}
                 placeholder="Например, Оранжевый кэжуал"
-                placeholderTextColor={COLORS.muted}
+                placeholderTextColor={themeColors.muted}
                 value={manualName}
                 onChangeText={setManualName}
               />
@@ -1040,6 +1054,7 @@ export function OutfitBuilderScreen({
                       tuckMode={look.tuckMode}
                       resultUri={look.tryOnImageUri}
                       warningMessage={look.tryOnWarning}
+                      updatedAt={look.tryOnUpdatedAt}
                       qualityMode={look.tryOnQualityMode}
                       history={look.tryOnHistory}
                       onGenerated={(payload) => updateGeneratedLookTryOn(look.id, payload)}
@@ -1091,6 +1106,7 @@ export function OutfitBuilderScreen({
                     tuckMode={look.tuckMode}
                     resultUri={look.tryOnImageUri}
                     warningMessage={look.tryOnWarning}
+                    updatedAt={look.tryOnUpdatedAt}
                     qualityMode={look.tryOnQualityMode}
                     history={look.tryOnHistory}
                     onGenerated={(payload) => updateSavedLookTryOn(look.id, payload)}
@@ -1118,7 +1134,7 @@ export function OutfitBuilderScreen({
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Название"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={themeColors.muted}
                   value={editName}
                   onChangeText={setEditName}
                 />
@@ -1142,7 +1158,7 @@ export function OutfitBuilderScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
@@ -1151,7 +1167,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     flexDirection: 'row',
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 14,
     padding: 4,
     marginBottom: 12
@@ -1163,18 +1179,18 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   segmentTabActive: {
-    backgroundColor: COLORS.text
+    backgroundColor: c.buttonPrimaryBg
   },
   segmentText: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text
+    color: c.text
   },
   segmentTextActive: {
-    color: '#FFFFFF'
+    color: c.buttonPrimaryText
   },
   groupTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 8,
@@ -1193,26 +1209,26 @@ const styles = StyleSheet.create({
     minHeight: 48
   },
   weatherCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingVertical: 10,
     paddingHorizontal: 14,
     marginBottom: 12
   },
   weatherTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700'
   },
   weatherText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     marginTop: 4
   },
   generateButton: {
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1220,56 +1236,56 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   generateText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 15,
     fontWeight: '700'
   },
   generateHint: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     marginTop: -4,
     marginBottom: 12
   },
   manualWrap: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 14,
     marginBottom: 12
   },
   manualTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 8
   },
   manualLabel: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 6,
     marginBottom: 6
   },
   manualInput: {
-    backgroundColor: '#FBFAF8',
+    backgroundColor: c.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: COLORS.text
+    color: c.text
   },
   addLookButton: {
     marginTop: 10,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center'
   },
   addLookText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 14,
     fontWeight: '700'
   },
@@ -1277,7 +1293,7 @@ const styles = StyleSheet.create({
     marginBottom: 10
   },
   selectorTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6
@@ -1288,24 +1304,24 @@ const styles = StyleSheet.create({
   },
   selectorCard: {
     width: 120,
-    backgroundColor: '#FBFAF8',
+    backgroundColor: c.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 8
   },
   selectorCardActive: {
-    borderColor: COLORS.text
+    borderColor: c.text
   },
   selectorImage: {
     width: '100%',
     height: 70,
     borderRadius: 8,
-    backgroundColor: '#F3EFE8'
+    backgroundColor: c.chip
   },
   selectorLabel: {
     marginTop: 6,
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600'
   },
@@ -1313,13 +1329,13 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   manualResultTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 4
   },
   manualItem: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12
   },
   looksWrap: {
@@ -1327,10 +1343,10 @@ const styles = StyleSheet.create({
     paddingBottom: 20
   },
   lookCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 14,
     gap: 4
   },
@@ -1341,19 +1357,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start'
   },
   lookTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 15,
     fontWeight: '700',
     flex: 1
   },
   favoriteButton: {
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
   favoriteText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600'
   },
@@ -1362,13 +1378,13 @@ const styles = StyleSheet.create({
     gap: 6
   },
   secondaryButton: {
-    backgroundColor: '#F1ECE2',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600'
   },
@@ -1384,36 +1400,36 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   lookWeather: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     marginBottom: 3
   },
   lookItem: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 13
   },
   reasonBlock: {
     marginTop: 6,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: '#F6F2EA',
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: '#E6DED1',
+    borderColor: c.border,
     gap: 2
   },
   reasonTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 2
   },
   reasonScore: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 11,
     marginBottom: 2
   },
   reasonText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     lineHeight: 16
   },
@@ -1422,39 +1438,39 @@ const styles = StyleSheet.create({
     gap: 4
   },
   beautyTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '700'
   },
   beautyText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     lineHeight: 16
   },
   emptyState: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 16
   },
   emptyTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4
   },
   emptyText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: c.overlay,
     justifyContent: 'flex-end'
   },
   modalCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     padding: 16,
@@ -1466,35 +1482,35 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 12
   },
   modalLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 6
   },
   modalInput: {
-    backgroundColor: '#FBFAF8',
+    backgroundColor: c.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 8
   },
   modalSave: {
     marginTop: 12,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center'
   },
   modalSaveText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 14,
     fontWeight: '600'
   },
@@ -1504,7 +1520,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   modalCloseText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13
   }
 });

@@ -1,7 +1,8 @@
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { useMemo, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 import { TryOnModelResult } from '../services/ai';
 
 type TryOnPreviewProps = {
@@ -35,6 +36,7 @@ const buildLayer = (x: number, y: number, width: number, height: number, rotateD
 });
 
 export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLayout, isModelLoading }: TryOnPreviewProps) {
+  const styles = useThemedStyles(makeStyles);
   const [box, setBox] = useState({ width: 0, height: 0 });
   const sorted = useMemo(() => {
     const uniqueItems = Array.from(new Map(items.map((item) => [item.id, item])).values());
@@ -133,14 +135,14 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   preview: {
     height: 356,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     overflow: 'hidden',
-    backgroundColor: '#F7F3EC',
+    backgroundColor: c.surface,
     marginBottom: 8
   },
   mannequinFrame: {

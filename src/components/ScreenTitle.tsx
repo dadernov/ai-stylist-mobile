@@ -1,7 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 
 export function ScreenTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{title}</Text>
@@ -10,18 +12,18 @@ export function ScreenTitle({ title, subtitle }: { title: string; subtitle: stri
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrap: {
     marginBottom: 14,
     gap: 4
   },
   title: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 28,
     fontWeight: '700'
   },
   subtitle: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 14,
     lineHeight: 20
   }

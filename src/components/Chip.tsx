@@ -1,5 +1,6 @@
 import { Platform, StyleSheet, Text } from 'react-native';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 import { AppPressable } from './AppPressable';
 
 type ChipProps = {
@@ -9,6 +10,7 @@ type ChipProps = {
 };
 
 export function Chip({ label, active = false, onPress }: ChipProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <AppPressable style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
@@ -16,9 +18,9 @@ export function Chip({ label, active = false, onPress }: ChipProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chip: {
-    backgroundColor: COLORS.chip,
+    backgroundColor: c.chip,
     borderRadius: 22,
     height: 44,
     paddingHorizontal: 22,
@@ -28,10 +30,10 @@ const styles = StyleSheet.create({
     marginRight: 12
   },
   chipActive: {
-    backgroundColor: COLORS.text
+    backgroundColor: c.buttonPrimaryBg
   },
   chipText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
@@ -40,6 +42,6 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } : null)
   },
   chipTextActive: {
-    color: '#FFFFFF'
+    color: c.buttonPrimaryText
   }
 });

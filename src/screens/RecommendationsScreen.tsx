@@ -1,6 +1,7 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenTitle } from '../components/ScreenTitle';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 import { GeneratedLook } from '../types/looks';
 
 type RecommendationsProps = {
@@ -64,6 +65,7 @@ const eventTips: Record<string, string[]> = {
 };
 
 export function RecommendationsScreen({ looks, context }: RecommendationsProps) {
+  const styles = useThemedStyles(makeStyles);
   const hasContext = context?.style && context?.event;
   const beauty = hasContext ? beautyMap[context.event] || beautyMap['Прогулка'] : null;
   const styleCardTips = hasContext ? styleTips[context.style] || [] : [];
@@ -131,7 +133,7 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
@@ -140,25 +142,25 @@ const styles = StyleSheet.create({
     paddingBottom: 20
   },
   card: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 14,
     padding: 14,
     gap: 6
   },
   cardTitle: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 15,
     fontWeight: '700'
   },
   cardText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13,
     lineHeight: 18
   },
   cardHint: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     marginTop: 4
   },

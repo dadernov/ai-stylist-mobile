@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { AppPressable } from '../components/AppPressable';
 
 type AuthScreenProps = {
@@ -23,6 +24,8 @@ const formatPhone = (digits: string) => {
 };
 
 export function AuthScreen({ onLogin }: AuthScreenProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const [name, setName] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [phoneError, setPhoneError] = useState('');
@@ -88,7 +91,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           <Text style={styles.label}>Имя</Text>
           <TextInput
             placeholder="Например, Алина"
-            placeholderTextColor={COLORS.muted}
+            placeholderTextColor={colors.muted}
             style={styles.input}
             value={name}
             onChangeText={setName}
@@ -96,7 +99,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           <Text style={styles.label}>Телефон</Text>
           <TextInput
             placeholder="+7 999 000 00 00"
-            placeholderTextColor={COLORS.muted}
+            placeholderTextColor={colors.muted}
             style={styles.input}
             keyboardType="phone-pad"
             value={formattedPhone}
@@ -112,7 +115,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           <Text style={styles.label}>Код из SMS</Text>
           <TextInput
             placeholder="4 цифры"
-            placeholderTextColor={COLORS.muted}
+            placeholderTextColor={colors.muted}
             style={styles.input}
             keyboardType="number-pad"
             value={otp}
@@ -134,22 +137,22 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
-    backgroundColor: COLORS.background
+    backgroundColor: c.background
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: COLORS.text
+    color: c.text
   },
   subtitle: {
     marginTop: 6,
     fontSize: 14,
-    color: COLORS.muted,
+    color: c.muted,
     lineHeight: 20
   },
   form: {
@@ -159,17 +162,17 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text
+    color: c.text
   },
   input: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
-    color: COLORS.text
+    color: c.text
   },
   errorText: {
     color: '#B14444',
@@ -177,13 +180,13 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: 12,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center'
   },
   primaryButtonText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 16,
     fontWeight: '600'
   },
@@ -192,12 +195,12 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   linkText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13
   },
   hint: {
     marginTop: 12,
     fontSize: 12,
-    color: COLORS.muted
+    color: c.muted
   }
 });

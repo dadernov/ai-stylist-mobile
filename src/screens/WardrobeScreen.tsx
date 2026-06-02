@@ -17,7 +17,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage } from '../services/ai';
 
@@ -222,6 +223,8 @@ const tagToLabel = (tag: string) => {
 };
 
 export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const [activeFilter, setActiveFilter] = useState('Все');
 
   const [draftPhoto, setDraftPhoto] = useState<string | null>(null);
@@ -238,6 +241,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [draftPattern, setDraftPattern] = useState(patternOptions[0]);
   const [isAnalyzing, setAnalyzing] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [hasManualDraftCategory, setHasManualDraftCategory] = useState(false);
 
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState(categoryOptions[0]);
@@ -334,6 +338,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     setDraftStore('');
     setDraftMaterial('');
     setDraftSection(activeFilter === 'Все' ? sectionOptions[0] : activeFilter);
+    setHasManualDraftCategory(false);
     setModalVisible(true);
     void applyAi(photo);
   };
@@ -360,9 +365,10 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const handleRetake = async () => {
-    const photo = await requestPhoto();
+      const photo = await requestPhoto();
     if (photo) {
       setDraftPhoto(photo);
+      setHasManualDraftCategory(false);
       void applyAi(photo);
     }
   };
@@ -381,7 +387,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         .filter((name) => name && name !== 'Не определено');
       const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
       setDraftPalette(uniquePalette);
-      if (result.category) {
+      if (result.category && !hasManualDraftCategory) {
         setDraftCategory(result.category);
         setDraftSection(getSectionByCategory(result.category));
       }
@@ -390,8 +396,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       if (result.bgRemovedBase64) {
         setDraftPhoto(result.bgRemovedBase64);
       }
-    } catch (error) {
-      Alert.alert('AI анализ не удался', 'Проверь, что AI сервер запущен.');
+    } catch (error: any) {
+      const message = String(error?.message || error || 'Неизвестная ошибка');
+      Alert.alert('AI анализ не удался', message);
     } finally {
       setAnalyzing(false);
     }
@@ -457,6 +464,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const handleDraftCategoryChange = (value: string) => {
+    setHasManualDraftCategory(true);
     setDraftCategory(value);
     setDraftSection(getSectionByCategory(value));
   };
@@ -578,13 +586,13 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, Белая футболка"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={draftName}
                   onChangeText={setDraftName}
                 />
                 <AppPressable style={styles.aiButton} onPress={handleAnalyze} disabled={isAnalyzing}>
                   {isAnalyzing ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color={colors.buttonPrimaryText} />
                   ) : (
                     <Text style={styles.aiButtonText}>AI-анализ</Text>
                   )}
@@ -606,7 +614,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, M"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={draftSize}
                   onChangeText={setDraftSize}
                 />
@@ -614,7 +622,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, Zara"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={draftStore}
                   onChangeText={setDraftStore}
                 />
@@ -622,7 +630,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, хлопок"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={draftMaterial}
                   onChangeText={setDraftMaterial}
                 />
@@ -657,7 +665,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, Белая футболка"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={editName}
                   onChangeText={setEditName}
                 />
@@ -675,7 +683,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, M"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={editSize}
                   onChangeText={setEditSize}
                 />
@@ -683,7 +691,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, Zara"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={editStore}
                   onChangeText={setEditStore}
                 />
@@ -691,7 +699,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Например, хлопок"
-                  placeholderTextColor={COLORS.muted}
+                  placeholderTextColor={colors.muted}
                   value={editMaterial}
                   onChangeText={setEditMaterial}
                 />
@@ -710,7 +718,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
@@ -727,7 +735,7 @@ const styles = StyleSheet.create({
     minHeight: 48
   },
   uploadCard: {
-    backgroundColor: COLORS.accent,
+    backgroundColor: c.accent,
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -736,12 +744,12 @@ const styles = StyleSheet.create({
   },
   uploadTitle: {
     fontSize: 16,
-    color: COLORS.text,
+    color: c.text,
     fontWeight: '700',
     marginBottom: 4
   },
   uploadText: {
-    color: COLORS.text,
+    color: c.text,
     opacity: 0.85,
     fontSize: 13,
     lineHeight: 18
@@ -751,9 +759,9 @@ const styles = StyleSheet.create({
     paddingBottom: 20
   },
   itemCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 16,
     padding: 14,
     gap: 8
@@ -765,7 +773,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 180,
     borderRadius: 12,
-    backgroundColor: '#F3EFE8'
+    backgroundColor: c.surface
   },
   photoActions: {
     flexDirection: 'row',
@@ -773,7 +781,7 @@ const styles = StyleSheet.create({
   },
   retakeButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6
@@ -781,7 +789,7 @@ const styles = StyleSheet.create({
   retakeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: COLORS.text
+    color: c.text
   },
   deleteButton: {
     alignSelf: 'flex-start',
@@ -803,28 +811,28 @@ const styles = StyleSheet.create({
   },
   itemName: {
     flex: 1,
-    color: COLORS.text,
+    color: c.text,
     fontSize: 16,
     fontWeight: '600'
   },
   editButton: {
-    backgroundColor: '#F1ECE2',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
   editButtonText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 12,
     fontWeight: '600'
   },
   itemMeta: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13,
     lineHeight: 18
   },
   itemDetails: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12
   },
   tagsRow: {
@@ -834,23 +842,23 @@ const styles = StyleSheet.create({
   },
   tag: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: '#FBFAF8'
+    backgroundColor: c.surface
   },
   tagText: {
     fontSize: 12,
-    color: COLORS.muted
+    color: c.muted
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: c.overlay,
     justifyContent: 'flex-end'
   },
   modalCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     padding: 16,
@@ -862,7 +870,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 12
   },
   modalPhoto: {
@@ -870,51 +878,51 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
     marginBottom: 10,
-    backgroundColor: '#F3EFE8'
+    backgroundColor: c.surface
   },
   modalLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
     marginTop: 10,
     marginBottom: 6
   },
   modalInput: {
-    backgroundColor: '#FBFAF8',
+    backgroundColor: c.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: COLORS.text
+    color: c.text
   },
   aiButton: {
     marginTop: 10,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 12,
     paddingVertical: 10,
     alignItems: 'center'
   },
   aiButtonText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 14,
     fontWeight: '600'
   },
   aiHint: {
     marginTop: 6,
     fontSize: 12,
-    color: COLORS.muted
+    color: c.muted
   },
   modalSave: {
     marginTop: 14,
-    backgroundColor: COLORS.text,
+    backgroundColor: c.buttonPrimaryBg,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center'
   },
   modalSaveText: {
-    color: '#FFFFFF',
+    color: c.buttonPrimaryText,
     fontSize: 14,
     fontWeight: '600'
   },
@@ -924,7 +932,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   modalCloseText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13
   },
   modalChipsRow: {
@@ -932,20 +940,20 @@ const styles = StyleSheet.create({
     paddingBottom: 6
   },
   modalChip: {
-    backgroundColor: COLORS.chip,
+    backgroundColor: c.chip,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   modalChipActive: {
-    backgroundColor: COLORS.text
+    backgroundColor: c.buttonPrimaryBg
   },
   modalChipText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 13,
     fontWeight: '600'
   },
   modalChipTextActive: {
-    color: '#FFFFFF'
+    color: c.buttonPrimaryText
   }
 });

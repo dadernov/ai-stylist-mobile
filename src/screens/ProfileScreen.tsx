@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { AppPressable } from '../components/AppPressable';
 
 type ProfileScreenProps = {
@@ -61,6 +62,8 @@ export function ProfileScreen({
   onModelChange,
   onLogout
 }: ProfileScreenProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { mode, setMode } = useTheme();
   const [bodyType, setBodyType] = useState('Не задано');
   const [colorType, setColorType] = useState('Не задано');
   const [activeModal, setActiveModal] = useState<'body' | 'color' | null>(null);
@@ -222,6 +225,27 @@ export function ProfileScreen({
           })}
         </View>
 
+        <View style={styles.themeCard}>
+          <Text style={styles.themeTitle}>Тема оформления</Text>
+          <View style={styles.themeRow}>
+            {([
+              { key: 'light' as const, label: 'Светлая' },
+              { key: 'dark' as const, label: 'Тёмная' }
+            ]).map((option) => {
+              const active = mode === option.key;
+              return (
+                <AppPressable
+                  key={option.key}
+                  style={[styles.themeOption, active && styles.themeOptionActive]}
+                  onPress={() => setMode(option.key)}
+                >
+                  <Text style={[styles.themeOptionText, active && styles.themeOptionTextActive]}>{option.label}</Text>
+                </AppPressable>
+              );
+            })}
+          </View>
+        </View>
+
         <AppPressable style={styles.logoutButton} onPress={onLogout}>
           <Text style={styles.logoutText}>Выйти из аккаунта</Text>
         </AppPressable>
@@ -230,7 +254,7 @@ export function ProfileScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
@@ -239,10 +263,10 @@ const styles = StyleSheet.create({
     paddingBottom: 20
   },
   profileCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -252,7 +276,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden'
@@ -263,27 +287,27 @@ const styles = StyleSheet.create({
   },
   avatarPlaceholder: {
     fontSize: 28,
-    color: COLORS.muted,
+    color: c.muted,
     fontWeight: '600'
   },
   profileInfo: {
     flex: 1
   },
   modelCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     padding: 14,
     gap: 8
   },
   modelTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: COLORS.text
+    color: c.text
   },
   modelText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 12,
     lineHeight: 17
   },
@@ -291,7 +315,7 @@ const styles = StyleSheet.create({
     height: 420,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#F2EEE6',
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -302,34 +326,34 @@ const styles = StyleSheet.create({
   modelPlaceholder: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.muted
+    color: c.muted
   },
   modelButton: {
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 10,
     alignItems: 'center',
     paddingVertical: 10
   },
   modelButtonText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 13,
     fontWeight: '600'
   },
   userName: {
     fontSize: 22,
-    color: COLORS.text,
+    color: c.text,
     fontWeight: '700'
   },
   userMeta: {
     marginTop: 4,
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 13
   },
   settingsBlock: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingHorizontal: 14
   },
   settingRow: {
@@ -337,38 +361,73 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border
+    borderBottomColor: c.border
   },
   settingLabel: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 14
   },
   settingValue: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '600'
   },
   settingValueSelectable: {
     textDecorationLine: 'underline'
   },
+  themeCard: {
+    backgroundColor: c.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: 14,
+    gap: 10
+  },
+  themeTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: c.text
+  },
+  themeRow: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  themeOption: {
+    flex: 1,
+    backgroundColor: c.chip,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center'
+  },
+  themeOptionActive: {
+    backgroundColor: c.buttonPrimaryBg
+  },
+  themeOptionText: {
+    color: c.text,
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  themeOptionTextActive: {
+    color: c.buttonPrimaryText
+  },
   logoutButton: {
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 12,
     alignItems: 'center',
     paddingVertical: 12
   },
   logoutText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14,
     fontWeight: '600'
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: c.overlay,
     justifyContent: 'flex-end'
   },
   modalCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.card,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     padding: 16,
@@ -377,7 +436,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 12
   },
   modalList: {
@@ -386,13 +445,13 @@ const styles = StyleSheet.create({
   },
   modalOption: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12
   },
   modalOptionText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 14
   },
   modalClose: {
@@ -401,7 +460,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   modalCloseText: {
-    color: COLORS.muted,
+    color: c.muted,
     fontSize: 14
   },
   previewBackdrop: {
@@ -417,13 +476,13 @@ const styles = StyleSheet.create({
   previewClose: {
     alignSelf: 'center',
     marginTop: 12,
-    backgroundColor: '#EFEAE1',
+    backgroundColor: c.chip,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   previewCloseText: {
-    color: COLORS.text,
+    color: c.text,
     fontSize: 13,
     fontWeight: '700'
   }

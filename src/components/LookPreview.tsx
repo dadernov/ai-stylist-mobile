@@ -1,6 +1,7 @@
 import { Image, StyleSheet, View } from 'react-native';
 import { WardrobeItem } from '../data/mock';
-import { COLORS } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { useThemedStyles } from '../constants/ThemeContext';
 
 type LookPreviewProps = {
   items: WardrobeItem[];
@@ -18,6 +19,7 @@ const sortBySection = (items: WardrobeItem[]) => {
 };
 
 export function LookPreview({ items }: LookPreviewProps) {
+  const styles = useThemedStyles(makeStyles);
   const sorted = sortBySection(items);
   if (!sorted.length) {
     return <View style={styles.preview} />;
@@ -38,12 +40,12 @@ export function LookPreview({ items }: LookPreviewProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   preview: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     paddingVertical: 10,
     paddingHorizontal: 10,
     alignItems: 'center',
@@ -66,6 +68,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 10,
-    backgroundColor: '#F3EFE8'
+    backgroundColor: c.surface
   }
 });
