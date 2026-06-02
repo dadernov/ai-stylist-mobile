@@ -110,6 +110,27 @@ export FASHN_LOOK_MODE=quality
 # export FASHN_RESOLUTION=1k
 ```
 
+Рекомендуемые настройки для мобильного preview:
+
+```bash
+# быстрый режим: целимся примерно в 15 секунд для верха+низа
+export FASHN_FAST_LOOK_MODEL_NAME=tryon-v1.6
+export FASHN_FAST_MODE=performance
+export FASHN_FAST_MAX_WAIT_SECONDS=30
+export FASHN_FAST_POLL_INTERVAL_SECONDS=0.75
+export FASHN_FAST_IMAGE_MAX_SIDE=1280
+export FASHN_FAST_JPEG_QUALITY=86
+
+# режим качества: медленнее, но лучше детализация
+export FASHN_LOOK_MODEL_NAME=tryon-max
+export FASHN_LOOK_GENERATION_MODE=balanced
+export FASHN_RESOLUTION=1k
+
+# защита лица: backend накладывает голову/лицо из исходного фото поверх результата
+export FASHN_FACE_LOCK=true
+export FASHN_FACE_LOCK_JPEG_QUALITY=92
+```
+
 Response:
 ```json
 {

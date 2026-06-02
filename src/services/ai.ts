@@ -7,6 +7,7 @@ export type AiResult = {
   category?: string;
   season?: string;
   pattern?: string;
+  error?: string;
 };
 
 export type TryOnPoint = {
@@ -87,13 +88,19 @@ export async function analyzeImage(uri: string): Promise<AiResult> {
   const res = await fetchWithTimeout(AI_BASE_URL + '/analyze', {
     method: 'POST',
     body: form
-  }, 20000);
+  }, 90000);
+
+  const data = await parseJsonOrThrow(res);
 
   if (res.ok === false) {
-    throw new Error(`AI analyze failed (${res.status})`);
+    throw new Error(data?.error || `AI analyze failed (${res.status})`);
   }
 
-  return parseJsonOrThrow(res);
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data;
 }
 
 export async function analyzeTryOnModel(uri: string): Promise<TryOnModelResult> {
@@ -175,7 +182,8 @@ export async function analyzeTryOnGenerateLook(
   shoesUri?: string,
   tuckMode: TuckMode = 'auto',
   compareMode = false,
-  qualityMode: TryOnQualityMode = 'quality'
+  qualityMode: TryOnQualityMode = 'quality',
+  outerUri?: string
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   form.append('person_file', {
@@ -205,19 +213,27 @@ export async function analyzeTryOnGenerateLook(
       type: 'image/jpeg'
     } as any);
   }
+  if (outerUri) {
+    form.append('outer_file', {
+      uri: outerUri,
+      name: outerUri.split('/').pop() || 'outer.jpg',
+      type: 'image/jpeg'
+    } as any);
+  }
   form.append('tuck_mode', tuckMode);
   form.append('quality_mode', qualityMode);
   if (compareMode) {
     form.append('compare_mode', 'true');
   }
 
+  const timeoutMs = qualityMode === 'fast' ? 180000 : 420000;
   const res = await fetchWithTimeout(
     AI_BASE_URL + '/tryon-generate-look',
     {
       method: 'POST',
       body: form
     },
-    420000
+    timeoutMs
   );
 
   const data = await parseJsonOrThrow(res);
