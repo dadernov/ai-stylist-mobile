@@ -20,6 +20,7 @@ import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { AppPressable } from '../components/AppPressable';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
@@ -422,7 +423,7 @@ const resolveTuckDecision = (selection: WardrobeItem[], style: string, event: st
   if (alwaysUntuckedCategories.has(top.category)) {
     return {
       mode: 'untucked' as TuckMode,
-      tip: 'Этот верх лучше носить навыпуск: так силуэт выглядит естественнее.'
+      tip: translate('Этот верх лучше носить навыпуск: так силуэт выглядит естественнее.')
     };
   }
 
@@ -441,24 +442,24 @@ const resolveTuckDecision = (selection: WardrobeItem[], style: string, event: st
   if (tuckScore >= 4) {
     return {
       mode: 'tucked' as TuckMode,
-      tip: 'Лучше заправить верх полностью: образ будет собраннее и аккуратнее.'
+      tip: translate('Лучше заправить верх полностью: образ будет собраннее и аккуратнее.')
     };
   }
   if (tuckScore >= 2) {
     return {
       mode: 'tucked' as TuckMode,
-      tip: 'Оптимально сделать частичную заправку спереди — баланс строгости и расслабленности.'
+      tip: translate('Оптимально сделать частичную заправку спереди — баланс строгости и расслабленности.')
     };
   }
   if (tuckScore <= -2) {
     return {
       mode: 'untucked' as TuckMode,
-      tip: 'Лучше оставить верх навыпуск: так лук выглядит живее и комфортнее.'
+      tip: translate('Лучше оставить верх навыпуск: так лук выглядит живее и комфортнее.')
     };
   }
   return {
     mode: 'auto' as TuckMode,
-    tip: 'Можно носить и заправленным, и навыпуск: выбери по настроению дня.'
+    tip: translate('Можно носить и заправленным, и навыпуск: выбери по настроению дня.')
   };
 };
 
@@ -479,7 +480,7 @@ const buildFitReasons = (
   const reasons: string[] = [];
 
   if (top && bottom && shoes) {
-    reasons.push('Полный комплект: верх, низ и обувь в одном образе.');
+    reasons.push(translate('Полный комплект: верх, низ и обувь в одном образе.'));
   }
 
   const tuckTip = resolveTuckDecision(selection, style, event).tip;
@@ -490,7 +491,15 @@ const buildFitReasons = (
       isIn(item.category, styleProfile?.preferredCategories) || isIn(item.category, eventProfile?.preferredCategories)
   ).length;
   if (preferredMatches > 0) {
-    reasons.push(`${preferredMatches} вещ${preferredMatches === 1 ? 'ь' : preferredMatches < 5 ? 'и' : 'ей'} попадает в приоритеты «${style}» и «${event}».`);
+    const noun = preferredMatches === 1 ? 'вещь' : preferredMatches < 5 ? 'вещи' : 'вещей';
+    reasons.push(
+      translate('{count} {noun} попадает в приоритеты «{style}» и «{event}».', {
+        count: preferredMatches,
+        noun,
+        style: translate(style),
+        event: translate(event)
+      })
+    );
   }
 
   const avoidedMatches = selection.filter(
@@ -498,32 +507,32 @@ const buildFitReasons = (
       isIn(item.category, styleProfile?.avoidedCategories) || isIn(item.category, eventProfile?.avoidedCategories)
   ).length;
   if (avoidedMatches === 0) {
-    reasons.push('Нет конфликтующих категорий для выбранного события.');
+    reasons.push(translate('Нет конфликтующих категорий для выбранного события.'));
   }
 
   const seasonTotal = selection.reduce((sum, item) => sum + seasonScore(item, temp), 0);
   if (typeof temp === 'number') {
-    if (seasonTotal >= 2) reasons.push(`Сезонность подходит под текущую погоду (${temp}°C).`);
-    if (seasonTotal <= -2) reasons.push(`Сезонность спорная для текущей погоды (${temp}°C).`);
+    if (seasonTotal >= 2) reasons.push(translate('Сезонность подходит под текущую погоду ({temp}°C).', { temp }));
+    if (seasonTotal <= -2) reasons.push(translate('Сезонность спорная для текущей погоды ({temp}°C).', { temp }));
   }
 
   const hasOuter = selection.some((item) => item.section === 'Верхняя одежда');
   if (typeof temp === 'number') {
-    if (!hasOuter && temp >= 14) reasons.push(`При ${temp}°C верхняя одежда не нужна — без лишних слоёв.`);
-    if (hasOuter && temp <= 7) reasons.push(`Добавили верхнюю одежду: при ${temp}°C без неё прохладно.`);
+    if (!hasOuter && temp >= 14) reasons.push(translate('При {temp}°C верхняя одежда не нужна — без лишних слоёв.', { temp }));
+    if (hasOuter && temp <= 7) reasons.push(translate('Добавили верхнюю одежду: при {temp}°C без неё прохладно.', { temp }));
   }
 
   const groups = Array.from(new Set(selection.map((item) => getColorGroup(item.color))));
   if (groups.length <= 2) {
-    reasons.push('Палитра образа выглядит цельно по цветовым группам.');
+    reasons.push(translate('Палитра образа выглядит цельно по цветовым группам.'));
   }
 
   const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
   if (wardrobeHasShoes && !shoes) {
-    reasons.push('В гардеробе есть обувь, но в этот вариант она не попала.');
+    reasons.push(translate('В гардеробе есть обувь, но в этот вариант она не попала.'));
   }
 
-  if (totalScore >= 55) reasons.push('Сильное совпадение с контекстом — один из лучших вариантов.');
+  if (totalScore >= 55) reasons.push(translate('Сильное совпадение с контекстом — один из лучших вариантов.'));
 
   return reasons.slice(0, 4);
 };
@@ -658,9 +667,9 @@ const buildLooks = (
 
   return selectedCombos.map((combo, index) => ({
     id: `look-${Date.now()}-${index}`,
-    title: `Лук ${index + 1} · ${style}`,
+    title: translate('Лук {n} · {style}', { n: index + 1, style: translate(style) }),
     itemIds: uniqueById(combo.items).map((item) => item.id),
-    weather: weatherText || 'Погода недоступна',
+    weather: weatherText || translate('Погода недоступна'),
     style,
     event,
     fitScore: combo.score,
@@ -681,10 +690,11 @@ export function OutfitBuilderScreen({
 }: OutfitBuilderProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors: themeColors } = useTheme();
+  const t = useT();
   const [activeTab, setActiveTab] = useState<'builder' | 'looks'>('builder');
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
-  const [weatherText, setWeatherText] = useState('Определяем погоду…');
+  const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
   const [temperature, setTemperature] = useState<number | null>(null);
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
 
@@ -719,6 +729,25 @@ export function OutfitBuilderScreen({
     return uniqueIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
   };
 
+  const savedLookToGeneratedLook = (look: SavedLook): GeneratedLook => ({
+    id: look.id,
+    title: look.name,
+    itemIds: look.itemIds,
+    weather: '',
+    style: '',
+    event: '',
+    makeup: '',
+    hair: '',
+    fitScore: look.fitScore,
+    fitReasons: look.fitReasons,
+    tuckMode: look.tuckMode,
+    tryOnImageUri: look.tryOnImageUri,
+    tryOnWarning: look.tryOnWarning,
+    tryOnUpdatedAt: look.tryOnUpdatedAt,
+    tryOnQualityMode: look.tryOnQualityMode,
+    tryOnHistory: look.tryOnHistory
+  });
+
   useEffect(() => {
     if (!selectedTop && tops.length) setSelectedTop(tops[0]);
     if (!selectedBottom && bottoms.length) setSelectedBottom(bottoms[0]);
@@ -730,7 +759,7 @@ export function OutfitBuilderScreen({
       try {
         const permission = await Location.requestForegroundPermissionsAsync();
         if (!permission.granted) {
-          setWeatherText('Разреши доступ к геолокации, чтобы узнать погоду.');
+          setWeatherText(t('Разреши доступ к геолокации, чтобы узнать погоду.'));
           return;
         }
         const location = await Location.getCurrentPositionAsync({});
@@ -738,7 +767,7 @@ export function OutfitBuilderScreen({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude
         });
-        const city = geo[0]?.city || 'твоем городе';
+        const city = geo[0]?.city || t('твоем городе');
         const url =
           `https://api.open-meteo.com/v1/forecast?latitude=${location.coords.latitude}` +
           `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&timezone=auto`;
@@ -747,11 +776,18 @@ export function OutfitBuilderScreen({
         const temp = data?.current?.temperature_2m;
         const code = data?.current?.weathercode;
         const wind = data?.current?.wind_speed_10m;
-        const description = weatherCodeMap[code] || 'переменная облачность';
+        const description = t(weatherCodeMap[code] || 'переменная облачность');
         setTemperature(typeof temp === 'number' ? temp : null);
-        setWeatherText(`Сейчас ${temp ?? '--'}°C, ${description}, ветер ${wind ?? '--'} м/с (${city})`);
+        setWeatherText(
+          t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
+            temp: temp ?? '--',
+            description,
+            wind: wind ?? '--',
+            city
+          })
+        );
       } catch (error) {
-        setWeatherText('Не удалось получить погоду. Проверь интернет.');
+        setWeatherText(t('Не удалось получить погоду. Проверь интернет.'));
       }
     };
 
@@ -760,12 +796,12 @@ export function OutfitBuilderScreen({
 
   const handleGenerateLooks = () => {
     if (!items.length) {
-      Alert.alert('Нет вещей', 'Добавь хотя бы 3 вещи в гардероб.');
+      Alert.alert(t('Нет вещей'), t('Добавь хотя бы 3 вещи в гардероб.'));
       return;
     }
     const generated = buildLooks(items, activeStyle, activeEvent, weatherText, temperature);
     if (!generated.length) {
-      Alert.alert('Не удалось собрать лук', 'Добавь больше вещей разных категорий.');
+      Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
       return;
     }
     setLooks(generated);
@@ -777,10 +813,10 @@ export function OutfitBuilderScreen({
       Boolean
     ) as WardrobeItem[];
     if (selectedItems.length < 3) {
-      Alert.alert('Недостаточно вещей', 'Добавь хотя бы верх, низ и обувь.');
+      Alert.alert(t('Недостаточно вещей'), t('Добавь хотя бы верх, низ и обувь.'));
       return;
     }
-    const name = manualName.trim() || `Лук ${savedLooks.length + 1}`;
+    const name = manualName.trim() || t('Лук {n}', { n: savedLooks.length + 1 });
     const newLook: SavedLook = {
       id: Date.now().toString(),
       name,
@@ -793,7 +829,7 @@ export function OutfitBuilderScreen({
   };
 
   const handleSaveGeneratedLook = (look: GeneratedLook) => {
-    const name = look.title || `Лук ${savedLooks.length + 1}`;
+    const name = look.title || t('Лук {n}', { n: savedLooks.length + 1 });
     const newLook: SavedLook = {
       id: Date.now().toString(),
       name,
@@ -886,7 +922,7 @@ export function OutfitBuilderScreen({
     if (!editLookId) return;
     const selection = [editTop, editBottom, editShoes, editOuter, editBag].filter(Boolean) as WardrobeItem[];
     if (selection.length < 3) {
-      Alert.alert('Недостаточно вещей', 'Добавь хотя бы верх, низ и обувь.');
+      Alert.alert(t('Недостаточно вещей'), t('Добавь хотя бы верх, низ и обувь.'));
       return;
     }
     const updated = savedLooks.map((look) =>
@@ -911,10 +947,10 @@ export function OutfitBuilderScreen({
   };
 
   const handleDeleteLook = (id: string) => {
-    Alert.alert('Удалить лук?', 'Действие нельзя отменить.', [
-      { text: 'Отмена', style: 'cancel' },
+    Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+      { text: t('Отмена'), style: 'cancel' },
       {
-        text: 'Удалить',
+        text: t('Удалить'),
         style: 'destructive',
         onPress: () => onSavedLooksChange(savedLooks.filter((look) => look.id !== id))
       }
@@ -928,7 +964,7 @@ export function OutfitBuilderScreen({
     onSelect: (item: WardrobeItem) => void
   ) => (
     <View style={styles.selectorBlock}>
-      <Text style={styles.selectorTitle}>{title}</Text>
+      <Text style={styles.selectorTitle}>{t(title)}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
         {list.map((item) => {
           const active = selected?.id === item.id;
@@ -955,8 +991,10 @@ export function OutfitBuilderScreen({
     if (!reasons?.length && typeof score !== 'number') return null;
     return (
       <View style={styles.reasonBlock}>
-        <Text style={styles.reasonTitle}>Почему этот лук подходит</Text>
-        {typeof score === 'number' ? <Text style={styles.reasonScore}>Оценка совпадения: {Math.round(score)}</Text> : null}
+        <Text style={styles.reasonTitle}>{t('Почему этот лук подходит')}</Text>
+        {typeof score === 'number' ? (
+          <Text style={styles.reasonScore}>{t('Оценка совпадения: {score}', { score: Math.round(score) })}</Text>
+        ) : null}
         {(reasons || []).map((reason, index) => (
           <Text key={`${reason}-${index}`} style={styles.reasonText}>
             • {reason}
@@ -970,8 +1008,8 @@ export function OutfitBuilderScreen({
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pageContent}>
         <ScreenTitle
-          title="Конструктор образов"
-          subtitle="Выбери стиль и событие, а ИИ соберет луки из твоего гардероба с учетом погоды."
+          title={t('Конструктор образов')}
+          subtitle={t('Выбери стиль и событие, а ИИ соберет луки из твоего гардероба с учетом погоды.')}
         />
 
         <View style={styles.segment}>
@@ -980,20 +1018,20 @@ export function OutfitBuilderScreen({
             onPress={() => setActiveTab('builder')}
           >
             <Text style={[styles.segmentText, activeTab === 'builder' && styles.segmentTextActive]}>
-              Конструктор
+              {t('Конструктор')}
             </Text>
           </AppPressable>
           <AppPressable
             style={[styles.segmentTab, activeTab === 'looks' && styles.segmentTabActive]}
             onPress={() => setActiveTab('looks')}
           >
-            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>Луки</Text>
+            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Луки')}</Text>
           </AppPressable>
         </View>
 
         {activeTab === 'builder' ? (
           <>
-            <Text style={styles.groupTitle}>Стиль</Text>
+            <Text style={styles.groupTitle}>{t('Стиль')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1003,14 +1041,14 @@ export function OutfitBuilderScreen({
               {stylePresets.map((preset) => (
                 <Chip
                   key={preset}
-                  label={preset}
+                  label={t(preset)}
                   active={preset === activeStyle}
                   onPress={() => setActiveStyle(preset)}
                 />
               ))}
             </ScrollView>
 
-            <Text style={styles.groupTitle}>Мероприятие</Text>
+            <Text style={styles.groupTitle}>{t('Мероприятие')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1020,7 +1058,7 @@ export function OutfitBuilderScreen({
               {events.map((event) => (
                 <Chip
                   key={event}
-                  label={event}
+                  label={t(event)}
                   active={event === activeEvent}
                   onPress={() => setActiveEvent(event)}
                 />
@@ -1028,38 +1066,38 @@ export function OutfitBuilderScreen({
             </ScrollView>
 
             <View style={styles.weatherCard}>
-              <Text style={styles.weatherTitle}>Погода рядом с тобой</Text>
+              <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
               <Text style={styles.weatherText}>{weatherText}</Text>
             </View>
 
             <AppPressable style={styles.generateButton} onPress={handleGenerateLooks}>
-              <Text style={styles.generateText}>Сгенерировать подходящие образы</Text>
+              <Text style={styles.generateText}>{t('Сгенерировать подходящие образы')}</Text>
             </AppPressable>
-            <Text style={styles.generateHint}>Покажем только те варианты, которые реально подходят под стиль и событие.</Text>
+            <Text style={styles.generateHint}>{t('Покажем только те варианты, которые реально подходят под стиль и событие.')}</Text>
 
             <View style={styles.manualWrap}>
-              <Text style={styles.manualTitle}>Собери образ вручную</Text>
+              <Text style={styles.manualTitle}>{t('Собери образ вручную')}</Text>
               {renderPicker('Верх', tops, selectedTop, setSelectedTop)}
               {renderPicker('Низ', bottoms, selectedBottom, setSelectedBottom)}
               {renderPicker('Обувь', shoes, selectedShoes, setSelectedShoes)}
               {renderPicker('Верхняя одежда', outer, selectedOuter, setSelectedOuter)}
               {renderPicker('Сумка', bags, selectedBag, setSelectedBag)}
 
-              <Text style={styles.manualLabel}>Название образа</Text>
+              <Text style={styles.manualLabel}>{t('Название образа')}</Text>
               <TextInput
                 style={styles.manualInput}
-                placeholder="Например, Оранжевый кэжуал"
+                placeholder={t('Например, Оранжевый кэжуал')}
                 placeholderTextColor={themeColors.muted}
                 value={manualName}
                 onChangeText={setManualName}
               />
 
               <AppPressable style={styles.addLookButton} onPress={handleSaveManualLook}>
-                <Text style={styles.addLookText}>Добавить в образы</Text>
+                <Text style={styles.addLookText}>{t('Добавить в образы')}</Text>
               </AppPressable>
 
               <View style={styles.manualResult}>
-                <Text style={styles.manualResultTitle}>Текущий образ</Text>
+                <Text style={styles.manualResultTitle}>{t('Текущий образ')}</Text>
                 {[selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag]
                   .filter(Boolean)
                   .map((item) => (
@@ -1079,10 +1117,10 @@ export function OutfitBuilderScreen({
                       <Text style={styles.lookTitle}>{look.title}</Text>
                       <View style={styles.lookActions}>
                         <AppPressable style={styles.secondaryButton} onPress={() => handleSaveGeneratedLook(look)}>
-                          <Text style={styles.secondaryButtonText}>В луки</Text>
+                          <Text style={styles.secondaryButtonText}>{t('В луки')}</Text>
                         </AppPressable>
                         <AppPressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(look)}>
-                          <Text style={styles.favoriteText}>В избранное</Text>
+                          <Text style={styles.favoriteText}>{t('В избранное')}</Text>
                         </AppPressable>
                       </View>
                     </View>
@@ -1106,10 +1144,10 @@ export function OutfitBuilderScreen({
                     ))}
                     {renderFitReasons(look.fitReasons, look.fitScore)}
                     <View style={styles.beautyBlock}>
-                      <Text style={styles.beautyTitle}>Макияж</Text>
-                      <Text style={styles.beautyText}>{look.makeup}</Text>
-                      <Text style={styles.beautyTitle}>Укладка</Text>
-                      <Text style={styles.beautyText}>{look.hair}</Text>
+                      <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                      <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                      <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                      <Text style={styles.beautyText}>{t(look.hair)}</Text>
                     </View>
                   </View>
                 );
@@ -1120,8 +1158,8 @@ export function OutfitBuilderScreen({
           <View style={styles.looksWrap}>
             {!savedLooks.length ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>Пока нет сохраненных образов</Text>
-                <Text style={styles.emptyText}>Собери лук вручную и добавь его в образы.</Text>
+                <Text style={styles.emptyTitle}>{t('Пока нет сохраненных образов')}</Text>
+                <Text style={styles.emptyText}>{t('Собери лук вручную и добавь его в образы.')}</Text>
               </View>
             ) : null}
             {savedLooks.map((look) => {
@@ -1132,10 +1170,13 @@ export function OutfitBuilderScreen({
                     <Text style={styles.lookTitle}>{look.name}</Text>
                     <View style={styles.lookActions}>
                       <AppPressable style={styles.secondaryButton} onPress={() => openEditLook(look)}>
-                        <Text style={styles.secondaryButtonText}>Изменить</Text>
+                        <Text style={styles.secondaryButtonText}>{t('Изменить')}</Text>
+                      </AppPressable>
+                      <AppPressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}>
+                        <Text style={styles.favoriteText}>{t('В избранное')}</Text>
                       </AppPressable>
                       <AppPressable style={styles.deleteButton} onPress={() => handleDeleteLook(look.id)}>
-                        <Text style={styles.deleteButtonText}>Удалить</Text>
+                        <Text style={styles.deleteButtonText}>{t('Удалить')}</Text>
                       </AppPressable>
                     </View>
                   </View>
@@ -1169,11 +1210,11 @@ export function OutfitBuilderScreen({
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                <Text style={styles.modalTitle}>Редактировать лук</Text>
-                <Text style={styles.modalLabel}>Название</Text>
+                <Text style={styles.modalTitle}>{t('Редактировать лук')}</Text>
+                <Text style={styles.modalLabel}>{t('Название')}</Text>
                 <TextInput
                   style={styles.modalInput}
-                  placeholder="Название"
+                  placeholder={t('Название')}
                   placeholderTextColor={themeColors.muted}
                   value={editName}
                   onChangeText={setEditName}
@@ -1184,10 +1225,10 @@ export function OutfitBuilderScreen({
                 {renderPicker('Верхняя одежда', outer, editOuter, setEditOuter)}
                 {renderPicker('Сумка', bags, editBag, setEditBag)}
                 <AppPressable style={styles.modalSave} onPress={handleSaveEditedLook}>
-                  <Text style={styles.modalSaveText}>Сохранить</Text>
+                  <Text style={styles.modalSaveText}>{t('Сохранить')}</Text>
                 </AppPressable>
                 <AppPressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
-                  <Text style={styles.modalCloseText}>Отмена</Text>
+                  <Text style={styles.modalCloseText}>{t('Отмена')}</Text>
                 </AppPressable>
               </ScrollView>
             </KeyboardAvoidingView>

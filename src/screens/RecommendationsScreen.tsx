@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
+import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 
 type RecommendationsProps = {
@@ -66,6 +67,7 @@ const eventTips: Record<string, string[]> = {
 
 export function RecommendationsScreen({ looks, context }: RecommendationsProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const hasContext = context?.style && context?.event;
   const beauty = hasContext ? beautyMap[context.event] || beautyMap['Прогулка'] : null;
   const styleCardTips = hasContext ? styleTips[context.style] || [] : [];
@@ -74,23 +76,23 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
   return (
     <View style={styles.container}>
       <ScreenTitle
-        title="Рекомендации"
-        subtitle="Макияж, волосы и стилизация под выбранный стиль и событие."
+        title={t('Рекомендации')}
+        subtitle={t('Макияж, волосы и стилизация под выбранный стиль и событие.')}
       />
 
       <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
         {hasContext && beauty ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Для: {context.style} · {context.event}</Text>
-            <Text style={styles.cardText}>Макияж: {beauty.makeup}</Text>
-            <Text style={styles.cardText}>Укладка: {beauty.hair}</Text>
+            <Text style={styles.cardTitle}>{t('Для: {style} · {event}', { style: t(context.style), event: t(context.event) })}</Text>
+            <Text style={styles.cardText}>{t('Макияж: {value}', { value: t(beauty.makeup) })}</Text>
+            <Text style={styles.cardText}>{t('Укладка: {value}', { value: t(beauty.hair) })}</Text>
             {context.weather ? <Text style={styles.cardHint}>{context.weather}</Text> : null}
           </View>
         ) : null}
 
         {looks.length ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Последние луки</Text>
+            <Text style={styles.cardTitle}>{t('Последние луки')}</Text>
             {looks.slice(0, 3).map((look) => (
               <View key={look.id} style={styles.lookReasonRow}>
                 <Text style={styles.cardText}>• {look.title}</Text>
@@ -102,10 +104,10 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
 
         {hasContext && styleCardTips.length ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Под стиль: {context.style}</Text>
+            <Text style={styles.cardTitle}>{t('Под стиль: {style}', { style: t(context.style) })}</Text>
             {styleCardTips.map((tip) => (
               <Text key={tip} style={styles.cardText}>
-                • {tip}
+                • {t(tip)}
               </Text>
             ))}
           </View>
@@ -113,10 +115,10 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
 
         {hasContext && eventCardTips.length ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Под событие: {context.event}</Text>
+            <Text style={styles.cardTitle}>{t('Под событие: {event}', { event: t(context.event) })}</Text>
             {eventCardTips.map((tip) => (
               <Text key={tip} style={styles.cardText}>
-                • {tip}
+                • {t(tip)}
               </Text>
             ))}
           </View>
@@ -124,8 +126,8 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
 
         {(hasContext ? [] : fallbackCards).map((card) => (
           <View key={card.title} style={styles.card}>
-            <Text style={styles.cardTitle}>{card.title}</Text>
-            <Text style={styles.cardText}>{card.text}</Text>
+            <Text style={styles.cardTitle}>{t(card.title)}</Text>
+            <Text style={styles.cardText}>{t(card.text)}</Text>
           </View>
         ))}
       </ScrollView>

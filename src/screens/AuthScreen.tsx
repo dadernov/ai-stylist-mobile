@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { useT } from '../constants/i18n';
 import { AppPressable } from '../components/AppPressable';
 
 type AuthScreenProps = {
@@ -25,6 +26,7 @@ const formatPhone = (digits: string) => {
 
 export function AuthScreen({ onLogin }: AuthScreenProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const { colors } = useTheme();
   const [name, setName] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
@@ -39,7 +41,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   const handlePhoneChange = (text: string) => {
     const digits = text.replace(/\D/g, '');
     if (digits.startsWith('8')) {
-      setPhoneError('Номер должен начинаться с +7, а не с 8.');
+      setPhoneError(t('Номер должен начинаться с +7, а не с 8.'));
       return;
     }
     let normalized = digits;
@@ -51,7 +53,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
 
   const requestOtp = async () => {
     if (phoneDigits.length !== 10) {
-      setPhoneError('Введите номер в формате +7 XXX XXX XX XX.');
+      setPhoneError(t('Введите номер в формате +7 XXX XXX XX XX.'));
       return;
     }
 
@@ -62,17 +64,17 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
     setOtpError('');
 
     if (__DEV__) {
-      Alert.alert('DEV-режим', `Код подтверждения: ${generated}`);
+      Alert.alert(t('DEV-режим'), t('Код подтверждения: {code}', { code: generated }));
     }
   };
 
   const verifyOtp = async () => {
     if (!otp.trim()) {
-      setOtpError('Введите код из SMS.');
+      setOtpError(t('Введите код из SMS.'));
       return;
     }
     if (otp.trim() !== demoOtp) {
-      setOtpError('Неверный код.');
+      setOtpError(t('Неверный код.'));
       return;
     }
 
@@ -83,20 +85,20 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Вход</Text>
-      <Text style={styles.subtitle}>Подтверди номер телефона, чтобы сохранять гардероб и образы.</Text>
+      <Text style={styles.title}>{t('Вход')}</Text>
+      <Text style={styles.subtitle}>{t('Подтверди номер телефона, чтобы сохранять гардероб и образы.')}</Text>
 
       {step === 'phone' ? (
         <View style={styles.form}>
-          <Text style={styles.label}>Имя</Text>
+          <Text style={styles.label}>{t('Имя')}</Text>
           <TextInput
-            placeholder="Например, Алина"
+            placeholder={t('Например, Алина')}
             placeholderTextColor={colors.muted}
             style={styles.input}
             value={name}
             onChangeText={setName}
           />
-          <Text style={styles.label}>Телефон</Text>
+          <Text style={styles.label}>{t('Телефон')}</Text>
           <TextInput
             placeholder="+7 999 000 00 00"
             placeholderTextColor={colors.muted}
@@ -107,14 +109,14 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           />
           {phoneError ? <Text style={styles.errorText}>{phoneError}</Text> : null}
           <AppPressable style={styles.primaryButton} onPress={requestOtp}>
-            <Text style={styles.primaryButtonText}>Отправить код</Text>
+            <Text style={styles.primaryButtonText}>{t('Отправить код')}</Text>
           </AppPressable>
         </View>
       ) : (
         <View style={styles.form}>
-          <Text style={styles.label}>Код из SMS</Text>
+          <Text style={styles.label}>{t('Код из SMS')}</Text>
           <TextInput
-            placeholder="4 цифры"
+            placeholder={t('4 цифры')}
             placeholderTextColor={colors.muted}
             style={styles.input}
             keyboardType="number-pad"
@@ -124,15 +126,15 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           />
           {otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
           <AppPressable style={styles.primaryButton} onPress={verifyOtp}>
-            <Text style={styles.primaryButtonText}>Подтвердить</Text>
+            <Text style={styles.primaryButtonText}>{t('Подтвердить')}</Text>
           </AppPressable>
           <AppPressable style={styles.linkButton} onPress={() => setStep('phone')}>
-            <Text style={styles.linkText}>Изменить номер</Text>
+            <Text style={styles.linkText}>{t('Изменить номер')}</Text>
           </AppPressable>
         </View>
       )}
 
-      <Text style={styles.hint}>Реальную отправку SMS подключим на бэкенде. Сейчас это демо-режим.</Text>
+      <Text style={styles.hint}>{t('Реальную отправку SMS подключим на бэкенде. Сейчас это демо-режим.')}</Text>
     </View>
   );
 }

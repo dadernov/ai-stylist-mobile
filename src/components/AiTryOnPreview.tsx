@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
+import { useT, translate } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { analyzeTryOnGenerateLook, TryOnQualityMode, TuckMode } from '../services/ai';
 import { TryOnHistoryItem } from '../types/looks';
@@ -113,7 +114,7 @@ const cacheTryOnImage = async (sourceUri: string, timestamp: number) => {
     console.warn('Failed to cache try-on image', error);
     return {
       imageUri: sourceUri,
-      warning: 'Картинка пока хранится по временной ссылке. Если позже не откроется, перегенерируй образ.'
+      warning: translate('Картинка пока хранится по временной ссылке. Если позже не откроется, перегенерируй образ.')
     };
   }
 };
@@ -128,6 +129,7 @@ export function AiTryOnPreview({
   onGenerated
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const [isLoading, setLoading] = useState(false);
   const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
   const [error, setError] = useState<string | null>(null);
@@ -157,10 +159,10 @@ export function AiTryOnPreview({
     !shoesGarment?.imageUri ? 'обувь' : null
   ].filter(Boolean) as string[];
   const readinessWarnings = [
-    !modelUri ? 'Добавь фото в полный рост в профиле.' : null,
-    !topGarment?.imageUri && !bottomGarment?.imageUri ? 'Нужна хотя бы вещь с фото: верх или низ.' : null,
-    missingSections.length ? `Не хватает фото для: ${missingSections.join(', ')}.` : null,
-    modelUri && missingSections.length === 0 ? 'Фото готовы. Можно генерировать образ.' : null
+    !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
+    !topGarment?.imageUri && !bottomGarment?.imageUri ? t('Нужна хотя бы вещь с фото: верх или низ.') : null,
+    missingSections.length ? t('Не хватает фото для: {list}.', { list: missingSections.map((s) => t(s)).join(', ') }) : null,
+    modelUri && missingSections.length === 0 ? t('Фото готовы. Можно генерировать образ.') : null
   ].filter(Boolean) as string[];
 
   useEffect(() => {
@@ -211,7 +213,7 @@ export function AiTryOnPreview({
     const timeout = setTimeout(() => {
       setResultImageLoading(false);
       if (current && isRemoteUri(current)) {
-        setResultImageError('Не удалось загрузить картинку по временной ссылке. Перегенерируй образ — новая версия сохранится локально.');
+        setResultImageError(t('Не удалось загрузить картинку по временной ссылке. Перегенерируй образ — новая версия сохранится локально.'));
       }
     }, 15000);
     return () => clearTimeout(timeout);
@@ -229,7 +231,7 @@ export function AiTryOnPreview({
       outerGarment?.imageUri
     );
     if (!generated.outputUrl) {
-      throw new Error(generated.error || 'FASHN не вернул итоговую картинку');
+      throw new Error(generated.error || t('FASHN не вернул итоговую картинку'));
     }
     return { imageUri: generated.outputUrl, warning: generated.warning || undefined };
   };
@@ -254,7 +256,7 @@ export function AiTryOnPreview({
         qualityMode: selectedQualityMode
       });
     } catch (e: any) {
-      setError(e?.message || 'Не удалось сгенерировать примерку');
+      setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
       setLoading(false);
     }
@@ -269,13 +271,20 @@ export function AiTryOnPreview({
             style={styles.image}
             resizeMode="contain"
             onLoadStart={() => {
-              setResultImageLoading(true);
+              // Локальные файлы примерки уже на диске — рисуются мгновенно.
+              // Полупрозрачный оверлей загрузки снимается только по onLoadEnd,
+              // который на iOS для file:// иногда не приходит, из-за чего картинка
+              // ~15 секунд (до сработки таймера-страховки) висит блёклой под
+              // оверлеем. Поэтому оверлей показываем только для удалённых ссылок.
+              if (resultUri && isRemoteUri(resultUri)) {
+                setResultImageLoading(true);
+              }
               setResultImageError(null);
             }}
             onLoadEnd={() => setResultImageLoading(false)}
             onError={() => {
               setResultImageLoading(false);
-              setResultImageError('Эта старая картинка больше недоступна. Перегенерируй образ, новая версия сохранится локально.');
+              setResultImageError(t('Эта старая картинка больше недоступна. Перегенерируй образ, новая версия сохранится локально.'));
             }}
           />
           {resultImageLoading && !resultImageError ? (
@@ -292,21 +301,21 @@ export function AiTryOnPreview({
       ) : null}
       {!resultUri ? (
         <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>ИИ примерка пока не сгенерирована</Text>
+          <Text style={styles.placeholderText}>{t('ИИ примерка пока не сгенерирована')}</Text>
         </View>
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
       <View style={styles.qualityCard}>
-        <Text style={styles.qualityTitle}>Проверка перед генерацией</Text>
+        <Text style={styles.qualityTitle}>{t('Проверка перед генерацией')}</Text>
         {readinessWarnings.map((item) => (
           <Text key={item} style={styles.qualityText}>• {item}</Text>
         ))}
       </View>
       {history.length ? (
         <View style={styles.historyWrap}>
-          <Text style={styles.compareTitle}>История генераций</Text>
+          <Text style={styles.compareTitle}>{t('История генераций')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
             {history.slice(0, 8).map((item) => (
               <AppPressable
@@ -330,7 +339,7 @@ export function AiTryOnPreview({
                   />
                   {brokenHistoryUris[item.imageUri] ? (
                     <View style={styles.historyImageError}>
-                      <Text style={styles.historyImageErrorText}>Недоступно</Text>
+                      <Text style={styles.historyImageErrorText}>{t('Недоступно')}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -347,10 +356,10 @@ export function AiTryOnPreview({
       >
         <Text style={styles.buttonText}>
           {isLoading
-            ? 'Генерируем образ…'
+            ? t('Генерируем образ…')
             : resultUri
-              ? 'Перегенерировать'
-              : 'Сгенерировать'}
+              ? t('Перегенерировать')
+              : t('Сгенерировать')}
         </Text>
       </AppPressable>
 
@@ -358,7 +367,7 @@ export function AiTryOnPreview({
         <View style={styles.previewBackdrop}>
           {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" /> : null}
           <AppPressable style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
-            <Text style={styles.previewCloseText}>Закрыть</Text>
+            <Text style={styles.previewCloseText}>{t('Закрыть')}</Text>
           </AppPressable>
         </View>
       </Modal>

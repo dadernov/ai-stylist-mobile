@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
+import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
@@ -17,17 +18,18 @@ type FavoritesScreenProps = {
 
 export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const itemsById = Object.fromEntries(items.map((item) => [item.id, item]));
   return (
     <View style={styles.container}>
-      <ScreenTitle title="Избранные образы" subtitle="Сохраняй лучшие варианты, чтобы быстро их находить." />
+      <ScreenTitle title={t('Избранные образы')} subtitle={t('Сохраняй лучшие варианты, чтобы быстро их находить.')} />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listWrap}>
         {!looks.length ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Пока нет избранных образов</Text>
-            <Text style={styles.emptyText}>Добавь лук из конструктора, и он появится здесь.</Text>
+            <Text style={styles.emptyTitle}>{t('Пока нет избранных образов')}</Text>
+            <Text style={styles.emptyText}>{t('Добавь лук из конструктора, и он появится здесь.')}</Text>
           </View>
         ) : null}
 
@@ -39,27 +41,27 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{look.title}</Text>
                 <AppPressable style={styles.deleteButton} onPress={() => onRemove(look.id)}>
-                  <Text style={styles.deleteText}>Удалить</Text>
+                  <Text style={styles.deleteText}>{t('Удалить')}</Text>
                 </AppPressable>
               </View>
               <Text style={styles.cardMeta}>{look.weather}</Text>
-              <Text style={styles.blockTitle}>Образ из вещей</Text>
+              <Text style={styles.blockTitle}>{t('Образ из вещей')}</Text>
               <LookPreview items={lookItems} />
-              <Text style={styles.blockTitle}>Сгенерированный образ</Text>
+              <Text style={styles.blockTitle}>{t('Сгенерированный образ')}</Text>
               {tryOnUri ? (
                 <AppPressable style={styles.generatedWrap} onPress={() => setPreviewUri(tryOnUri)}>
                   <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />
                 </AppPressable>
               ) : (
                 <View style={styles.generatedPlaceholder}>
-                  <Text style={styles.generatedPlaceholderText}>Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.</Text>
+                  <Text style={styles.generatedPlaceholderText}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
                 </View>
               )}
               <View style={styles.beautyBlock}>
-                <Text style={styles.beautyTitle}>Макияж</Text>
-                <Text style={styles.beautyText}>{look.makeup}</Text>
-                <Text style={styles.beautyTitle}>Укладка</Text>
-                <Text style={styles.beautyText}>{look.hair}</Text>
+                <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                <Text style={styles.beautyText}>{t(look.hair)}</Text>
               </View>
             </View>
           );
@@ -70,7 +72,7 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
         <View style={styles.previewBackdrop}>
           {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}
           <AppPressable style={styles.previewClose} onPress={() => setPreviewUri(null)}>
-            <Text style={styles.previewCloseText}>Закрыть</Text>
+            <Text style={styles.previewCloseText}>{t('Закрыть')}</Text>
           </AppPressable>
         </View>
       </Modal>

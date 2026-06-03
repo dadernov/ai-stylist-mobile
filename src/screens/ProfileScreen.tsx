@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ScreenTitle } from '../components/ScreenTitle';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from '../components/AppPressable';
 
 type ProfileScreenProps = {
@@ -18,25 +19,6 @@ type ProfileScreenProps = {
   onShowGuide: () => void;
   onLogout: () => void;
 };
-
-const bodyTypes = [
-  'Песочные часы',
-  'Груша',
-  'Яблоко',
-  'Прямоугольник',
-  'Перевернутый треугольник'
-];
-
-const colorTypes = [
-  'Тёплая весна',
-  'Светлая весна',
-  'Холодное лето',
-  'Мягкое лето',
-  'Глубокая осень',
-  'Тёплая осень',
-  'Глубокая зима',
-  'Холодная зима'
-];
 
 type CropPreset = {
   key: string;
@@ -65,31 +47,28 @@ export function ProfileScreen({
   onLogout
 }: ProfileScreenProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const { mode, setMode } = useTheme();
-  const [bodyType, setBodyType] = useState('Не задано');
-  const [colorType, setColorType] = useState('Не задано');
-  const [activeModal, setActiveModal] = useState<'body' | 'color' | null>(null);
+  const { lang, setLang } = useLanguage();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const rows = [
-    { label: 'Тип фигуры', value: bodyType, key: 'body' as const },
-    { label: 'Цветотип', value: colorType, key: 'color' as const },
     { label: 'Избранные образы', value: String(favoritesCount) },
     { label: 'Способ входа', value: authMethod }
   ];
 
   const chooseCropPreset = () =>
     new Promise<CropPreset | null>((resolve) => {
-      Alert.alert('Кадрирование фото', 'Выбери удобный формат выделенной области.', [
-        ...profileCropPresets.map((preset) => ({ text: preset.label, onPress: () => resolve(preset) })),
-        { text: 'Отмена', style: 'cancel', onPress: () => resolve(null) }
+      Alert.alert(t('Кадрирование фото'), t('Выбери удобный формат выделенной области.'), [
+        ...profileCropPresets.map((preset) => ({ text: t(preset.label), onPress: () => resolve(preset) })),
+        { text: t('Отмена'), style: 'cancel', onPress: () => resolve(null) }
       ]);
     });
 
   const pickImageFromGallery = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Нужен доступ', 'Разреши доступ к фото, чтобы выбрать изображение.');
+      Alert.alert(t('Нужен доступ'), t('Разреши доступ к фото, чтобы выбрать изображение.'));
       return null;
     }
 
@@ -117,40 +96,6 @@ export function ProfileScreen({
     if (uri) onModelChange(uri);
   };
 
-  const renderModal = () => {
-    if (!activeModal) return null;
-    const options = activeModal === 'body' ? bodyTypes : colorTypes;
-    return (
-      <Modal transparent animationType="slide" visible onRequestClose={() => setActiveModal(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {activeModal === 'body' ? 'Выберите тип фигуры' : 'Выберите цветотип'}
-            </Text>
-            <ScrollView contentContainerStyle={styles.modalList}>
-              {options.map((option) => (
-                <AppPressable
-                  key={option}
-                  style={styles.modalOption}
-                  onPress={() => {
-                    if (activeModal === 'body') setBodyType(option);
-                    if (activeModal === 'color') setColorType(option);
-                    setActiveModal(null);
-                  }}
-                >
-                  <Text style={styles.modalOptionText}>{option}</Text>
-                </AppPressable>
-              ))}
-            </ScrollView>
-            <AppPressable style={styles.modalClose} onPress={() => setActiveModal(null)}>
-              <Text style={styles.modalCloseText}>Закрыть</Text>
-            </AppPressable>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
   const renderPreviewModal = () => {
     if (!previewUri) return null;
     return (
@@ -158,7 +103,7 @@ export function ProfileScreen({
         <View style={styles.previewBackdrop}>
           <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" />
           <AppPressable style={styles.previewClose} onPress={() => setPreviewUri(null)}>
-            <Text style={styles.previewCloseText}>Закрыть</Text>
+            <Text style={styles.previewCloseText}>{t('Закрыть')}</Text>
           </AppPressable>
         </View>
       </Modal>
@@ -168,11 +113,10 @@ export function ProfileScreen({
   return (
     <View style={styles.container}>
       <ScreenTitle
-        title="Профиль"
-        subtitle="Параметры внешности нужны для более точных рекомендаций ИИ."
+        title={t('Профиль')}
+        subtitle={t('Фото для примерки, избранные образы и настройки.')}
       />
 
-      {renderModal()}
       {renderPreviewModal()}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -185,50 +129,39 @@ export function ProfileScreen({
             )}
           </AppPressable>
           <View style={styles.profileInfo}>
-            <Text style={styles.userName}>{displayName}</Text>
-            <Text style={styles.userMeta}>{contact || 'Контакт не указан'}</Text>
+            <Text style={styles.userName}>{t(displayName)}</Text>
+            <Text style={styles.userMeta}>{contact || t('Контакт не указан')}</Text>
           </View>
         </View>
 
         <View style={styles.modelCard}>
-          <Text style={styles.modelTitle}>Фото для виртуальной примерки</Text>
+          <Text style={styles.modelTitle}>{t('Фото для виртуальной примерки')}</Text>
           <Text style={styles.modelText}>
-            Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем
-            накладывать избранные образы.
+            {t('Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем накладывать избранные образы.')}
           </Text>
           <AppPressable style={styles.modelPreview} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}>
             {modelUri ? (
               <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="contain" />
             ) : (
-              <Text style={styles.modelPlaceholder}>+ Добавить фото модели</Text>
+              <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
             )}
           </AppPressable>
           <AppPressable style={styles.modelButton} onPress={handlePickModel}>
-            <Text style={styles.modelButtonText}>{modelUri ? 'Заменить фото' : 'Выбрать из галереи'}</Text>
+            <Text style={styles.modelButtonText}>{modelUri ? t('Заменить фото') : t('Выбрать из галереи')}</Text>
           </AppPressable>
         </View>
 
         <View style={styles.settingsBlock}>
-          {rows.map((row) => {
-            const isSelectable = row.key === 'body' || row.key === 'color';
-            return (
-              <AppPressable
-                key={row.label}
-                style={styles.settingRow}
-                onPress={() => {
-                  if (row.key === 'body') setActiveModal('body');
-                  if (row.key === 'color') setActiveModal('color');
-                }}
-              >
-                <Text style={styles.settingLabel}>{row.label}</Text>
-                <Text style={[styles.settingValue, isSelectable && styles.settingValueSelectable]}>{row.value}</Text>
-              </AppPressable>
-            );
-          })}
+          {rows.map((row) => (
+            <View key={row.label} style={styles.settingRow}>
+              <Text style={styles.settingLabel}>{t(row.label)}</Text>
+              <Text style={styles.settingValue}>{t(row.value)}</Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.themeCard}>
-          <Text style={styles.themeTitle}>Тема оформления</Text>
+          <Text style={styles.themeTitle}>{t('Тема оформления')}</Text>
           <View style={styles.themeRow}>
             {([
               { key: 'light' as const, label: 'Светлая' },
@@ -241,6 +174,27 @@ export function ProfileScreen({
                   style={[styles.themeOption, active && styles.themeOptionActive]}
                   onPress={() => setMode(option.key)}
                 >
+                  <Text style={[styles.themeOptionText, active && styles.themeOptionTextActive]}>{t(option.label)}</Text>
+                </AppPressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.themeCard}>
+          <Text style={styles.themeTitle}>{t('Язык')}</Text>
+          <View style={styles.themeRow}>
+            {([
+              { key: 'ru' as const, label: 'Русский' },
+              { key: 'zh' as const, label: '中文' }
+            ]).map((option) => {
+              const active = lang === option.key;
+              return (
+                <AppPressable
+                  key={option.key}
+                  style={[styles.themeOption, active && styles.themeOptionActive]}
+                  onPress={() => setLang(option.key)}
+                >
                   <Text style={[styles.themeOptionText, active && styles.themeOptionTextActive]}>{option.label}</Text>
                 </AppPressable>
               );
@@ -249,12 +203,12 @@ export function ProfileScreen({
         </View>
 
         <AppPressable style={styles.guideButton} onPress={onShowGuide}>
-          <Text style={styles.guideTitle}>Как пользоваться приложением</Text>
-          <Text style={styles.guideText}>Короткая инструкция: фото, гардероб, генерация образов.</Text>
+          <Text style={styles.guideTitle}>{t('Как пользоваться приложением')}</Text>
+          <Text style={styles.guideText}>{t('Короткая инструкция: фото, гардероб, генерация образов.')}</Text>
         </AppPressable>
 
         <AppPressable style={styles.logoutButton} onPress={onLogout}>
-          <Text style={styles.logoutText}>Выйти из аккаунта</Text>
+          <Text style={styles.logoutText}>{t('Выйти из аккаунта')}</Text>
         </AppPressable>
       </ScrollView>
     </View>

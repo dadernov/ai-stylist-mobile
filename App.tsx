@@ -11,6 +11,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
+import { LanguageProvider, useT } from './src/constants/i18n';
 import { WardrobeItem } from './src/data/mock';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
@@ -96,31 +97,31 @@ const normalizeSavedLook = (look: SavedLook): SavedLook => ({
 
 function Onboarding({ onClose }: { onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.onboardingWrap}>
-        <Text style={styles.eyebrow}>AI СТИЛИСТ</Text>
-        <Text style={styles.heroTitle}>Собери гардероб и примеряй луки на себе</Text>
+        <Text style={styles.eyebrow}>{t('AI СТИЛИСТ')}</Text>
+        <Text style={styles.heroTitle}>{t('Собери гардероб и примеряй луки на себе')}</Text>
         <Text style={styles.heroSubtitle}>
-          Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает
-          сгенерированную примерку.
+          {t('Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает сгенерированную примерку.')}
         </Text>
 
         <View style={styles.stepsCard}>
-          <Text style={styles.stepTitle}>Как начать</Text>
-          <Text style={styles.stepItem}>1. В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.</Text>
-          <Text style={styles.stepItem}>2. В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.</Text>
-          <Text style={styles.stepItem}>3. В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.</Text>
-          <Text style={styles.stepItem}>4. Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.</Text>
+          <Text style={styles.stepTitle}>{t('Как начать')}</Text>
+          <Text style={styles.stepItem}>{t('1. В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.')}</Text>
+          <Text style={styles.stepItem}>{t('2. В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.')}</Text>
+          <Text style={styles.stepItem}>{t('3. В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.')}</Text>
+          <Text style={styles.stepItem}>{t('4. Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.')}</Text>
         </View>
 
         <View style={styles.tipCard}>
-          <Text style={styles.tipTitle}>Для лучшего результата</Text>
-          <Text style={styles.tipText}>Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.</Text>
+          <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
+          <Text style={styles.tipText}>{t('Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.')}</Text>
         </View>
 
         <AppPressable style={styles.primaryButton} onPress={onClose}>
-          <Text style={styles.primaryButtonText}>Понятно, начать</Text>
+          <Text style={styles.primaryButtonText}>{t('Понятно, начать')}</Text>
         </AppPressable>
       </ScrollView>
     </SafeAreaView>
@@ -131,6 +132,7 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
   const [isAuthenticated, setAuthenticated] = useState(false);
@@ -310,11 +312,11 @@ function AppContent() {
           onLooksGenerated={(looks, context) => {
             setLastLooks(looks);
             setLastContext(context);
-            showToast('Образы готовы');
+            showToast(t('Образы готовы'));
           }}
           onFavoriteAdd={(look) => {
             setFavoriteLooks((prev) => [look, ...prev]);
-            showToast('Добавлено в избранное');
+            showToast(t('Добавлено в избранное'));
           }}
         />
       );
@@ -358,7 +360,7 @@ function AppContent() {
     return (
       <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
         <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>Загрузка…</Text>
+          <Text style={styles.loadingText}>{t('Загрузка…')}</Text>
         </View>
         <StatusBar style={isDark ? 'light' : 'dark'} />
       </SafeAreaView>
@@ -405,7 +407,7 @@ function AppContent() {
               onPress={() => setActiveTab(tab.key)}
             >
               <Text style={styles.tabIcon}>{tab.icon}</Text>
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
+              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
             </AppPressable>
           );
         })}
@@ -441,7 +443,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AppContent />
+        <LanguageProvider>
+          <AppContent />
+        </LanguageProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

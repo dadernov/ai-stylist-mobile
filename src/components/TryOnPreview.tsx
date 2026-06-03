@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
+import { useT } from '../constants/i18n';
 import { TryOnModelResult } from '../services/ai';
 
 type TryOnPreviewProps = {
@@ -37,6 +38,7 @@ const buildLayer = (x: number, y: number, width: number, height: number, rotateD
 
 export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLayout, isModelLoading }: TryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
+  const t = useT();
   const [box, setBox] = useState({ width: 0, height: 0 });
   const sorted = useMemo(() => {
     const uniqueItems = Array.from(new Map(items.map((item) => [item.id, item])).values());
@@ -102,7 +104,7 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
       </View>
       {isModelLoading ? (
         <View style={styles.loadingBadge}>
-          <Text style={styles.loadingText}>Собираем образ на манекене...</Text>
+          <Text style={styles.loadingText}>{t('Собираем образ на манекене...')}</Text>
         </View>
       ) : null}
       {Object.entries(bySection).map(([section, item]) => {
@@ -126,7 +128,7 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
             ]}
           >
             <Text style={styles.layerLabel} numberOfLines={1}>
-              {item.category}
+              {t(item.category)}
             </Text>
           </View>
         );
