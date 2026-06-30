@@ -8,21 +8,21 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "http://193.233.250.130:8000"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://193.233.250.130.nip.io"
       },
       "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "http://193.233.250.130:8000"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://193.233.250.130.nip.io"
       },
       "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "http://193.233.250.130:8000"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://193.233.250.130.nip.io"
       },
       "channel": "production"
     }

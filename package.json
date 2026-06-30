@@ -6,8 +6,8 @@
   "scripts": {
     "start": "expo start",
     "start:mac": "PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" expo start",
-    "start:lan:mac": "PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" EXPO_PUBLIC_AI_BASE_URL=http://193.233.250.130:8000 expo start -c --lan --port 8081",
-    "start:tunnel:mac": "PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" EXPO_PUBLIC_AI_BASE_URL=http://193.233.250.130:8000 expo start -c --tunnel --port 8081",
+    "start:lan:mac": "PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" EXPO_PUBLIC_AI_BASE_URL=https://193.233.250.130.nip.io expo start -c --lan --port 8081",
+    "start:tunnel:mac": "PATH=\"/opt/homebrew/opt/node@22/bin:$PATH\" EXPO_PUBLIC_AI_BASE_URL=https://193.233.250.130.nip.io expo start -c --tunnel --port 8081",
     "start:proxy-tunnel:mac": "bash ./scripts/start-proxy-tunnel-mac.sh",
     "share:ios": "bash ./scripts/start-proxy-tunnel-mac.sh",
     "build:ios:development": "eas build --platform ios --profile development",
