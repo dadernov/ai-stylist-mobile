@@ -2,6 +2,7 @@ fastapi==0.115.0
 uvicorn==0.30.6
 python-multipart==0.0.9
 pillow==12.2.0
-rembg==2.0.74
+# [cpu] обязателен: без него не ставится onnxruntime и remove() падает на первом запросе
+rembg[cpu]==2.0.74
 numpy==2.3.4
 httpx==0.28.1
