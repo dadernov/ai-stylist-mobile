@@ -1,20 +1,26 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
 import { OutfitBuilderScreen } from './src/screens/OutfitBuilderScreen';
 import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { ThemeColors } from './src/constants/theme';
+import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, useT } from './src/constants/i18n';
 import { WardrobeItem } from './src/data/mock';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
+import { PrimaryButton } from './src/components/ui/PrimaryButton';
+import { SectionLabel } from './src/components/ui/SectionLabel';
+import { FadeInView } from './src/components/ui/FadeInView';
+import { Skeleton } from './src/components/ui/Skeleton';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
@@ -44,6 +50,12 @@ const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
   { key: 'favorites', icon: '⭐️', label: 'Избранное' },
   { key: 'profile', icon: '👤', label: 'Профиль' }
 ];
+
+// Геометрия плавающего таб-бара.
+const TAB_BAR_RADIUS = 28;
+const TAB_BAR_HEIGHT = 62;
+const TAB_BAR_SIDE_MARGIN = 16;
+const TAB_INNER_PAD = 8;
 
 const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?: boolean } };
 textWithDefaults.defaultProps = textWithDefaults.defaultProps || {};
@@ -95,36 +107,105 @@ const normalizeSavedLook = (look: SavedLook): SavedLook => ({
     : undefined
 });
 
+// Заставка на время гидрации: серифный логотип с мягким пульсом и скелетон-строчки.
+function LoadingScreen() {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
+  const t = useT();
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 850, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <View style={styles.loadingWrap}>
+      <LinearGradient colors={[colors.heroFrom, colors.heroTo] as const} style={StyleSheet.absoluteFill} />
+      <Animated.Text
+        style={[
+          styles.loadingLogo,
+          { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }
+        ]}
+      >
+        {t('AI Стилист')}
+      </Animated.Text>
+      <View style={styles.loadingHairline} />
+      <Skeleton width={148} height={10} radius={5} />
+      <Skeleton width={92} height={10} radius={5} style={styles.loadingSkeletonGap} />
+    </View>
+  );
+}
+
 function Onboarding({ onClose }: { onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const t = useT();
+
+  const steps = [
+    t('В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.'),
+    t('В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.'),
+    t('В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.'),
+    t('Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.')
+  ];
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.onboardingWrap}>
-        <Text style={styles.eyebrow}>{t('AI СТИЛИСТ')}</Text>
-        <Text style={styles.heroTitle}>{t('Собери гардероб и примеряй луки на себе')}</Text>
-        <Text style={styles.heroSubtitle}>
-          {t('Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает сгенерированную примерку.')}
-        </Text>
+    <View style={styles.container}>
+      <LinearGradient colors={[colors.heroFrom, colors.heroTo] as const} style={StyleSheet.absoluteFill} />
+      <SafeAreaView style={styles.onboardingSafe} edges={['top', 'left', 'right', 'bottom']}>
+        <ScrollView contentContainerStyle={styles.onboardingWrap} showsVerticalScrollIndicator={false}>
+          <FadeInView>
+            <Text style={styles.eyebrow}>{t('AI СТИЛИСТ')}</Text>
+            <Text style={styles.heroTitle}>{t('Собери гардероб и примеряй луки на себе')}</Text>
+            <Text style={styles.heroSubtitle}>
+              {t('Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает сгенерированную примерку.')}
+            </Text>
+          </FadeInView>
 
-        <View style={styles.stepsCard}>
-          <Text style={styles.stepTitle}>{t('Как начать')}</Text>
-          <Text style={styles.stepItem}>{t('1. В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.')}</Text>
-          <Text style={styles.stepItem}>{t('2. В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.')}</Text>
-          <Text style={styles.stepItem}>{t('3. В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.')}</Text>
-          <Text style={styles.stepItem}>{t('4. Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.')}</Text>
-        </View>
+          <FadeInView delay={80} style={styles.stepsBlock}>
+            <SectionLabel>{t('Как начать')}</SectionLabel>
+            {steps.map((step, index) => (
+              <View key={index} style={styles.stepCard}>
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>{index + 1}</Text>
+                </View>
+                <Text style={styles.stepText}>{step}</Text>
+              </View>
+            ))}
+          </FadeInView>
 
-        <View style={styles.tipCard}>
-          <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
-          <Text style={styles.tipText}>{t('Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.')}</Text>
-        </View>
+          <FadeInView delay={180}>
+            <View style={styles.tipCard}>
+              <View style={styles.tipHeader}>
+                <View style={styles.tipEmojiCircle}>
+                  <Text style={styles.tipEmoji}>💡</Text>
+                </View>
+                <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
+              </View>
+              <Text style={styles.tipText}>
+                {t('Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.')}
+              </Text>
+            </View>
+          </FadeInView>
 
-        <AppPressable style={styles.primaryButton} onPress={onClose}>
-          <Text style={styles.primaryButtonText}>{t('Понятно, начать')}</Text>
-        </AppPressable>
-      </ScrollView>
-    </SafeAreaView>
+          <FadeInView delay={260}>
+            <PrimaryButton
+              title={t('Понятно, начать')}
+              onPress={onClose}
+              variant="gold"
+              size="lg"
+              style={styles.onboardingCta}
+            />
+          </FadeInView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -154,6 +235,22 @@ function AppContent() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Плавающий индикатор активной вкладки.
+  const [tabRowWidth, setTabRowWidth] = useState(0);
+  const indicatorX = useRef(new Animated.Value(TAB_INNER_PAD)).current;
+  const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.key === activeTab));
+  const segmentWidth = tabRowWidth > 0 ? (tabRowWidth - TAB_INNER_PAD * 2) / TABS.length : 0;
+
+  useEffect(() => {
+    if (segmentWidth <= 0) return;
+    Animated.spring(indicatorX, {
+      toValue: TAB_INNER_PAD + activeIndex * segmentWidth,
+      speed: 18,
+      bounciness: 7,
+      useNativeDriver: true
+    }).start();
+  }, [activeIndex, segmentWidth, indicatorX]);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -358,10 +455,8 @@ function AppContent() {
 
   if (!isReady) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
-        <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>{t('Загрузка…')}</Text>
-        </View>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        <LoadingScreen />
         <StatusBar style={isDark ? 'light' : 'dark'} />
       </SafeAreaView>
     );
@@ -394,24 +489,46 @@ function AppContent() {
     );
   }
 
+  const tabBarBottom = Math.max(insets.bottom, 12);
+  const tabBarSpace = TAB_BAR_HEIGHT + tabBarBottom + 10;
+
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
-      <View style={styles.content}>{screen}</View>
-      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        {TABS.map((tab) => {
-          const isActive = tab.key === activeTab;
-          return (
-            <AppPressable
-              key={tab.key}
-              style={[styles.tabItem, isActive && styles.tabItemActive]}
-              onPress={() => setActiveTab(tab.key)}
-            >
-              <Text style={styles.tabIcon}>{tab.icon}</Text>
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
-            </AppPressable>
-          );
-        })}
+      <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
+
+      <View style={[styles.tabBarWrap, { bottom: tabBarBottom }]} pointerEvents="box-none">
+        <View style={styles.tabBarClip}>
+          {Platform.OS !== 'android' ? (
+            <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          ) : null}
+          <View
+            style={styles.tabRow}
+            onLayout={(event) => setTabRowWidth(event.nativeEvent.layout.width)}
+          >
+            {segmentWidth > 0 ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.tabIndicator, { width: segmentWidth, transform: [{ translateX: indicatorX }] }]}
+              />
+            ) : null}
+            {TABS.map((tab) => {
+              const isActive = tab.key === activeTab;
+              return (
+                <AppPressable
+                  key={tab.key}
+                  haptics
+                  style={styles.tabItem}
+                  onPress={() => setActiveTab(tab.key)}
+                >
+                  <Text style={[styles.tabIcon, isActive && styles.tabIconActive]}>{tab.icon}</Text>
+                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
+                </AppPressable>
+              );
+            })}
+          </View>
+        </View>
       </View>
+
       {toastMessage ? (
         <Animated.View
           pointerEvents="none"
@@ -427,10 +544,13 @@ function AppContent() {
                   })
                 }
               ],
-              bottom: Math.max(insets.bottom, 8) + 56
+              bottom: tabBarBottom + TAB_BAR_HEIGHT + 14
             }
           ]}
         >
+          <View style={styles.toastIconCircle}>
+            <Text style={styles.toastIcon}>✓</Text>
+          </View>
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       ) : null}
@@ -461,122 +581,219 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12
   },
+  // --- Заставка ---
   loadingWrap: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    paddingHorizontal: 32
   },
-  loadingText: {
-    fontSize: 16,
-    color: c.muted
+  loadingLogo: {
+    fontFamily: SERIF,
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    color: c.text
+  },
+  loadingHairline: {
+    width: 44,
+    height: 1,
+    backgroundColor: c.goldHairline,
+    marginTop: 18,
+    marginBottom: 20
+  },
+  loadingSkeletonGap: {
+    marginTop: 8
+  },
+  // --- Онбординг ---
+  onboardingSafe: {
+    flex: 1
   },
   onboardingWrap: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
-    gap: 14
+    paddingVertical: 24,
+    gap: 18
   },
   eyebrow: {
-    color: c.muted,
-    fontSize: 12,
-    letterSpacing: 2,
-    fontWeight: '700'
+    ...TYPE.eyebrow,
+    color: c.accentGold,
+    marginBottom: 10
   },
   heroTitle: {
-    color: c.text,
+    ...TYPE.display,
     fontSize: 34,
     lineHeight: 40,
-    fontWeight: '700'
+    color: c.text,
+    marginBottom: 10
   },
   heroSubtitle: {
-    color: c.muted,
+    ...TYPE.body,
     fontSize: 16,
-    lineHeight: 22
+    color: c.muted
   },
-  stepsCard: {
+  stepsBlock: {
+    gap: 10
+  },
+  stepCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
     backgroundColor: c.card,
-    borderRadius: 14,
+    borderRadius: RADII.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    padding: 14,
+    ...SHADOWS.card
+  },
+  stepBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.goldHairline,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  stepBadgeText: {
+    fontFamily: SERIF,
+    fontSize: 15,
+    fontWeight: '700',
+    color: c.accentGold
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 14.5,
+    lineHeight: 20,
+    color: c.text
+  },
+  tipCard: {
+    backgroundColor: c.accentGoldSoft,
+    borderRadius: RADII.lg,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
     padding: 16,
     gap: 10
   },
-  stepTitle: {
-    color: c.text,
-    fontSize: 16,
-    fontWeight: '700'
+  tipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
   },
-  stepItem: {
-    color: c.text,
-    fontSize: 15,
-    lineHeight: 21
-  },
-  tipCard: {
-    backgroundColor: c.surface,
+  tipEmojiCircle: {
+    width: 28,
+    height: 28,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: 14,
-    gap: 6
+    backgroundColor: c.card,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  tipEmoji: {
+    fontSize: 14
   },
   tipTitle: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '700'
+    ...TYPE.title,
+    fontSize: 15,
+    color: c.text
   },
   tipText: {
-    color: c.muted,
+    ...TYPE.caption,
     fontSize: 13,
-    lineHeight: 18
+    lineHeight: 19,
+    color: c.muted
   },
-  primaryButton: {
-    marginTop: 8,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 14,
-    paddingVertical: 14,
+  onboardingCta: {
+    marginTop: 6
+  },
+  // --- Плавающий таб-бар ---
+  tabBarWrap: {
+    position: 'absolute',
+    left: TAB_BAR_SIDE_MARGIN,
+    right: TAB_BAR_SIDE_MARGIN,
+    borderRadius: TAB_BAR_RADIUS,
+    ...SHADOWS.floating,
+    backgroundColor: Platform.OS === 'android' ? c.card : c.goldTransparent
+  },
+  tabBarClip: {
+    borderRadius: TAB_BAR_RADIUS,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.goldHairline,
+    backgroundColor: Platform.OS === 'android' ? c.card : c.goldTransparent
+  },
+  tabRow: {
+    flexDirection: 'row',
+    height: TAB_BAR_HEIGHT,
+    paddingHorizontal: TAB_INNER_PAD,
     alignItems: 'center'
   },
-  primaryButtonText: {
-    color: c.buttonPrimaryText,
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  tabBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 10,
-    paddingTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: c.tabBarBorder,
-    backgroundColor: c.background
+  tabIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: TAB_INNER_PAD,
+    bottom: TAB_INNER_PAD,
+    borderRadius: RADII.lg,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.goldHairline
   },
   tabItem: {
     flex: 1,
+    height: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
-    paddingVertical: 6,
-    borderRadius: 12
-  },
-  tabItemActive: {
-    backgroundColor: c.tabActiveBg
+    borderRadius: RADII.lg,
+    overflow: Platform.OS === 'android' ? 'hidden' : 'visible'
   },
   tabIcon: {
-    fontSize: 18
+    fontSize: 18,
+    opacity: 0.72
+  },
+  tabIconActive: {
+    opacity: 1
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: c.muted,
-    fontWeight: '600'
+    fontWeight: '600',
+    letterSpacing: 0.2
   },
   tabLabelActive: {
-    color: c.text
+    color: c.accentGold,
+    fontWeight: '700'
   },
+  // --- Тост ---
   toast: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: RADII.xl,
     backgroundColor: c.toastBg,
-    alignItems: 'center'
+    ...SHADOWS.floating
+  },
+  toastIconCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  toastIcon: {
+    color: c.toastText,
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 13
   },
   toastText: {
     color: c.toastText,

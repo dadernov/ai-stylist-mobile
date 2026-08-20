@@ -9,15 +9,21 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
-  ActivityIndicator
+  View
 } from 'react-native';
 import { useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { ScreenTitle } from '../components/ScreenTitle';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
-import { ThemeColors } from '../constants/theme';
+import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { SectionLabel } from '../components/ui/SectionLabel';
+import { EmptyState } from '../components/ui/EmptyState';
+import { FadeInView } from '../components/ui/FadeInView';
+import { Skeleton } from '../components/ui/Skeleton';
+import { ProgressGlow } from '../components/ui/ProgressGlow';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { RADII, SERIF, SHADOWS, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
@@ -30,6 +36,16 @@ type WardrobeScreenProps = {
 
 const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Верхняя одежда'];
 const categoryFilters = ['Все', ...sectionOptions];
+
+// Эмодзи-иконки фильтров (не переводятся).
+const filterIcons: Record<string, string> = {
+  Все: '✨',
+  Верх: '👕',
+  Низ: '👖',
+  Обувь: '👟',
+  Сумки: '👜',
+  'Верхняя одежда': '🧥'
+};
 
 const categoryOptions = [
   'Футболка',
@@ -222,6 +238,30 @@ const tagToLabel = (tag: string) => {
   if (hex) return getClosestColorName(hex);
   return tag;
 };
+
+type AtelierInputProps = {
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+};
+
+// Поле ввода «Ателье»: скругление, мягкий фон и золотая рамка в фокусе.
+function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
+  const [isFocused, setFocused] = useState(false);
+  return (
+    <TextInput
+      style={[styles.modalInput, isFocused && styles.modalInputFocused]}
+      placeholder={placeholder}
+      placeholderTextColor={colors.muted}
+      value={value}
+      onChangeText={onChangeText}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    />
+  );
+}
 
 export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const styles = useThemedStyles(makeStyles);
@@ -483,6 +523,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         return (
           <AppPressable
             key={option}
+            haptics
             style={[styles.modalChip, isActive && styles.modalChipActive]}
             onPress={() => onSelect(option)}
           >
@@ -493,9 +534,16 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     </ScrollView>
   );
 
+  const renderFieldLabel = (label: string) => (
+    <View style={styles.fieldLabelWrap}>
+      <SectionLabel>{label}</SectionLabel>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
-      <ScreenTitle
+      <ScreenHeader
+        eyebrow={t('Твоя коллекция')}
         title={t('Гардероб')}
         subtitle={t('Загрузи фото вещи, проверь AI-анализ и при необходимости исправь данные.')}
       />
@@ -510,67 +558,124 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
           <Chip
             key={filter}
             label={t(filter)}
+            icon={filterIcons[filter]}
             active={filter === activeFilter}
             onPress={() => setActiveFilter(filter)}
           />
         ))}
       </ScrollView>
 
-      <AppPressable style={styles.uploadCard} onPress={handleAddItem}>
-        <Text style={styles.uploadTitle}>{t('+ Добавить вещь')}</Text>
-        <Text style={styles.uploadText}>{t('Фото на белом фоне или на себе, затем автоматическое вырезание фона.')}</Text>
-      </AppPressable>
+      <FadeInView delay={40}>
+        <AppPressable haptics style={styles.uploadCard} onPress={handleAddItem}>
+          <LinearGradient
+            colors={[colors.accentGoldSoft, colors.card] as const}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.uploadGradient}
+          />
+          <View style={styles.uploadRow}>
+            <LinearGradient
+              colors={[colors.goldFrom, colors.goldTo] as const}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.uploadPlusCircle}
+            >
+              <Text style={styles.uploadPlus}>+</Text>
+            </LinearGradient>
+            <View style={styles.uploadTextBlock}>
+              <Text style={styles.uploadTitle}>{t('Добавить вещь')}</Text>
+              <Text style={styles.uploadText}>
+                {t('Фото на белом фоне или на себе, затем автоматическое вырезание фона.')}
+              </Text>
+            </View>
+          </View>
+        </AppPressable>
+      </FadeInView>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.itemsWrap}>
-        {filteredItems.map((item) => (
-          <View key={item.id} style={styles.itemCard}>
-            {item.imageUri ? (
-              <View style={styles.photoBlock}>
-                <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
-                <View style={styles.photoActions}>
-                  <AppPressable style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
-                    <Text style={styles.retakeText}>{t('Переснять')}</Text>
-                  </AppPressable>
-                  <AppPressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
-                    <Text style={styles.deleteText}>{t('Удалить')}</Text>
+        {filteredItems.length === 0 ? (
+          <EmptyState
+            emoji="👗"
+            title={t('Здесь пока пусто')}
+            hint={
+              items.length === 0
+                ? t('Сфотографируй первую вещь — AI сам определит категорию, цвет и сезон.')
+                : t('В этом разделе пока ничего нет. Попробуй другой фильтр.')
+            }
+            actionLabel={items.length === 0 ? t('Добавить вещь') : undefined}
+            onAction={items.length === 0 ? handleAddItem : undefined}
+          />
+        ) : (
+          filteredItems.map((item, index) => (
+            <FadeInView key={item.id} delay={Math.min(index, 6) * 60}>
+              <View style={styles.itemCard}>
+                {item.imageUri ? (
+                  <View style={styles.photoBlock}>
+                    <View style={styles.photoFrame}>
+                      <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
+                    </View>
+                    <View style={styles.photoActions}>
+                      <AppPressable haptics style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
+                        <Text style={styles.retakeText}>{t('Переснять')}</Text>
+                      </AppPressable>
+                      <AppPressable haptics style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
+                        <Text style={styles.deleteText}>{t('Удалить')}</Text>
+                      </AppPressable>
+                    </View>
+                  </View>
+                ) : null}
+                <View style={styles.itemHeader}>
+                  <Text style={styles.itemName}>{t(item.name)}</Text>
+                  <AppPressable haptics style={styles.editButton} onPress={() => handleEditItem(item)}>
+                    <Text style={styles.editButtonText}>{t('Исправить')}</Text>
                   </AppPressable>
                 </View>
+                <View style={styles.metaRow}>
+                  {[item.category, item.color, item.season, item.pattern]
+                    .filter((value) => value && value !== 'Не определено')
+                    .map((value, metaIndex) => {
+                      const hex = normalizeHex(value);
+                      return (
+                        <View key={`${item.id}-meta-${metaIndex}`} style={styles.metaChip}>
+                          {hex ? <View style={[styles.colorSwatch, { backgroundColor: hex }]} /> : null}
+                          <Text style={styles.metaChipText}>{hex ? t(getClosestColorName(hex)) : t(value)}</Text>
+                        </View>
+                      );
+                    })}
+                </View>
+                <View style={styles.tagsRow}>
+                  {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, index) => (
+                    <View key={`${label}-${index}`} style={styles.tag}>
+                      <Text style={styles.tagText}>{t(label)}</Text>
+                    </View>
+                  ))}
+                </View>
+                {!item.imageUri ? (
+                  <View style={styles.cardFooterActions}>
+                    <AppPressable haptics style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
+                      <Text style={styles.deleteText}>{t('Удалить')}</Text>
+                    </AppPressable>
+                  </View>
+                ) : null}
+                {(item.size || item.store || item.material) && (
+                  <Text style={styles.itemDetails}>
+                    {item.size ? t('Размер: {value}', { value: item.size }) : ''}
+                    {item.size && item.store ? ' · ' : ''}
+                    {item.store ? t('Магазин: {value}', { value: item.store }) : ''}
+                    {(item.size || item.store) && item.material ? ' · ' : ''}
+                    {item.material ? t('Материал: {value}', { value: item.material }) : ''}
+                  </Text>
+                )}
               </View>
-            ) : (
-              <AppPressable style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
-                <Text style={styles.deleteText}>{t('Удалить')}</Text>
-              </AppPressable>
-            )}
-            <View style={styles.itemHeader}>
-              <Text style={styles.itemName}>{t(item.name)}</Text>
-              <AppPressable style={styles.editButton} onPress={() => handleEditItem(item)}>
-                <Text style={styles.editButtonText}>{t('Исправить')}</Text>
-              </AppPressable>
-            </View>
-            <Text style={styles.itemMeta}>AI: {t(item.category)} · {t(item.color)} · {t(item.season)} · {t(item.pattern)}</Text>
-            <View style={styles.tagsRow}>
-              {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, index) => (
-                <View key={`${label}-${index}`} style={styles.tag}>
-                  <Text style={styles.tagText}>{t(label)}</Text>
-                </View>
-              ))}
-            </View>
-            {(item.size || item.store || item.material) && (
-              <Text style={styles.itemDetails}>
-                {item.size ? t('Размер: {value}', { value: item.size }) : ''}
-                {item.size && item.store ? ' · ' : ''}
-                {item.store ? t('Магазин: {value}', { value: item.store }) : ''}
-                {(item.size || item.store) && item.material ? ' · ' : ''}
-                {item.material ? t('Материал: {value}', { value: item.material }) : ''}
-              </Text>
-            )}
-          </View>
-        ))}
+            </FadeInView>
+          ))
+        )}
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
+            <View style={styles.modalHandle} />
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
@@ -579,69 +684,72 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
               >
                 <Text style={styles.modalTitle}>{t('Новая вещь')}</Text>
                 {draftPhoto ? (
-                  <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
+                  <View style={styles.modalPhotoFrame}>
+                    <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
+                  </View>
                 ) : null}
-                <AppPressable style={styles.retakeButton} onPress={handleRetake}>
-                  <Text style={styles.retakeText}>{t('Переснять фото')}</Text>
+                {isAnalyzing ? (
+                  <View style={styles.progressWrap}>
+                    <ProgressGlow visible />
+                  </View>
+                ) : null}
+                <AppPressable haptics style={styles.retakePill} onPress={handleRetake}>
+                  <Text style={styles.retakePillText}>{t('Переснять фото')}</Text>
                 </AppPressable>
-                <Text style={styles.modalLabel}>{t('Название вещи')}</Text>
-                <TextInput
-                  style={styles.modalInput}
+                {renderFieldLabel(t('Название вещи'))}
+                <AtelierInput
                   placeholder={t('Например, Белая футболка')}
-                  placeholderTextColor={colors.muted}
                   value={draftName}
                   onChangeText={setDraftName}
                 />
-                <AppPressable style={styles.aiButton} onPress={handleAnalyze} disabled={isAnalyzing}>
-                  {isAnalyzing ? (
-                    <ActivityIndicator color={colors.buttonPrimaryText} />
-                  ) : (
-                    <Text style={styles.aiButtonText}>{t('AI-анализ')}</Text>
-                  )}
-                </AppPressable>
-                {draftColor ? (
+                <PrimaryButton
+                  title={t('AI-анализ')}
+                  onPress={handleAnalyze}
+                  loading={isAnalyzing}
+                  style={styles.aiButton}
+                />
+                {isAnalyzing ? (
+                  <View style={styles.aiStatus}>
+                    <Text style={styles.aiStatusText}>{t('AI изучает вещь…')}</Text>
+                    <Skeleton width={150} height={11} />
+                    <Skeleton width={210} height={11} />
+                  </View>
+                ) : draftColor ? (
                   <Text style={styles.aiHint}>{t('AI цвет: {color}', { color: t(draftColor) })}</Text>
                 ) : null}
-                <Text style={styles.modalLabel}>{t('Категория')}</Text>
+                {renderFieldLabel(t('Категория'))}
                 {renderChips(categoryOptions, draftCategory, handleDraftCategoryChange)}
-                <Text style={styles.modalLabel}>{t('Цвет')}</Text>
+                {renderFieldLabel(t('Цвет'))}
                 {renderChips(colorOptions, draftColor || colorOptions[0], setDraftColor)}
-                <Text style={styles.modalLabel}>{t('Сезон')}</Text>
+                {renderFieldLabel(t('Сезон'))}
                 {renderChips(seasonOptions, draftSeason, setDraftSeason)}
-                <Text style={styles.modalLabel}>{t('Паттерн')}</Text>
+                {renderFieldLabel(t('Паттерн'))}
                 {renderChips(patternOptions, draftPattern, setDraftPattern)}
-                <Text style={styles.modalLabel}>{t('Раздел')}</Text>
+                {renderFieldLabel(t('Раздел'))}
                 {renderChips(sectionOptions, draftSection, setDraftSection)}
-                <Text style={styles.modalLabel}>{t('Размер')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('Например, M')}
-                  placeholderTextColor={colors.muted}
-                  value={draftSize}
-                  onChangeText={setDraftSize}
-                />
-                <Text style={styles.modalLabel}>{t('Бренд / магазин')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('Например, Zara')}
-                  placeholderTextColor={colors.muted}
-                  value={draftStore}
-                  onChangeText={setDraftStore}
-                />
-                <Text style={styles.modalLabel}>{t('Материал')}</Text>
-                <TextInput
-                  style={styles.modalInput}
+                {renderFieldLabel(t('Размер'))}
+                <AtelierInput placeholder={t('Например, M')} value={draftSize} onChangeText={setDraftSize} />
+                {renderFieldLabel(t('Бренд / магазин'))}
+                <AtelierInput placeholder={t('Например, Zara')} value={draftStore} onChangeText={setDraftStore} />
+                {renderFieldLabel(t('Материал'))}
+                <AtelierInput
                   placeholder={t('Например, хлопок')}
-                  placeholderTextColor={colors.muted}
                   value={draftMaterial}
                   onChangeText={setDraftMaterial}
                 />
-                <AppPressable style={styles.modalSave} onPress={handleSaveItem}>
-                  <Text style={styles.modalSaveText}>{t('Сохранить')}</Text>
-                </AppPressable>
-                <AppPressable style={styles.modalClose} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.modalCloseText}>{t('Отмена')}</Text>
-                </AppPressable>
+                <PrimaryButton
+                  title={t('Сохранить')}
+                  onPress={handleSaveItem}
+                  variant="gold"
+                  size="lg"
+                  style={styles.modalSave}
+                />
+                <PrimaryButton
+                  title={t('Отмена')}
+                  onPress={() => setModalVisible(false)}
+                  variant="ghost"
+                  style={styles.modalCancel}
+                />
               </ScrollView>
             </KeyboardAvoidingView>
           </AppPressable>
@@ -656,6 +764,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       >
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
+            <View style={styles.modalHandle} />
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
@@ -663,54 +772,45 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                 keyboardDismissMode="on-drag"
               >
                 <Text style={styles.modalTitle}>{t('Редактировать параметры')}</Text>
-                <Text style={styles.modalLabel}>{t('Название вещи')}</Text>
-                <TextInput
-                  style={styles.modalInput}
+                {renderFieldLabel(t('Название вещи'))}
+                <AtelierInput
                   placeholder={t('Например, Белая футболка')}
-                  placeholderTextColor={colors.muted}
                   value={editName}
                   onChangeText={setEditName}
                 />
-                <Text style={styles.modalLabel}>{t('Категория')}</Text>
+                {renderFieldLabel(t('Категория'))}
                 {renderChips(categoryOptions, editCategory, handleEditCategoryChange)}
-                <Text style={styles.modalLabel}>{t('Цвет')}</Text>
+                {renderFieldLabel(t('Цвет'))}
                 {renderChips(colorOptions, editColor, setEditColor)}
-                <Text style={styles.modalLabel}>{t('Сезон')}</Text>
+                {renderFieldLabel(t('Сезон'))}
                 {renderChips(seasonOptions, editSeason, setEditSeason)}
-                <Text style={styles.modalLabel}>{t('Паттерн')}</Text>
+                {renderFieldLabel(t('Паттерн'))}
                 {renderChips(patternOptions, editPattern, setEditPattern)}
-                <Text style={styles.modalLabel}>{t('Раздел')}</Text>
+                {renderFieldLabel(t('Раздел'))}
                 {renderChips(sectionOptions, editSection, setEditSection)}
-                <Text style={styles.modalLabel}>{t('Размер')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('Например, M')}
-                  placeholderTextColor={colors.muted}
-                  value={editSize}
-                  onChangeText={setEditSize}
-                />
-                <Text style={styles.modalLabel}>{t('Бренд / магазин')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('Например, Zara')}
-                  placeholderTextColor={colors.muted}
-                  value={editStore}
-                  onChangeText={setEditStore}
-                />
-                <Text style={styles.modalLabel}>{t('Материал')}</Text>
-                <TextInput
-                  style={styles.modalInput}
+                {renderFieldLabel(t('Размер'))}
+                <AtelierInput placeholder={t('Например, M')} value={editSize} onChangeText={setEditSize} />
+                {renderFieldLabel(t('Бренд / магазин'))}
+                <AtelierInput placeholder={t('Например, Zara')} value={editStore} onChangeText={setEditStore} />
+                {renderFieldLabel(t('Материал'))}
+                <AtelierInput
                   placeholder={t('Например, хлопок')}
-                  placeholderTextColor={colors.muted}
                   value={editMaterial}
                   onChangeText={setEditMaterial}
                 />
-                <AppPressable style={styles.modalSave} onPress={handleSaveEdit}>
-                  <Text style={styles.modalSaveText}>{t('Сохранить')}</Text>
-                </AppPressable>
-                <AppPressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
-                  <Text style={styles.modalCloseText}>{t('Отмена')}</Text>
-                </AppPressable>
+                <PrimaryButton
+                  title={t('Сохранить')}
+                  onPress={handleSaveEdit}
+                  variant="gold"
+                  size="lg"
+                  style={styles.modalSave}
+                />
+                <PrimaryButton
+                  title={t('Отмена')}
+                  onPress={() => setEditModalVisible(false)}
+                  variant="ghost"
+                  style={styles.modalCancel}
+                />
               </ScrollView>
             </KeyboardAvoidingView>
           </AppPressable>
@@ -737,47 +837,80 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     minHeight: 48
   },
   uploadCard: {
-    backgroundColor: c.accent,
-    borderRadius: 16,
-    paddingVertical: 10,
+    backgroundColor: c.card,
+    borderRadius: RADII.xl,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     marginTop: 4,
-    marginBottom: 12
+    marginBottom: 14,
+    ...SHADOWS.card
+  },
+  uploadGradient: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: RADII.xl - 1,
+    pointerEvents: 'none'
+  },
+  uploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14
+  },
+  uploadPlusCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  uploadPlus: {
+    color: c.textOnGold,
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: '600'
+  },
+  uploadTextBlock: {
+    flex: 1,
+    gap: 3
   },
   uploadTitle: {
-    fontSize: 16,
-    // Карточка всегда бежевая (c.accent) в обеих темах, поэтому текст держим
-    // тёмным независимо от темы — иначе в тёмной теме белое по бежевому не читается.
-    color: '#1F1D1A',
+    fontFamily: SERIF,
+    fontSize: 19,
     fontWeight: '700',
-    marginBottom: 4
+    letterSpacing: -0.3,
+    color: c.text
   },
   uploadText: {
-    color: '#1F1D1A',
-    opacity: 0.85,
-    fontSize: 13,
-    lineHeight: 18
+    ...TYPE.caption,
+    color: c.muted
   },
   itemsWrap: {
-    gap: 10,
-    paddingBottom: 20
+    gap: 14,
+    paddingBottom: 24
   },
   itemCard: {
     backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 16,
-    padding: 14,
-    gap: 8
+    borderRadius: RADII.lg,
+    padding: 16,
+    gap: 10,
+    ...SHADOWS.card
   },
   photoBlock: {
-    gap: 8
+    gap: 10
+  },
+  photoFrame: {
+    borderRadius: RADII.md,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    backgroundColor: c.surface,
+    overflow: 'hidden'
   },
   photo: {
     width: '100%',
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: c.surface
+    height: 190
   },
   photoActions: {
     flexDirection: 'row',
@@ -786,8 +919,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   retakeButton: {
     alignSelf: 'flex-start',
     backgroundColor: c.chip,
-    borderRadius: 10,
-    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
   retakeText: {
@@ -797,15 +932,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   deleteButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#FBEAEA',
-    borderRadius: 10,
-    paddingHorizontal: 10,
+    backgroundColor: c.dangerSoft,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
   deleteText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#9B2C2C'
+    color: c.danger
   },
   itemHeader: {
     flexDirection: 'row',
@@ -815,29 +950,61 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   itemName: {
     flex: 1,
+    fontFamily: SERIF,
     color: c.text,
-    fontSize: 16,
-    fontWeight: '600'
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3
   },
   editButton: {
-    backgroundColor: c.chip,
-    borderRadius: 10,
-    paddingHorizontal: 10,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
   editButtonText: {
-    color: c.text,
+    color: c.accentGold,
     fontSize: 12,
-    fontWeight: '600'
+    fontWeight: '700'
   },
-  itemMeta: {
-    color: c.muted,
-    fontSize: 13,
-    lineHeight: 18
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7
+  },
+  colorSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: c.goldHairline
+  },
+  cardFooterActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 5
+  },
+  metaChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: c.text
   },
   itemDetails: {
-    color: c.muted,
-    fontSize: 12
+    ...TYPE.caption,
+    color: c.muted
   },
   tagsRow: {
     flexDirection: 'row',
@@ -846,14 +1013,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   tag: {
     borderWidth: 1,
-    borderColor: c.border,
+    borderColor: c.goldHairline,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: c.surface
+    paddingVertical: 4
   },
   tagText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: c.muted
   },
   modalBackdrop: {
@@ -863,94 +1029,117 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: c.card,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 16,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: c.goldHairline,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 16,
     maxHeight: '85%'
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: c.border,
+    marginBottom: 12
   },
   modalContent: {
     paddingBottom: 24
   },
   modalTitle: {
-    fontSize: 16,
+    fontFamily: SERIF,
+    fontSize: 24,
     fontWeight: '700',
+    letterSpacing: -0.4,
     color: c.text,
-    marginBottom: 12
+    marginBottom: 14
+  },
+  modalPhotoFrame: {
+    borderRadius: RADII.md,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    backgroundColor: c.surface,
+    overflow: 'hidden'
   },
   modalPhoto: {
     width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 10,
-    backgroundColor: c.surface
+    height: 210
   },
-  modalLabel: {
+  progressWrap: {
+    marginTop: 12
+  },
+  retakePill: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 12
+  },
+  retakePillText: {
     fontSize: 13,
     fontWeight: '600',
-    color: c.text,
-    marginTop: 10,
-    marginBottom: 6
+    color: c.accentGold
+  },
+  fieldLabelWrap: {
+    marginTop: 18
   },
   modalInput: {
     backgroundColor: c.surface,
-    borderRadius: 12,
+    borderRadius: RADII.md,
     borderWidth: 1,
     borderColor: c.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
     color: c.text
   },
+  modalInputFocused: {
+    borderColor: c.accentGold,
+    backgroundColor: c.card
+  },
   aiButton: {
-    marginTop: 10,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center'
+    marginTop: 16
   },
-  aiButtonText: {
-    color: c.buttonPrimaryText,
-    fontSize: 14,
-    fontWeight: '600'
+  aiStatus: {
+    marginTop: 12,
+    gap: 8
   },
-  aiHint: {
-    marginTop: 6,
-    fontSize: 12,
+  aiStatusText: {
+    ...TYPE.caption,
     color: c.muted
   },
+  aiHint: {
+    ...TYPE.caption,
+    color: c.accentGold,
+    marginTop: 10
+  },
   modalSave: {
-    marginTop: 14,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center'
+    marginTop: 24
   },
-  modalSaveText: {
-    color: c.buttonPrimaryText,
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  modalClose: {
-    marginTop: 8,
-    alignItems: 'center',
-    paddingVertical: 8
-  },
-  modalCloseText: {
-    color: c.muted,
-    fontSize: 13
+  modalCancel: {
+    marginTop: 10
   },
   modalChipsRow: {
     gap: 8,
     paddingBottom: 6
   },
   modalChip: {
-    backgroundColor: c.chip,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
     borderRadius: 999,
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 8
   },
   modalChipActive: {
-    backgroundColor: c.buttonPrimaryBg
+    backgroundColor: c.accentGoldSoft,
+    borderColor: c.goldHairline
   },
   modalChipText: {
     color: c.text,
@@ -958,6 +1147,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '600'
   },
   modalChipTextActive: {
-    color: c.buttonPrimaryText
+    color: c.accentGold,
+    fontWeight: '700'
   }
 });

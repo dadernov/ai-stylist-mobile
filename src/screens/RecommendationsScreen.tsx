@@ -1,6 +1,8 @@
+import { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ScreenTitle } from '../components/ScreenTitle';
-import { ThemeColors } from '../constants/theme';
+import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { FadeInView } from '../components/ui/FadeInView';
+import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
@@ -65,6 +67,14 @@ const eventTips: Record<string, string[]> = {
   Спортзал: ['Фокус на функциональности и удобной посадке.', 'Лучше спортивная обувь и простой однотонный верх.']
 };
 
+// Журнальная заметка: бронзовый номер + eyebrow, серифный заголовок, gold hairline.
+type IdeaCard = {
+  key: string;
+  eyebrow: string;
+  title: string;
+  body: ReactNode;
+};
+
 export function RecommendationsScreen({ looks, context }: RecommendationsProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -73,62 +83,117 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
   const styleCardTips = hasContext ? styleTips[context.style] || [] : [];
   const eventCardTips = hasContext ? eventTips[context.event] || [] : [];
 
+  const cards: IdeaCard[] = [];
+
+  if (hasContext && beauty) {
+    cards.push({
+      key: 'beauty',
+      eyebrow: t('Для: {style} · {event}', { style: t(context.style), event: t(context.event) }),
+      title: t('Макияж и укладка'),
+      body: (
+        <View style={styles.noteBody}>
+          <View style={styles.noteBlock}>
+            <Text style={styles.noteLabel}>{t('Макияж')}</Text>
+            <Text style={styles.noteText}>{t(beauty.makeup)}</Text>
+          </View>
+          <View style={styles.noteBlock}>
+            <Text style={styles.noteLabel}>{t('Укладка')}</Text>
+            <Text style={styles.noteText}>{t(beauty.hair)}</Text>
+          </View>
+          {context.weather ? <Text style={styles.weatherNote}>{context.weather}</Text> : null}
+        </View>
+      )
+    });
+  }
+
+  if (looks.length) {
+    cards.push({
+      key: 'looks',
+      eyebrow: t('Из генератора'),
+      title: t('Последние луки'),
+      body: (
+        <View style={styles.noteBody}>
+          {looks.slice(0, 3).map((look, idx) => (
+            <View key={look.id} style={[styles.lookRow, idx > 0 && styles.lookRowDivider]}>
+              <Text style={styles.lookTitle}>{look.title}</Text>
+              {look.fitReasons?.[0] ? <Text style={styles.lookReason}>{look.fitReasons[0]}</Text> : null}
+            </View>
+          ))}
+        </View>
+      )
+    });
+  }
+
+  if (hasContext && styleCardTips.length) {
+    cards.push({
+      key: 'style',
+      eyebrow: t('Стиль'),
+      title: t(context.style),
+      body: (
+        <View style={styles.noteBody}>
+          {styleCardTips.map((tip) => (
+            <View key={tip} style={styles.tipRow}>
+              <Text style={styles.tipDash}>—</Text>
+              <Text style={styles.tipText}>{t(tip)}</Text>
+            </View>
+          ))}
+        </View>
+      )
+    });
+  }
+
+  if (hasContext && eventCardTips.length) {
+    cards.push({
+      key: 'event',
+      eyebrow: t('Событие'),
+      title: t(context.event),
+      body: (
+        <View style={styles.noteBody}>
+          {eventCardTips.map((tip) => (
+            <View key={tip} style={styles.tipRow}>
+              <Text style={styles.tipDash}>—</Text>
+              <Text style={styles.tipText}>{t(tip)}</Text>
+            </View>
+          ))}
+        </View>
+      )
+    });
+  }
+
+  if (!hasContext) {
+    fallbackCards.forEach((card) => {
+      cards.push({
+        key: card.title,
+        eyebrow: t('Совет стилиста'),
+        title: t(card.title),
+        body: <Text style={styles.noteText}>{t(card.text)}</Text>
+      });
+    });
+  }
+
   return (
     <View style={styles.container}>
-      <ScreenTitle
+      <ScreenHeader
+        eyebrow={t('Журнал стилиста')}
         title={t('Рекомендации')}
         subtitle={t('Макияж, волосы и стилизация под выбранный стиль и событие.')}
       />
 
       <ScrollView contentContainerStyle={styles.cardsWrap} showsVerticalScrollIndicator={false}>
-        {hasContext && beauty ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('Для: {style} · {event}', { style: t(context.style), event: t(context.event) })}</Text>
-            <Text style={styles.cardText}>{t('Макияж: {value}', { value: t(beauty.makeup) })}</Text>
-            <Text style={styles.cardText}>{t('Укладка: {value}', { value: t(beauty.hair) })}</Text>
-            {context.weather ? <Text style={styles.cardHint}>{context.weather}</Text> : null}
-          </View>
-        ) : null}
-
-        {looks.length ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('Последние луки')}</Text>
-            {looks.slice(0, 3).map((look) => (
-              <View key={look.id} style={styles.lookReasonRow}>
-                <Text style={styles.cardText}>• {look.title}</Text>
-                {look.fitReasons?.[0] ? <Text style={styles.cardHint}>↳ {look.fitReasons[0]}</Text> : null}
+        {cards.map((card, i) => (
+          <FadeInView key={card.key} delay={i * 60}>
+            <View style={styles.card}>
+              <View style={styles.cardTop}>
+                <Text style={styles.cardEyebrow} numberOfLines={1}>
+                  {card.eyebrow}
+                </Text>
+                <Text style={styles.cardNumber}>{String(i + 1).padStart(2, '0')}</Text>
               </View>
-            ))}
-          </View>
-        ) : null}
-
-        {hasContext && styleCardTips.length ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('Под стиль: {style}', { style: t(context.style) })}</Text>
-            {styleCardTips.map((tip) => (
-              <Text key={tip} style={styles.cardText}>
-                • {t(tip)}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-
-        {hasContext && eventCardTips.length ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('Под событие: {event}', { event: t(context.event) })}</Text>
-            {eventCardTips.map((tip) => (
-              <Text key={tip} style={styles.cardText}>
-                • {t(tip)}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-
-        {(hasContext ? [] : fallbackCards).map((card) => (
-          <View key={card.title} style={styles.card}>
-            <Text style={styles.cardTitle}>{t(card.title)}</Text>
-            <Text style={styles.cardText}>{t(card.text)}</Text>
-          </View>
+              <Text style={styles.cardTitle}>{card.title}</Text>
+              <View style={styles.hairline} />
+              {card.body}
+            </View>
+          </FadeInView>
         ))}
       </ScrollView>
     </View>
@@ -140,33 +205,105 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1
   },
   cardsWrap: {
-    gap: 10,
-    paddingBottom: 20
+    gap: 14,
+    paddingBottom: 32
   },
   card: {
     backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 14,
-    padding: 14,
-    gap: 6
+    borderRadius: RADII.lg,
+    padding: 18,
+    ...SHADOWS.card
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6
+  },
+  cardEyebrow: {
+    ...TYPE.eyebrow,
+    color: c.accentGold,
+    flex: 1,
+    paddingRight: 12
+  },
+  cardNumber: {
+    fontFamily: SERIF,
+    fontStyle: 'italic',
+    fontSize: 24,
+    lineHeight: 28,
+    color: c.accentGold
   },
   cardTitle: {
-    color: c.text,
+    fontFamily: SERIF,
+    fontSize: 21,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    lineHeight: 27,
+    color: c.text
+  },
+  hairline: {
+    height: 1,
+    backgroundColor: c.goldHairline,
+    marginTop: 12,
+    marginBottom: 12
+  },
+  noteBody: {
+    gap: 12
+  },
+  noteBlock: {
+    gap: 3
+  },
+  noteLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: c.accentGold
+  },
+  noteText: {
+    ...TYPE.body,
+    color: c.muted
+  },
+  weatherNote: {
+    fontFamily: SERIF,
+    fontStyle: 'italic',
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: c.muted
+  },
+  tipRow: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  tipDash: {
+    fontFamily: SERIF,
     fontSize: 15,
-    fontWeight: '700'
+    lineHeight: 22,
+    color: c.accentGold
   },
-  cardText: {
+  tipText: {
+    ...TYPE.body,
     color: c.muted,
+    flex: 1
+  },
+  lookRow: {
+    gap: 3
+  },
+  lookRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+    paddingTop: 10
+  },
+  lookTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: c.text
+  },
+  lookReason: {
     fontSize: 13,
-    lineHeight: 18
-  },
-  cardHint: {
-    color: c.muted,
-    fontSize: 12,
-    marginTop: 4
-  },
-  lookReasonRow: {
-    gap: 2
+    lineHeight: 18,
+    color: c.muted
   }
 });

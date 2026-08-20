@@ -1,15 +1,22 @@
 import { useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
-import { ThemeColors } from '../constants/theme';
+import { Alert, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { RADII, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { AppPressable } from '../components/AppPressable';
+import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { FadeInView } from '../components/ui/FadeInView';
 
 type AuthScreenProps = {
   onLogin: (displayName: string, phone: string, method: string) => void;
 };
 
 type Step = 'phone' | 'code';
+
+type Field = 'name' | 'phone' | 'otp';
+
+const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
 
 const formatPhone = (digits: string) => {
   const part1 = digits.slice(0, 3);
@@ -35,6 +42,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [demoOtp, setDemoOtp] = useState('');
+  const [focusedField, setFocusedField] = useState<Field | null>(null);
 
   const formattedPhone = useMemo(() => formatPhone(phoneDigits), [phoneDigits]);
 
@@ -83,55 +91,82 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
     onLogin(displayName, phone, 'Телефон');
   };
 
+  const fieldStyle = (field: Field) => [styles.input, focusedField === field && styles.inputFocused];
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{t('Вход')}</Text>
-      <Text style={styles.subtitle}>{t('Подтверди номер телефона, чтобы сохранять гардероб и образы.')}</Text>
+      <LinearGradient
+        colors={[colors.heroTo, colors.heroFrom] as const}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      <ScreenHeader
+        eyebrow={t('Добро пожаловать')}
+        title={t('Вход')}
+        subtitle={t('Подтверди номер телефона, чтобы сохранять гардероб и образы.')}
+      />
 
       {step === 'phone' ? (
-        <View style={styles.form}>
+        <FadeInView key="phone" style={styles.form}>
           <Text style={styles.label}>{t('Имя')}</Text>
           <TextInput
             placeholder={t('Например, Алина')}
             placeholderTextColor={colors.muted}
-            style={styles.input}
+            style={fieldStyle('name')}
             value={name}
             onChangeText={setName}
+            onFocus={() => setFocusedField('name')}
+            onBlur={() => setFocusedField(null)}
           />
           <Text style={styles.label}>{t('Телефон')}</Text>
           <TextInput
             placeholder="+7 999 000 00 00"
             placeholderTextColor={colors.muted}
-            style={styles.input}
+            style={fieldStyle('phone')}
             keyboardType="phone-pad"
             value={formattedPhone}
             onChangeText={handlePhoneChange}
+            onFocus={() => setFocusedField('phone')}
+            onBlur={() => setFocusedField(null)}
           />
           {phoneError ? <Text style={styles.errorText}>{phoneError}</Text> : null}
-          <AppPressable style={styles.primaryButton} onPress={requestOtp}>
-            <Text style={styles.primaryButtonText}>{t('Отправить код')}</Text>
-          </AppPressable>
-        </View>
+          <PrimaryButton
+            title={t('Отправить код')}
+            onPress={requestOtp}
+            variant="gold"
+            size="lg"
+            style={styles.submitButton}
+          />
+        </FadeInView>
       ) : (
-        <View style={styles.form}>
+        <FadeInView key="code" style={styles.form}>
           <Text style={styles.label}>{t('Код из SMS')}</Text>
+          <Text style={styles.sentTo}>{t('Код отправлен на номер {phone}', { phone: formattedPhone })}</Text>
           <TextInput
-            placeholder={t('4 цифры')}
+            placeholder="0000"
             placeholderTextColor={colors.muted}
-            style={styles.input}
+            style={[styles.input, styles.otpInput, focusedField === 'otp' && styles.inputFocused]}
             keyboardType="number-pad"
             value={otp}
             onChangeText={setOtp}
             maxLength={4}
+            onFocus={() => setFocusedField('otp')}
+            onBlur={() => setFocusedField(null)}
           />
+          {__DEV__ && demoOtp ? (
+            <Text style={styles.devHint}>{t('Код для входа (демо): {code}', { code: demoOtp })}</Text>
+          ) : null}
           {otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
-          <AppPressable style={styles.primaryButton} onPress={verifyOtp}>
-            <Text style={styles.primaryButtonText}>{t('Подтвердить')}</Text>
-          </AppPressable>
-          <AppPressable style={styles.linkButton} onPress={() => setStep('phone')}>
-            <Text style={styles.linkText}>{t('Изменить номер')}</Text>
-          </AppPressable>
-        </View>
+          <PrimaryButton
+            title={t('Подтвердить')}
+            onPress={verifyOtp}
+            variant="gold"
+            size="lg"
+            style={styles.submitButton}
+          />
+          <PrimaryButton title={t('Изменить номер')} onPress={() => setStep('phone')} variant="ghost" />
+        </FadeInView>
       )}
 
       <Text style={styles.hint}>{t('Реальную отправку SMS подключим на бэкенде. Сейчас это демо-режим.')}</Text>
@@ -146,63 +181,64 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 24,
     backgroundColor: c.background
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: c.text
-  },
-  subtitle: {
-    marginTop: 6,
-    fontSize: 14,
-    color: c.muted,
-    lineHeight: 20
-  },
   form: {
-    marginTop: 20,
     gap: 10
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: c.text
+    ...TYPE.eyebrow,
+    fontSize: 10.5,
+    color: c.accentGold,
+    marginTop: 4
+  },
+  sentTo: {
+    ...TYPE.caption,
+    color: c.muted
   },
   input: {
     backgroundColor: c.card,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: RADII.md,
+    borderWidth: 1.5,
     borderColor: c.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     fontSize: 15,
     color: c.text
   },
+  inputFocused: {
+    borderColor: c.accentGold,
+    backgroundColor: c.card
+  },
+  otpInput: {
+    fontFamily: MONO,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 12,
+    textAlign: 'center',
+    paddingVertical: 14
+  },
+  devHint: {
+    ...TYPE.caption,
+    color: c.accentGold,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: RADII.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    overflow: 'hidden'
+  },
   errorText: {
-    color: '#B14444',
-    fontSize: 12
+    ...TYPE.caption,
+    color: c.danger
   },
-  primaryButton: {
-    marginTop: 12,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center'
-  },
-  primaryButtonText: {
-    color: c.buttonPrimaryText,
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  linkButton: {
-    alignItems: 'center',
-    marginTop: 4
-  },
-  linkText: {
-    color: c.muted,
-    fontSize: 13
+  submitButton: {
+    marginTop: 10
   },
   hint: {
-    marginTop: 12,
-    fontSize: 12,
-    color: c.muted
+    marginTop: 18,
+    ...TYPE.caption,
+    color: c.muted,
+    textAlign: 'center'
   }
 });

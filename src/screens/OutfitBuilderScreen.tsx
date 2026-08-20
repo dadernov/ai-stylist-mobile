@@ -1,5 +1,6 @@
 import {
   Alert,
+  Animated,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,14 +12,20 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import { ScreenTitle } from '../components/ScreenTitle';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { AppPressable } from '../components/AppPressable';
-import { ThemeColors } from '../constants/theme';
+import { ScreenHeader } from '../components/ui/ScreenHeader';
+import { SectionLabel } from '../components/ui/SectionLabel';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { ProgressGlow } from '../components/ui/ProgressGlow';
+import { EmptyState } from '../components/ui/EmptyState';
+import { FadeInView } from '../components/ui/FadeInView';
+import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
@@ -27,6 +34,46 @@ import { TryOnQualityMode, TuckMode } from '../services/ai';
 
 const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
 const events = ['Свидание', 'Прогулка', 'Совещание', 'Вечеринка', 'Спортзал'];
+
+// Эмодзи-акценты для чипов и слотов ручного конструктора (декор, не контент).
+const styleIcons: Record<string, string> = {
+  'Кэжуал': '👕',
+  'Спорт-шик': '🏃',
+  'Романтичный': '🌸',
+  'Бохо': '🌾',
+  'Минимализм': '🤍',
+  'Офисный': '💼'
+};
+
+const eventIcons: Record<string, string> = {
+  'Свидание': '💘',
+  'Прогулка': '🚶',
+  'Совещание': '💼',
+  'Вечеринка': '🎉',
+  'Спортзал': '🏋️'
+};
+
+const slotEmojis: Record<string, string> = {
+  'Верх': '👕',
+  'Низ': '👖',
+  'Обувь': '👟',
+  'Верхняя одежда': '🧥',
+  'Сумка': '👜'
+};
+
+const weatherEmojiMap: Record<number, string> = {
+  0: '☀️',
+  1: '🌤️',
+  2: '⛅️',
+  3: '☁️',
+  45: '🌫️',
+  48: '🌫️',
+  51: '🌦️',
+  61: '🌧️',
+  71: '❄️',
+  80: '🌧️',
+  95: '⛈️'
+};
 
 type OutfitBuilderProps = {
   items: WardrobeItem[];
@@ -696,7 +743,22 @@ export function OutfitBuilderScreen({
   const [activeEvent, setActiveEvent] = useState(events[2]);
   const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
   const [temperature, setTemperature] = useState<number | null>(null);
+  const [weatherCode, setWeatherCode] = useState<number | null>(null);
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Сегмент-контрол: плавная подложка под активной вкладкой.
+  const segmentAnim = useRef(new Animated.Value(0)).current;
+  const [segmentWidth, setSegmentWidth] = useState(0);
+
+  useEffect(() => {
+    Animated.spring(segmentAnim, {
+      toValue: activeTab === 'looks' ? 1 : 0,
+      friction: 9,
+      tension: 90,
+      useNativeDriver: true
+    }).start();
+  }, [activeTab, segmentAnim]);
 
   const [selectedTop, setSelectedTop] = useState<WardrobeItem | null>(null);
   const [selectedBottom, setSelectedBottom] = useState<WardrobeItem | null>(null);
@@ -778,6 +840,7 @@ export function OutfitBuilderScreen({
         const wind = data?.current?.wind_speed_10m;
         const description = t(weatherCodeMap[code] || 'переменная облачность');
         setTemperature(typeof temp === 'number' ? temp : null);
+        setWeatherCode(typeof code === 'number' ? code : null);
         setWeatherText(
           t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
             temp: temp ?? '--',
@@ -795,17 +858,23 @@ export function OutfitBuilderScreen({
   }, []);
 
   const handleGenerateLooks = () => {
+    if (isGenerating) return;
     if (!items.length) {
       Alert.alert(t('Нет вещей'), t('Добавь хотя бы 3 вещи в гардероб.'));
       return;
     }
-    const generated = buildLooks(items, activeStyle, activeEvent, weatherText, temperature);
-    if (!generated.length) {
-      Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
-      return;
-    }
-    setLooks(generated);
-    onLooksGenerated(generated, { style: activeStyle, event: activeEvent, weather: weatherText });
+    setIsGenerating(true);
+    // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
+    setTimeout(() => {
+      const generated = buildLooks(items, activeStyle, activeEvent, weatherText, temperature);
+      setIsGenerating(false);
+      if (!generated.length) {
+        Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
+        return;
+      }
+      setLooks(generated);
+      onLooksGenerated(generated, { style: activeStyle, event: activeEvent, weather: weatherText });
+    }, 650);
   };
 
   const handleSaveManualLook = () => {
@@ -963,39 +1032,54 @@ export function OutfitBuilderScreen({
     selected: WardrobeItem | null,
     onSelect: (item: WardrobeItem) => void
   ) => (
-    <View style={styles.selectorBlock}>
-      <Text style={styles.selectorTitle}>{t(title)}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
-        {list.map((item) => {
-          const active = selected?.id === item.id;
-          return (
-            <AppPressable
-              key={item.id}
-              style={[styles.selectorCard, active && styles.selectorCardActive]}
-              onPress={() => onSelect(item)}
-            >
-              {item.imageUri ? (
-                <Image source={{ uri: item.imageUri }} style={styles.selectorImage} resizeMode="cover" />
-              ) : null}
-              <Text style={styles.selectorLabel} numberOfLines={1}>
-                {item.name}
-              </Text>
-            </AppPressable>
-          );
-        })}
-      </ScrollView>
+    <View style={styles.slotCard}>
+      <View style={styles.slotHeader}>
+        <View style={styles.slotEmojiCircle}>
+          <Text style={styles.slotEmoji}>{slotEmojis[title] || '👗'}</Text>
+        </View>
+        <View style={styles.slotInfo}>
+          <Text style={styles.slotTitle}>{t(title)}</Text>
+          <Text style={[styles.slotValue, !selected && styles.slotValueEmpty]} numberOfLines={1}>
+            {selected ? selected.name : t('Не выбрано')}
+          </Text>
+        </View>
+        {selected?.imageUri ? (
+          <Image source={{ uri: selected.imageUri }} style={styles.slotPreview} resizeMode="cover" />
+        ) : null}
+      </View>
+      {list.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
+          {list.map((item) => {
+            const active = selected?.id === item.id;
+            return (
+              <AppPressable
+                key={item.id}
+                haptics
+                style={[styles.selectorCard, active && styles.selectorCardActive]}
+                onPress={() => onSelect(item)}
+              >
+                {item.imageUri ? (
+                  <Image source={{ uri: item.imageUri }} style={styles.selectorImage} resizeMode="cover" />
+                ) : null}
+                <Text style={[styles.selectorLabel, active && styles.selectorLabelActive]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </AppPressable>
+            );
+          })}
+        </ScrollView>
+      ) : (
+        <Text style={styles.slotEmptyText}>{t('Нет вещей в этой категории')}</Text>
+      )}
     </View>
   );
 
-  const renderFitReasons = (reasons?: string[], score?: number) => {
-    if (!reasons?.length && typeof score !== 'number') return null;
+  const renderFitReasons = (reasons?: string[]) => {
+    if (!reasons?.length) return null;
     return (
       <View style={styles.reasonBlock}>
         <Text style={styles.reasonTitle}>{t('Почему этот лук подходит')}</Text>
-        {typeof score === 'number' ? (
-          <Text style={styles.reasonScore}>{t('Оценка совпадения: {score}', { score: Math.round(score) })}</Text>
-        ) : null}
-        {(reasons || []).map((reason, index) => (
+        {reasons.map((reason, index) => (
           <Text key={`${reason}-${index}`} style={styles.reasonText}>
             • {reason}
           </Text>
@@ -1004,34 +1088,67 @@ export function OutfitBuilderScreen({
     );
   };
 
+  const renderFitBadge = (score?: number) => {
+    if (typeof score !== 'number') return null;
+    return (
+      <View style={styles.fitBadge}>
+        <Text style={styles.fitBadgeText}>✦ {Math.round(score)}</Text>
+      </View>
+    );
+  };
+
+  const weatherEmoji = weatherCode !== null ? weatherEmojiMap[weatherCode] || '🌤️' : '🌤️';
+  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 2 : 0;
+
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={[themeColors.heroTo, themeColors.heroFrom] as const}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.heroWash}
+        pointerEvents="none"
+      />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pageContent}>
-        <ScreenTitle
+        <ScreenHeader
+          eyebrow={t('Студия стиля')}
           title={t('Конструктор образов')}
           subtitle={t('Выбери стиль и событие, а ИИ соберет луки из твоего гардероба с учетом погоды.')}
         />
 
-        <View style={styles.segment}>
-          <AppPressable
-            style={[styles.segmentTab, activeTab === 'builder' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('builder')}
-          >
+        <View style={styles.segment} onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}>
+          {segmentThumbWidth > 0 ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.segmentThumb,
+                {
+                  width: segmentThumbWidth,
+                  transform: [
+                    {
+                      translateX: segmentAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, segmentThumbWidth]
+                      })
+                    }
+                  ]
+                }
+              ]}
+            />
+          ) : null}
+          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('builder')}>
             <Text style={[styles.segmentText, activeTab === 'builder' && styles.segmentTextActive]}>
               {t('Конструктор')}
             </Text>
           </AppPressable>
-          <AppPressable
-            style={[styles.segmentTab, activeTab === 'looks' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('looks')}
-          >
+          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
             <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Луки')}</Text>
           </AppPressable>
         </View>
 
         {activeTab === 'builder' ? (
           <>
-            <Text style={styles.groupTitle}>{t('Стиль')}</Text>
+            <SectionLabel>{t('Стиль')}</SectionLabel>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1042,13 +1159,14 @@ export function OutfitBuilderScreen({
                 <Chip
                   key={preset}
                   label={t(preset)}
+                  icon={styleIcons[preset]}
                   active={preset === activeStyle}
                   onPress={() => setActiveStyle(preset)}
                 />
               ))}
             </ScrollView>
 
-            <Text style={styles.groupTitle}>{t('Мероприятие')}</Text>
+            <SectionLabel>{t('Мероприятие')}</SectionLabel>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1059,6 +1177,7 @@ export function OutfitBuilderScreen({
                 <Chip
                   key={event}
                   label={t(event)}
+                  icon={eventIcons[event]}
                   active={event === activeEvent}
                   onPress={() => setActiveEvent(event)}
                 />
@@ -1066,14 +1185,41 @@ export function OutfitBuilderScreen({
             </ScrollView>
 
             <View style={styles.weatherCard}>
-              <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
-              <Text style={styles.weatherText}>{weatherText}</Text>
+              <LinearGradient
+                colors={[themeColors.heroFrom, themeColors.heroTo] as const}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.weatherWash}
+                pointerEvents="none"
+              />
+              <View style={styles.weatherEmojiCircle}>
+                <Text style={styles.weatherEmoji}>{weatherEmoji}</Text>
+              </View>
+              <View style={styles.weatherInfo}>
+                {typeof temperature === 'number' ? (
+                  <Text style={styles.weatherTemp}>{`${Math.round(temperature)}°`}</Text>
+                ) : null}
+                <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
+                <Text style={styles.weatherText}>{weatherText}</Text>
+              </View>
             </View>
 
-            <AppPressable style={styles.generateButton} onPress={handleGenerateLooks}>
-              <Text style={styles.generateText}>{t('Сгенерировать подходящие образы')}</Text>
-            </AppPressable>
-            <Text style={styles.generateHint}>{t('Покажем только те варианты, которые реально подходят под стиль и событие.')}</Text>
+            <PrimaryButton
+              title={t('Сгенерировать образы')}
+              onPress={handleGenerateLooks}
+              variant="gold"
+              size="lg"
+              loading={isGenerating}
+              style={styles.generateButton}
+            />
+            {isGenerating ? (
+              <View style={styles.generatingWrap}>
+                <ProgressGlow visible={isGenerating} />
+                <Text style={styles.generatingText}>{t('Подбираем сочетания под погоду и событие…')}</Text>
+              </View>
+            ) : (
+              <Text style={styles.generateHint}>{t('Покажем только те варианты, которые реально подходят под стиль и событие.')}</Text>
+            )}
 
             <View style={styles.manualWrap}>
               <Text style={styles.manualTitle}>{t('Собери образ вручную')}</Text>
@@ -1092,9 +1238,7 @@ export function OutfitBuilderScreen({
                 onChangeText={setManualName}
               />
 
-              <AppPressable style={styles.addLookButton} onPress={handleSaveManualLook}>
-                <Text style={styles.addLookText}>{t('Добавить в образы')}</Text>
-              </AppPressable>
+              <PrimaryButton title={t('Добавить в образы')} onPress={handleSaveManualLook} style={styles.addLookButton} />
 
               <View style={styles.manualResult}>
                 <Text style={styles.manualResultTitle}>{t('Текущий образ')}</Text>
@@ -1109,22 +1253,89 @@ export function OutfitBuilderScreen({
             </View>
 
             <View style={styles.looksWrap}>
-              {looks.map((look) => {
+              {looks.map((look, index) => {
                 const lookItems = getLookItems(look.itemIds);
                 return (
-                  <View key={look.id} style={styles.lookCard}>
+                  <FadeInView key={look.id} delay={index * 60}>
+                    <View style={styles.lookCard}>
+                      <View style={styles.lookHeader}>
+                        <View style={styles.lookTitleWrap}>
+                          <Text style={styles.lookTitle}>{look.title}</Text>
+                          {renderFitBadge(look.fitScore)}
+                        </View>
+                        <View style={styles.lookActions}>
+                          <AppPressable haptics style={styles.actionSoft} onPress={() => handleSaveGeneratedLook(look)}>
+                            <Text style={styles.actionSoftText}>{t('В луки')}</Text>
+                          </AppPressable>
+                          <AppPressable haptics style={styles.actionGhost} onPress={() => onFavoriteAdd(look)}>
+                            <Text style={styles.actionGhostText}>{t('В избранное')}</Text>
+                          </AppPressable>
+                        </View>
+                      </View>
+                      <Text style={styles.lookWeather}>{look.weather}</Text>
+                      <LookPreview items={lookItems} />
+                      <AiTryOnPreview
+                        modelUri={modelUri}
+                        items={lookItems}
+                        tuckMode={look.tuckMode}
+                        resultUri={look.tryOnImageUri}
+                        warningMessage={look.tryOnWarning}
+                        updatedAt={look.tryOnUpdatedAt}
+                        qualityMode={look.tryOnQualityMode}
+                        history={look.tryOnHistory}
+                        onGenerated={(payload) => updateGeneratedLookTryOn(look.id, payload)}
+                      />
+                      {lookItems.map((item) => (
+                        <Text key={item.id} style={styles.lookItem}>
+                          • {item.name}
+                        </Text>
+                      ))}
+                      {renderFitReasons(look.fitReasons)}
+                      <View style={styles.beautyBlock}>
+                        <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                        <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                        <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                        <Text style={styles.beautyText}>{t(look.hair)}</Text>
+                      </View>
+                    </View>
+                  </FadeInView>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          <View style={styles.looksWrap}>
+            {!savedLooks.length ? (
+              <EmptyState
+                emoji="👗"
+                title={t('Пока нет сохраненных образов')}
+                hint={t('Собери лук вручную и добавь его в образы.')}
+                actionLabel={t('Собрать образ')}
+                onAction={() => setActiveTab('builder')}
+              />
+            ) : null}
+            {savedLooks.map((look, index) => {
+              const lookItems = getLookItems(look.itemIds);
+              return (
+                <FadeInView key={look.id} delay={index * 60}>
+                  <View style={styles.lookCard}>
                     <View style={styles.lookHeader}>
-                      <Text style={styles.lookTitle}>{look.title}</Text>
+                      <View style={styles.lookTitleWrap}>
+                        <Text style={styles.lookTitle}>{look.name}</Text>
+                        {renderFitBadge(look.fitScore)}
+                      </View>
                       <View style={styles.lookActions}>
-                        <AppPressable style={styles.secondaryButton} onPress={() => handleSaveGeneratedLook(look)}>
-                          <Text style={styles.secondaryButtonText}>{t('В луки')}</Text>
+                        <AppPressable haptics style={styles.actionSoft} onPress={() => openEditLook(look)}>
+                          <Text style={styles.actionSoftText}>{t('Изменить')}</Text>
                         </AppPressable>
-                        <AppPressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(look)}>
-                          <Text style={styles.favoriteText}>{t('В избранное')}</Text>
+                        <AppPressable haptics style={styles.actionGhost} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}>
+                          <Text style={styles.actionGhostText}>{t('В избранное')}</Text>
+                        </AppPressable>
+                        <AppPressable haptics style={styles.actionDanger} onPress={() => handleDeleteLook(look.id)}>
+                          <Text style={styles.actionDangerText}>{t('Удалить')}</Text>
                         </AppPressable>
                       </View>
                     </View>
-                    <Text style={styles.lookWeather}>{look.weather}</Text>
                     <LookPreview items={lookItems} />
                     <AiTryOnPreview
                       modelUri={modelUri}
@@ -1135,70 +1346,16 @@ export function OutfitBuilderScreen({
                       updatedAt={look.tryOnUpdatedAt}
                       qualityMode={look.tryOnQualityMode}
                       history={look.tryOnHistory}
-                      onGenerated={(payload) => updateGeneratedLookTryOn(look.id, payload)}
+                      onGenerated={(payload) => updateSavedLookTryOn(look.id, payload)}
                     />
                     {lookItems.map((item) => (
                       <Text key={item.id} style={styles.lookItem}>
                         • {item.name}
                       </Text>
                     ))}
-                    {renderFitReasons(look.fitReasons, look.fitScore)}
-                    <View style={styles.beautyBlock}>
-                      <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-                      <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-                      <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-                      <Text style={styles.beautyText}>{t(look.hair)}</Text>
-                    </View>
+                    {renderFitReasons(look.fitReasons)}
                   </View>
-                );
-              })}
-            </View>
-          </>
-        ) : (
-          <View style={styles.looksWrap}>
-            {!savedLooks.length ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>{t('Пока нет сохраненных образов')}</Text>
-                <Text style={styles.emptyText}>{t('Собери лук вручную и добавь его в образы.')}</Text>
-              </View>
-            ) : null}
-            {savedLooks.map((look) => {
-              const lookItems = getLookItems(look.itemIds);
-              return (
-                <View key={look.id} style={styles.lookCard}>
-                  <View style={styles.lookHeader}>
-                    <Text style={styles.lookTitle}>{look.name}</Text>
-                    <View style={styles.lookActions}>
-                      <AppPressable style={styles.secondaryButton} onPress={() => openEditLook(look)}>
-                        <Text style={styles.secondaryButtonText}>{t('Изменить')}</Text>
-                      </AppPressable>
-                      <AppPressable style={styles.favoriteButton} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}>
-                        <Text style={styles.favoriteText}>{t('В избранное')}</Text>
-                      </AppPressable>
-                      <AppPressable style={styles.deleteButton} onPress={() => handleDeleteLook(look.id)}>
-                        <Text style={styles.deleteButtonText}>{t('Удалить')}</Text>
-                      </AppPressable>
-                    </View>
-                  </View>
-                  <LookPreview items={lookItems} />
-                  <AiTryOnPreview
-                    modelUri={modelUri}
-                    items={lookItems}
-                    tuckMode={look.tuckMode}
-                    resultUri={look.tryOnImageUri}
-                    warningMessage={look.tryOnWarning}
-                    updatedAt={look.tryOnUpdatedAt}
-                    qualityMode={look.tryOnQualityMode}
-                    history={look.tryOnHistory}
-                    onGenerated={(payload) => updateSavedLookTryOn(look.id, payload)}
-                  />
-                  {lookItems.map((item) => (
-                    <Text key={item.id} style={styles.lookItem}>
-                      • {item.name}
-                    </Text>
-                  ))}
-                  {renderFitReasons(look.fitReasons, look.fitScore)}
-                </View>
+                </FadeInView>
               );
             })}
           </View>
@@ -1224,12 +1381,13 @@ export function OutfitBuilderScreen({
                 {renderPicker('Обувь', shoes, editShoes, setEditShoes)}
                 {renderPicker('Верхняя одежда', outer, editOuter, setEditOuter)}
                 {renderPicker('Сумка', bags, editBag, setEditBag)}
-                <AppPressable style={styles.modalSave} onPress={handleSaveEditedLook}>
-                  <Text style={styles.modalSaveText}>{t('Сохранить')}</Text>
-                </AppPressable>
-                <AppPressable style={styles.modalClose} onPress={() => setEditModalVisible(false)}>
-                  <Text style={styles.modalCloseText}>{t('Отмена')}</Text>
-                </AppPressable>
+                <PrimaryButton title={t('Сохранить')} onPress={handleSaveEditedLook} variant="gold" style={styles.modalSave} />
+                <PrimaryButton
+                  title={t('Отмена')}
+                  onPress={() => setEditModalVisible(false)}
+                  variant="ghost"
+                  style={styles.modalClose}
+                />
               </ScrollView>
             </KeyboardAvoidingView>
           </AppPressable>
@@ -1243,39 +1401,51 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1
   },
+  heroWash: {
+    position: 'absolute',
+    top: -12,
+    left: -16,
+    right: -16,
+    height: 220
+  },
   pageContent: {
-    paddingBottom: 24
+    paddingBottom: SPACING.xl
   },
   segment: {
     flexDirection: 'row',
     backgroundColor: c.chip,
-    borderRadius: 14,
+    borderRadius: RADII.md,
+    borderWidth: 1,
+    borderColor: c.border,
     padding: 4,
-    marginBottom: 12
+    marginBottom: SPACING.lg
+  },
+  segmentThumb: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: RADII.md - 4,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    ...SHADOWS.card
   },
   segmentTab: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: RADII.sm,
     alignItems: 'center'
-  },
-  segmentTabActive: {
-    backgroundColor: c.buttonPrimaryBg
   },
   segmentText: {
     fontSize: 13,
     fontWeight: '600',
-    color: c.text
+    color: c.muted,
+    letterSpacing: 0.2
   },
   segmentTextActive: {
-    color: c.buttonPrimaryText
-  },
-  groupTitle: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-    marginTop: 4
+    color: c.accentGold,
+    fontWeight: '700'
   },
   chipsRow: {
     paddingBottom: 6,
@@ -1290,114 +1460,187 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     minHeight: 48
   },
   weatherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
     backgroundColor: c.card,
-    borderRadius: 16,
+    borderRadius: RADII.lg,
     borderWidth: 1,
     borderColor: c.border,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginBottom: 12
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    ...SHADOWS.card
+  },
+  weatherWash: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: RADII.lg - 1
+  },
+  weatherEmojiCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  weatherEmoji: {
+    fontSize: 26
+  },
+  weatherInfo: {
+    flex: 1
+  },
+  weatherTemp: {
+    fontFamily: SERIF,
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    lineHeight: 38,
+    color: c.text
   },
   weatherTitle: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '700'
+    ...TYPE.eyebrow,
+    color: c.accentGold,
+    marginTop: 2
   },
   weatherText: {
+    ...TYPE.caption,
     color: c.muted,
-    fontSize: 12,
-    marginTop: 4
+    marginTop: 2
   },
   generateButton: {
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginBottom: 12
+    marginBottom: SPACING.sm
   },
-  generateText: {
-    color: c.buttonPrimaryText,
-    fontSize: 15,
-    fontWeight: '700'
+  generatingWrap: {
+    gap: SPACING.sm,
+    marginTop: 4,
+    marginBottom: SPACING.lg
+  },
+  generatingText: {
+    ...TYPE.caption,
+    color: c.accentGold,
+    textAlign: 'center'
   },
   generateHint: {
+    ...TYPE.caption,
     color: c.muted,
-    fontSize: 12,
-    marginTop: -4,
-    marginBottom: 12
+    textAlign: 'center',
+    marginBottom: SPACING.lg
   },
   manualWrap: {
     backgroundColor: c.card,
-    borderRadius: 16,
+    borderRadius: RADII.xl,
     borderWidth: 1,
     borderColor: c.border,
-    padding: 14,
-    marginBottom: 12
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    ...SHADOWS.card
   },
   manualTitle: {
+    ...TYPE.title,
     color: c.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8
+    marginBottom: SPACING.md
   },
   manualLabel: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 6,
-    marginBottom: 6
+    ...TYPE.eyebrow,
+    color: c.accentGold,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm
   },
   manualInput: {
     backgroundColor: c.surface,
-    borderRadius: 12,
+    borderRadius: RADII.md,
     borderWidth: 1,
     borderColor: c.border,
-    paddingHorizontal: 12,
+    paddingHorizontal: SPACING.md,
     paddingVertical: 10,
     fontSize: 14,
     color: c.text
   },
   addLookButton: {
-    marginTop: 10,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center'
+    marginTop: SPACING.md
   },
-  addLookText: {
-    color: c.buttonPrimaryText,
-    fontSize: 14,
-    fontWeight: '700'
+  slotCard: {
+    backgroundColor: c.surface,
+    borderRadius: RADII.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: SPACING.md,
+    marginBottom: SPACING.md
   },
-  selectorBlock: {
-    marginBottom: 10
+  slotHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.sm
   },
-  selectorTitle: {
+  slotEmojiCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  slotEmoji: {
+    fontSize: 18
+  },
+  slotInfo: {
+    flex: 1
+  },
+  slotTitle: {
+    ...TYPE.eyebrow,
+    color: c.accentGold
+  },
+  slotValue: {
     color: c.text,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 6
+    marginTop: 2
+  },
+  slotValueEmpty: {
+    color: c.muted,
+    fontWeight: '400'
+  },
+  slotPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: RADII.sm,
+    backgroundColor: c.chip,
+    borderWidth: 1,
+    borderColor: c.goldHairline
+  },
+  slotEmptyText: {
+    ...TYPE.caption,
+    color: c.muted
   },
   selectorRow: {
     gap: 8,
-    paddingBottom: 6
+    paddingBottom: 2
   },
   selectorCard: {
-    width: 120,
-    backgroundColor: c.surface,
-    borderRadius: 12,
+    width: 108,
+    backgroundColor: c.card,
+    borderRadius: RADII.md,
     borderWidth: 1,
     borderColor: c.border,
     padding: 8
   },
   selectorCardActive: {
-    borderColor: c.text
+    borderColor: c.goldHairline,
+    backgroundColor: c.accentGoldSoft
   },
   selectorImage: {
     width: '100%',
-    height: 70,
-    borderRadius: 8,
+    height: 64,
+    borderRadius: RADII.sm,
     backgroundColor: c.chip
   },
   selectorLabel: {
@@ -1406,30 +1649,37 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600'
   },
+  selectorLabelActive: {
+    color: c.accentGold
+  },
   manualResult: {
-    marginTop: 8
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: c.goldHairline,
+    gap: 2
   },
   manualResultTitle: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '700',
+    ...TYPE.eyebrow,
+    color: c.accentGold,
     marginBottom: 4
   },
   manualItem: {
-    color: c.muted,
-    fontSize: 12
+    ...TYPE.caption,
+    color: c.muted
   },
   looksWrap: {
-    gap: 10,
+    gap: SPACING.md,
     paddingBottom: 20
   },
   lookCard: {
     backgroundColor: c.card,
-    borderRadius: 14,
+    borderRadius: RADII.xl,
     borderWidth: 1,
     borderColor: c.border,
-    padding: 14,
-    gap: 4
+    padding: SPACING.lg,
+    gap: 6,
+    ...SHADOWS.card
   },
   lookHeader: {
     flexDirection: 'row',
@@ -1437,52 +1687,76 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 10,
     alignItems: 'flex-start'
   },
+  lookTitleWrap: {
+    flex: 1,
+    gap: 6,
+    alignItems: 'flex-start'
+  },
   lookTitle: {
-    color: c.text,
-    fontSize: 15,
-    fontWeight: '700',
-    flex: 1
+    ...TYPE.title,
+    color: c.text
   },
-  favoriteButton: {
-    backgroundColor: c.chip,
-    borderRadius: 10,
+  fitBadge: {
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6
+    paddingVertical: 3
   },
-  favoriteText: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '600'
+  fitBadgeText: {
+    color: c.accentGold,
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.4
   },
   lookActions: {
     flexDirection: 'row',
-    gap: 6
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 6,
+    flexShrink: 1
   },
-  secondaryButton: {
-    backgroundColor: c.chip,
-    borderRadius: 10,
-    paddingHorizontal: 10,
+  actionSoft: {
+    backgroundColor: c.accentGoldSoft,
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
-  secondaryButtonText: {
-    color: c.text,
+  actionSoftText: {
+    color: c.accentGold,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  actionGhost: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: c.goldHairline,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  actionGhostText: {
+    color: c.accentGold,
     fontSize: 12,
     fontWeight: '600'
   },
-  deleteButton: {
-    backgroundColor: '#FBEAEA',
-    borderRadius: 10,
-    paddingHorizontal: 10,
+  actionDanger: {
+    backgroundColor: c.dangerSoft,
+    borderRadius: 999,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
-  deleteButtonText: {
-    color: '#9B2C2C',
+  actionDangerText: {
+    color: c.danger,
     fontSize: 12,
-    fontWeight: '600'
+    fontWeight: '700'
   },
   lookWeather: {
+    ...TYPE.caption,
     color: c.muted,
-    fontSize: 12,
     marginBottom: 3
   },
   lookItem: {
@@ -1491,59 +1765,36 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   reasonBlock: {
     marginTop: 6,
-    padding: 10,
-    borderRadius: 10,
+    padding: SPACING.md,
+    borderRadius: RADII.md,
     backgroundColor: c.surface,
     borderWidth: 1,
     borderColor: c.border,
     gap: 2
   },
   reasonTitle: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 2
-  },
-  reasonScore: {
-    color: c.muted,
-    fontSize: 11,
+    ...TYPE.eyebrow,
+    color: c.accentGold,
     marginBottom: 2
   },
   reasonText: {
-    color: c.muted,
-    fontSize: 12,
-    lineHeight: 16
+    ...TYPE.caption,
+    color: c.muted
   },
   beautyBlock: {
     marginTop: 6,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: c.goldHairline,
     gap: 4
   },
   beautyTitle: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '700'
+    ...TYPE.eyebrow,
+    color: c.accentGold
   },
   beautyText: {
-    color: c.muted,
-    fontSize: 12,
-    lineHeight: 16
-  },
-  emptyState: {
-    backgroundColor: c.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: 16
-  },
-  emptyTitle: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4
-  },
-  emptyText: {
-    color: c.muted,
-    fontSize: 12
+    ...TYPE.caption,
+    color: c.muted
   },
   modalBackdrop: {
     flex: 1,
@@ -1552,56 +1803,44 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: c.card,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 16,
+    borderTopLeftRadius: RADII.xl,
+    borderTopRightRadius: RADII.xl,
+    borderTopWidth: 1,
+    borderTopColor: c.goldHairline,
+    padding: SPACING.lg,
     maxHeight: '85%'
   },
   modalContent: {
-    paddingBottom: 24
+    paddingBottom: SPACING.xl
   },
   modalTitle: {
-    fontSize: 16,
+    fontFamily: SERIF,
+    fontSize: 22,
     fontWeight: '700',
+    letterSpacing: -0.3,
     color: c.text,
-    marginBottom: 12
+    marginBottom: SPACING.lg
   },
   modalLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: c.text,
-    marginBottom: 6
+    ...TYPE.eyebrow,
+    color: c.accentGold,
+    marginBottom: SPACING.sm
   },
   modalInput: {
     backgroundColor: c.surface,
-    borderRadius: 12,
+    borderRadius: RADII.md,
     borderWidth: 1,
     borderColor: c.border,
-    paddingHorizontal: 12,
+    paddingHorizontal: SPACING.md,
     paddingVertical: 10,
     fontSize: 14,
     color: c.text,
-    marginBottom: 8
+    marginBottom: SPACING.sm
   },
   modalSave: {
-    marginTop: 12,
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center'
-  },
-  modalSaveText: {
-    color: c.buttonPrimaryText,
-    fontSize: 14,
-    fontWeight: '600'
+    marginTop: SPACING.md
   },
   modalClose: {
-    marginTop: 8,
-    alignItems: 'center',
-    paddingVertical: 8
-  },
-  modalCloseText: {
-    color: c.muted,
-    fontSize: 13
+    marginTop: SPACING.sm
   }
 });
