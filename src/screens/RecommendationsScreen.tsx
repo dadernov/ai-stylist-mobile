@@ -6,33 +6,11 @@ import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
+import { pickBeauty } from '../constants/beauty';
 
 type RecommendationsProps = {
   looks: GeneratedLook[];
   context: { style: string; event: string; weather: string };
-};
-
-const beautyMap: Record<string, { makeup: string; hair: string }> = {
-  Совещание: {
-    makeup: 'Nude-тон, мягкая подводка и аккуратные брови.',
-    hair: 'Низкий хвост или гладкий пучок.'
-  },
-  Вечеринка: {
-    makeup: 'Smoky eyes или сияющие тени, акцент на губы.',
-    hair: 'Объемные локоны или высокий хвост.'
-  },
-  Свидание: {
-    makeup: 'Мягкий румянец и сияние, легкий акцент на губы.',
-    hair: 'Распущенные локоны или полупучок.'
-  },
-  Прогулка: {
-    makeup: 'Легкий BB/CC тон, бальзам и тушь.',
-    hair: 'Свободные волны или коса.'
-  },
-  Спортзал: {
-    makeup: 'Минимум: SPF и прозрачный бальзам.',
-    hair: 'Высокий хвост или пучок.'
-  }
 };
 
 const fallbackCards = [
@@ -79,7 +57,7 @@ export function RecommendationsScreen({ looks, context }: RecommendationsProps) 
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const hasContext = context?.style && context?.event;
-  const beauty = hasContext ? beautyMap[context.event] || beautyMap['Прогулка'] : null;
+  const beauty = hasContext ? pickBeauty(context.event) : null;
   const styleCardTips = hasContext ? styleTips[context.style] || [] : [];
   const eventCardTips = hasContext ? eventTips[context.event] || [] : [];
 

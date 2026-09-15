@@ -435,6 +435,7 @@ def _cache_key_for_tryon_look(
     top_content: bytes | None,
     bottom_content: bytes | None,
     shoes_content: bytes | None,
+    outer_content: bytes | None,
     tuck_mode_normalized: str,
     look_model_name: str,
     look_mode: str,
@@ -443,7 +444,7 @@ def _cache_key_for_tryon_look(
     quality_mode: str
 ):
     hasher = hashlib.sha256()
-    hasher.update(os.getenv("FASHN_LOOK_CACHE_VERSION", "v2-fast-face-lock").encode("utf-8"))
+    hasher.update(os.getenv("FASHN_LOOK_CACHE_VERSION", "v3-outer-layer").encode("utf-8"))
     hasher.update(str(_env_bool("FASHN_FACE_LOCK", True)).encode("utf-8"))
     hasher.update(str(_env_int("FASHN_FACE_LOCK_JPEG_QUALITY", 92)).encode("utf-8"))
     hasher.update(look_model_name.encode("utf-8"))
@@ -456,6 +457,7 @@ def _cache_key_for_tryon_look(
     hasher.update(top_content or b"")
     hasher.update(bottom_content or b"")
     hasher.update(shoes_content or b"")
+    hasher.update(outer_content or b"")
     return hasher.hexdigest()
 
 
@@ -1128,6 +1130,7 @@ async def tryon_generate_look(
     top_file: UploadFile | None = File(None),
     bottom_file: UploadFile | None = File(None),
     shoes_file: UploadFile | None = File(None),
+    outer_file: UploadFile | None = File(None),
     tuck_mode: str = Form("auto"),
     compare_mode: str = Form("false"),
     quality_mode: str = Form("quality")
@@ -1187,11 +1190,15 @@ async def tryon_generate_look(
         shoes_content = await shoes_file.read() if shoes_file is not None else None
         shoes_mime = (shoes_file.content_type or "image/jpeg") if shoes_file is not None else None
 
+        outer_content = await outer_file.read() if outer_file is not None else None
+        outer_mime = (outer_file.content_type or "image/jpeg") if outer_file is not None else None
+
         cache_key = _cache_key_for_tryon_look(
             person_content,
             top_content,
             bottom_content,
             shoes_content,
+            outer_content,
             tuck_mode_normalized,
             look_model_name,
             look_mode,
@@ -1205,6 +1212,7 @@ async def tryon_generate_look(
             top_image = _prepare_tryon_image_data_url(top_content, top_mime, tryon_max_side, tryon_jpeg_quality) if top_content and top_mime else None
             bottom_image = _prepare_tryon_image_data_url(bottom_content, bottom_mime, tryon_max_side, tryon_jpeg_quality) if bottom_content and bottom_mime else None
             shoes_image = _prepare_tryon_image_data_url(shoes_content, shoes_mime, tryon_max_side, tryon_jpeg_quality) if shoes_content and shoes_mime else None
+            outer_image = _prepare_tryon_image_data_url(outer_content, outer_mime, tryon_max_side, tryon_jpeg_quality) if outer_content and outer_mime else None
 
             async with httpx.AsyncClient(timeout=90.0 if is_fast_mode else 120.0, trust_env=False) as client:
                 steps = []
@@ -1258,6 +1266,28 @@ async def tryon_generate_look(
                         current_model = top_result.get("outputUrl")
                     return top_result
 
+                async def _run_outer_step(step_name: str):
+                    nonlocal current_model
+                    outer_prompt = f"{base_prompt} Replace the outerwear layer (jacket, coat, or cardigan worn over the top) only. Keep the face, head, and everything underneath unchanged."
+                    outer_categories = _category_candidates("outer", ["tops", "auto"])
+                    outer_result = await _run_fashn_tryon_with_category_fallback(
+                        client,
+                        token,
+                        look_model_name,
+                        current_model,
+                        outer_image,
+                        outer_categories,
+                        mode_override=look_mode,
+                        generation_mode_override=look_generation_mode,
+                        prompt_override=outer_prompt,
+                        max_wait_seconds=step_max_wait_seconds,
+                        poll_interval_seconds=poll_interval_seconds
+                    )
+                    steps.append({"step": step_name, "result": outer_result})
+                    if not outer_result.get("error"):
+                        current_model = outer_result.get("outputUrl")
+                    return outer_result
+
                 preferred_order = "top-first" if tuck_mode_normalized == "tucked" else "bottom-first"
 
                 if preferred_order == "top-first":
@@ -1303,6 +1333,11 @@ async def tryon_generate_look(
                     if not bottom_refine_result.get("error"):
                         current_model = bottom_refine_result.get("outputUrl")
 
+                if outer_image is not None:
+                    outer_result = await _run_outer_step("outer")
+                    if outer_result.get("error"):
+                        return {"error": "Outer garment generation failed", "outer": outer_result, "steps": steps}
+
                 warning_messages = []
                 if shoes_image is not None:
                     if is_fast_mode:
@@ -1343,7 +1378,7 @@ async def tryon_generate_look(
                         current_model = shoes_result.get("outputUrl")
 
             if not steps:
-                return {"error": "No garments provided (top_file or bottom_file or shoes_file required)"}
+                return {"error": "No garments provided (top_file, bottom_file, shoes_file, or outer_file required)"}
 
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
                 locked_output_url = await _face_locked_output_url(output_client, person_content, current_model)

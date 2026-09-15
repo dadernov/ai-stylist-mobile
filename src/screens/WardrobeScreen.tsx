@@ -11,7 +11,7 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
@@ -284,6 +284,10 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [isAnalyzing, setAnalyzing] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [hasManualDraftCategory, setHasManualDraftCategory] = useState(false);
+  // Счётчик текущего запроса AI-анализа: если пользователь пересняёт фото, пока
+  // висит предыдущий запрос, устаревший ответ должен быть проигнорирован, а не
+  // перезаписать уже новый черновик (см. аудит #34).
+  const analysisRequestRef = useRef(0);
 
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState(categoryOptions[0]);
@@ -386,7 +390,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const handleSaveItem = () => {
-    if (!draftPhoto) return;
+    if (!draftPhoto || isAnalyzing) return;
     const resolvedSection = draftSection || getSectionByCategory(draftCategory);
     const newItem: WardrobeItem = {
       id: Date.now().toString(),
@@ -416,9 +420,11 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   };
 
   const applyAi = async (photoUri: string) => {
+    const requestId = ++analysisRequestRef.current;
     try {
       setAnalyzing(true);
       const result = await analyzeImage(photoUri);
+      if (analysisRequestRef.current !== requestId) return; // ответ на уже неактуальное фото
       const hex = normalizeHex(result.dominantColor);
       const named = hex ? getClosestColorName(hex) : 'Не определено';
       setDraftColor(named);
@@ -439,10 +445,11 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         setDraftPhoto(result.bgRemovedBase64);
       }
     } catch (error: any) {
+      if (analysisRequestRef.current !== requestId) return;
       const message = String(error?.message || error || t('Неизвестная ошибка'));
       Alert.alert(t('AI анализ не удался'), message);
     } finally {
-      setAnalyzing(false);
+      if (analysisRequestRef.current === requestId) setAnalyzing(false);
     }
   };
 
@@ -742,6 +749,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   onPress={handleSaveItem}
                   variant="gold"
                   size="lg"
+                  disabled={isAnalyzing}
                   style={styles.modalSave}
                 />
                 <PrimaryButton

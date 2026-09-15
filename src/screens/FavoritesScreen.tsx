@@ -1,4 +1,4 @@
-import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
@@ -18,6 +18,7 @@ type FavoritesScreenProps = {
   looks: GeneratedLook[];
   items: WardrobeItem[];
   onRemove: (id: string) => void;
+  onGoToBuilder?: () => void;
 };
 
 // Дата в нейтральном числовом формате (без локале-зависимых названий месяцев).
@@ -28,12 +29,20 @@ function formatDate(ts: number): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
-export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps) {
+export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: FavoritesScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const t = useT();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const itemsById = Object.fromEntries(items.map((item) => [item.id, item]));
+
+  const handleRemove = (id: string) => {
+    Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+      { text: t('Отмена'), style: 'cancel' },
+      { text: t('Удалить'), style: 'destructive', onPress: () => onRemove(id) }
+    ]);
+  };
+
   return (
     <View style={styles.container}>
       <LinearGradient colors={[colors.heroTo, colors.heroFrom] as const} style={styles.heroWash} pointerEvents="none" />
@@ -49,6 +58,8 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
             emoji="🤍"
             title={t('Пока нет избранных образов')}
             hint={t('Сохраняй удачные образы из конструктора — они появятся здесь.')}
+            actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
+            onAction={onGoToBuilder}
           />
         ) : null}
 
@@ -64,7 +75,7 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTitle}>{look.title}</Text>
-                  <AppPressable style={styles.deleteButton} haptics onPress={() => onRemove(look.id)}>
+                  <AppPressable style={styles.deleteButton} haptics onPress={() => handleRemove(look.id)}>
                     <Text style={styles.deleteText}>{t('Удалить')}</Text>
                   </AppPressable>
                 </View>
@@ -91,27 +102,33 @@ export function FavoritesScreen({ looks, items, onRemove }: FavoritesScreenProps
                   </View>
                 )}
 
-                <View style={styles.beautyBlock}>
-                  <View style={styles.beautyRow}>
-                    <View style={styles.beautyIcon}>
-                      <Text style={styles.beautyEmoji}>💄</Text>
-                    </View>
-                    <View style={styles.beautyBody}>
-                      <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-                      <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-                    </View>
+                {look.makeup || look.hair ? (
+                  <View style={styles.beautyBlock}>
+                    {look.makeup ? (
+                      <View style={styles.beautyRow}>
+                        <View style={styles.beautyIcon}>
+                          <Text style={styles.beautyEmoji}>💄</Text>
+                        </View>
+                        <View style={styles.beautyBody}>
+                          <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                          <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+                    {look.makeup && look.hair ? <View style={styles.beautyDivider} /> : null}
+                    {look.hair ? (
+                      <View style={styles.beautyRow}>
+                        <View style={styles.beautyIcon}>
+                          <Text style={styles.beautyEmoji}>💇‍♀️</Text>
+                        </View>
+                        <View style={styles.beautyBody}>
+                          <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                          <Text style={styles.beautyText}>{t(look.hair)}</Text>
+                        </View>
+                      </View>
+                    ) : null}
                   </View>
-                  <View style={styles.beautyDivider} />
-                  <View style={styles.beautyRow}>
-                    <View style={styles.beautyIcon}>
-                      <Text style={styles.beautyEmoji}>💇‍♀️</Text>
-                    </View>
-                    <View style={styles.beautyBody}>
-                      <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-                      <Text style={styles.beautyText}>{t(look.hair)}</Text>
-                    </View>
-                  </View>
-                </View>
+                ) : null}
               </View>
             </FadeInView>
           );

@@ -396,6 +396,7 @@ function AppContent() {
 
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
+    const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={setItems} />;
     }
@@ -406,14 +407,25 @@ function AppContent() {
           modelUri={tryOnModelUri}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
+          favoriteLookIds={favoriteLookIds}
           onLooksGenerated={(looks, context) => {
             setLastLooks(looks);
             setLastContext(context);
             showToast(t('Образы готовы'));
           }}
           onFavoriteAdd={(look) => {
-            setFavoriteLooks((prev) => [look, ...prev]);
-            showToast(t('Добавлено в избранное'));
+            // Повторное нажатие на ту же карточку (до перегенерации) даёт тот же
+            // look.id — без дедупа это создавало дубликаты с общим React key и
+            // общим id, которые onRemove стирал разом (аудит #22, #37).
+            let alreadyAdded = false;
+            setFavoriteLooks((prev) => {
+              if (prev.some((existing) => existing.id === look.id)) {
+                alreadyAdded = true;
+                return prev;
+              }
+              return [look, ...prev];
+            });
+            if (!alreadyAdded) showToast(t('Добавлено в избранное'));
           }}
         />
       );
@@ -425,6 +437,7 @@ function AppContent() {
           looks={favoriteLooks}
           items={items}
           onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
+          onGoToBuilder={() => setActiveTab('builder')}
         />
       );
     return (

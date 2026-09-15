@@ -12,7 +12,7 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
@@ -31,6 +31,7 @@ import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
+import { pickBeauty } from '../constants/beauty';
 
 const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
 const events = ['Свидание', 'Прогулка', 'Совещание', 'Вечеринка', 'Спортзал'];
@@ -82,6 +83,7 @@ type OutfitBuilderProps = {
   onSavedLooksChange: (looks: SavedLook[]) => void;
   onLooksGenerated: (looks: GeneratedLook[], context: { style: string; event: string; weather: string }) => void;
   onFavoriteAdd: (look: GeneratedLook) => void;
+  favoriteLookIds?: Set<string>;
 };
 
 const colorGroups: Record<string, 'neutral' | 'warm' | 'cool'> = {
@@ -223,29 +225,6 @@ const eventProfiles: Record<string, LookPreferenceProfile> = {
     preferredColorGroups: ['neutral', 'cool'],
     requiredSections: ['Верх', 'Низ', 'Обувь'],
     discouragedSections: ['Верхняя одежда', 'Сумки']
-  }
-};
-
-const beautyMap: Record<string, { makeup: string; hair: string }> = {
-  Совещание: {
-    makeup: 'Nude-тон, мягкая подводка и аккуратные брови.',
-    hair: 'Низкий хвост или гладкий пучок.'
-  },
-  Вечеринка: {
-    makeup: 'Smoky eyes или сияющие тени, акцент на губы.',
-    hair: 'Объемные локоны или высокий хвост.'
-  },
-  Свидание: {
-    makeup: 'Мягкий румянец и сияние, легкий акцент на губы.',
-    hair: 'Распущенные локоны или полупучок.'
-  },
-  Прогулка: {
-    makeup: 'Легкий BB/CC тон, бальзам и тушь.',
-    hair: 'Свободные волны или коса.'
-  },
-  Спортзал: {
-    makeup: 'Минимум: SPF и прозрачный бальзам.',
-    hair: 'Высокий хвост или пучок.'
   }
 };
 
@@ -584,8 +563,6 @@ const buildFitReasons = (
   return reasons.slice(0, 4);
 };
 
-const pickBeauty = (event: string) => beautyMap[event] || beautyMap['Прогулка'];
-
 const buildLooks = (
   items: WardrobeItem[],
   style: string,
@@ -727,13 +704,22 @@ const buildLooks = (
   }));
 };
 
+// Гонка геолокации/fetch без таймаута вешает «Определяем погоду…» навсегда
+// (see аудит #35). Оборачиваем любой промис жёстким пределом ожидания.
+const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
+
 export function OutfitBuilderScreen({
   items,
   modelUri,
   savedLooks,
   onSavedLooksChange,
   onLooksGenerated,
-  onFavoriteAdd
+  onFavoriteAdd,
+  favoriteLookIds
 }: OutfitBuilderProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors: themeColors } = useTheme();
@@ -744,6 +730,11 @@ export function OutfitBuilderScreen({
   const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
   const [temperature, setTemperature] = useState<number | null>(null);
   const [weatherCode, setWeatherCode] = useState<number | null>(null);
+  // Отдельно от отображаемого текста: true только когда получена настоящая
+  // погода, а не плейсхолдер загрузки/ошибки — такой текст никогда не должен
+  // попасть в сохранённый лук (см. аудит #42).
+  const [weatherReady, setWeatherReady] = useState(false);
+  const [weatherLoading, setWeatherLoading] = useState(true);
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -816,44 +807,56 @@ export function OutfitBuilderScreen({
     if (!selectedShoes && shoes.length) setSelectedShoes(shoes[0]);
   }, [tops, bottoms, shoes, selectedTop, selectedBottom, selectedShoes]);
 
-  useEffect(() => {
-    const loadWeather = async () => {
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (!permission.granted) {
-          setWeatherText(t('Разреши доступ к геолокации, чтобы узнать погоду.'));
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({});
-        const geo = await Location.reverseGeocodeAsync({
+  const loadWeather = useCallback(async () => {
+    setWeatherLoading(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setWeatherReady(false);
+        setWeatherText(t('Разреши доступ к геолокации, чтобы узнать погоду.'));
+        return;
+      }
+      const location = await withTimeout(Location.getCurrentPositionAsync({}), 12000, 'geolocation timeout');
+      // Геокодинг — только для названия города в тексте; если он не ответил,
+      // погоду всё равно показываем по координатам, а не проваливаем весь запрос.
+      const geo = await withTimeout(
+        Location.reverseGeocodeAsync({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude
-        });
-        const city = geo[0]?.city || t('твоем городе');
-        const url =
-          `https://api.open-meteo.com/v1/forecast?latitude=${location.coords.latitude}` +
-          `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&timezone=auto`;
-        const res = await fetch(url);
-        const data = await res.json();
-        const temp = data?.current?.temperature_2m;
-        const code = data?.current?.weathercode;
-        const wind = data?.current?.wind_speed_10m;
-        const description = t(weatherCodeMap[code] || 'переменная облачность');
-        setTemperature(typeof temp === 'number' ? temp : null);
-        setWeatherCode(typeof code === 'number' ? code : null);
-        setWeatherText(
-          t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
-            temp: temp ?? '--',
-            description,
-            wind: wind ?? '--',
-            city
-          })
-        );
-      } catch (error) {
-        setWeatherText(t('Не удалось получить погоду. Проверь интернет.'));
-      }
-    };
+        }),
+        8000,
+        'geocode timeout'
+      ).catch(() => []);
+      const city = geo[0]?.city || t('твоем городе');
+      const url =
+        `https://api.open-meteo.com/v1/forecast?latitude=${location.coords.latitude}` +
+        `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&timezone=auto`;
+      const res = await withTimeout(fetch(url), 8000, 'weather fetch timeout');
+      const data = await res.json();
+      const temp = data?.current?.temperature_2m;
+      const code = data?.current?.weathercode;
+      const wind = data?.current?.wind_speed_10m;
+      const description = t(weatherCodeMap[code] || 'переменная облачность');
+      setTemperature(typeof temp === 'number' ? temp : null);
+      setWeatherCode(typeof code === 'number' ? code : null);
+      setWeatherReady(true);
+      setWeatherText(
+        t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
+          temp: temp ?? '--',
+          description,
+          wind: wind ?? '--',
+          city
+        })
+      );
+    } catch (error) {
+      setWeatherReady(false);
+      setWeatherText(t('Не удалось получить погоду. Проверь интернет.'));
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, [t]);
 
+  useEffect(() => {
     loadWeather();
   }, []);
 
@@ -864,16 +867,20 @@ export function OutfitBuilderScreen({
       return;
     }
     setIsGenerating(true);
+    // Служебный текст («Определяем погоду…» / ошибка) не должен попасть в лук —
+    // только реально полученная погода, иначе он навсегда осядет в сохранённых
+    // и избранных образах (аудит #42).
+    const weatherForLook = weatherReady ? weatherText : '';
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
     setTimeout(() => {
-      const generated = buildLooks(items, activeStyle, activeEvent, weatherText, temperature);
+      const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature);
       setIsGenerating(false);
       if (!generated.length) {
         Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
         return;
       }
       setLooks(generated);
-      onLooksGenerated(generated, { style: activeStyle, event: activeEvent, weather: weatherText });
+      onLooksGenerated(generated, { style: activeStyle, event: activeEvent, weather: weatherForLook });
     }, 650);
   };
 
@@ -1201,6 +1208,11 @@ export function OutfitBuilderScreen({
                 ) : null}
                 <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
                 <Text style={styles.weatherText}>{weatherText}</Text>
+                {!weatherReady && !weatherLoading ? (
+                  <AppPressable haptics onPress={loadWeather} style={styles.weatherRetry}>
+                    <Text style={styles.weatherRetryText}>{t('Повторить')}</Text>
+                  </AppPressable>
+                ) : null}
               </View>
             </View>
 
@@ -1267,8 +1279,15 @@ export function OutfitBuilderScreen({
                           <AppPressable haptics style={styles.actionSoft} onPress={() => handleSaveGeneratedLook(look)}>
                             <Text style={styles.actionSoftText}>{t('В луки')}</Text>
                           </AppPressable>
-                          <AppPressable haptics style={styles.actionGhost} onPress={() => onFavoriteAdd(look)}>
-                            <Text style={styles.actionGhostText}>{t('В избранное')}</Text>
+                          <AppPressable
+                            haptics
+                            style={[styles.actionGhost, favoriteLookIds?.has(look.id) && styles.actionGhostDone]}
+                            disabled={favoriteLookIds?.has(look.id)}
+                            onPress={() => onFavoriteAdd(look)}
+                          >
+                            <Text style={styles.actionGhostText}>
+                              {favoriteLookIds?.has(look.id) ? t('Добавлено') : t('В избранное')}
+                            </Text>
                           </AppPressable>
                         </View>
                       </View>
@@ -1328,8 +1347,15 @@ export function OutfitBuilderScreen({
                         <AppPressable haptics style={styles.actionSoft} onPress={() => openEditLook(look)}>
                           <Text style={styles.actionSoftText}>{t('Изменить')}</Text>
                         </AppPressable>
-                        <AppPressable haptics style={styles.actionGhost} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}>
-                          <Text style={styles.actionGhostText}>{t('В избранное')}</Text>
+                        <AppPressable
+                          haptics
+                          style={[styles.actionGhost, favoriteLookIds?.has(look.id) && styles.actionGhostDone]}
+                          disabled={favoriteLookIds?.has(look.id)}
+                          onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}
+                        >
+                          <Text style={styles.actionGhostText}>
+                            {favoriteLookIds?.has(look.id) ? t('Добавлено') : t('В избранное')}
+                          </Text>
                         </AppPressable>
                         <AppPressable haptics style={styles.actionDanger} onPress={() => handleDeleteLook(look.id)}>
                           <Text style={styles.actionDangerText}>{t('Удалить')}</Text>
@@ -1512,6 +1538,16 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...TYPE.caption,
     color: c.muted,
     marginTop: 2
+  },
+  weatherRetry: {
+    marginTop: 6,
+    alignSelf: 'flex-start'
+  },
+  weatherRetryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: c.accentGold,
+    textDecorationLine: 'underline'
   },
   generateButton: {
     marginBottom: SPACING.sm
@@ -1737,6 +1773,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
+  },
+  actionGhostDone: {
+    opacity: 0.5
   },
   actionGhostText: {
     color: c.accentGold,

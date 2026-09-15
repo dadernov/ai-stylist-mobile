@@ -125,6 +125,8 @@ export function AiTryOnPreview({
   resultUri: controlledResultUri,
   warningMessage,
   updatedAt: controlledUpdatedAt,
+  tuckMode,
+  qualityMode,
   history = [],
   onGenerated
 }: AiTryOnPreviewProps) {
@@ -139,8 +141,12 @@ export function AiTryOnPreview({
   const [resultImageLoading, setResultImageLoading] = useState(false);
   const [resultImageError, setResultImageError] = useState<string | null>(null);
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
-  const selectedTuckMode: TuckMode = 'auto';
-  const selectedQualityMode: TryOnQualityMode = 'fast';
+  // Рекомендация конструктора (tuckMode/qualityMode props) применяется по умолчанию;
+  // пользователь может переопределить выбор вручную через пилюли ниже.
+  const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
+  const [qualityOverride, setQualityOverride] = useState<TryOnQualityMode | null>(null);
+  const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
+  const effectiveQualityMode: TryOnQualityMode = qualityOverride ?? qualityMode ?? 'fast';
   const cachedRemoteUris = useRef<Record<string, boolean>>({});
 
   const topRawGarment = useMemo(() => pickTopGarment(items), [items]);
@@ -193,8 +199,8 @@ export function AiTryOnPreview({
         imageUri: cached.imageUri,
         warning: nextWarning,
         updatedAt: timestamp,
-        tuckMode: selectedTuckMode,
-        qualityMode: selectedQualityMode
+        tuckMode: effectiveTuckMode,
+        qualityMode: effectiveQualityMode
       });
     });
 
@@ -225,9 +231,9 @@ export function AiTryOnPreview({
       topGarment?.imageUri,
       bottomGarment?.imageUri,
       shoesGarment?.imageUri,
-      selectedTuckMode,
+      effectiveTuckMode,
       false,
-      selectedQualityMode,
+      effectiveQualityMode,
       outerGarment?.imageUri
     );
     if (!generated.outputUrl) {
@@ -252,8 +258,8 @@ export function AiTryOnPreview({
         imageUri: cached.imageUri,
         warning: nextWarning,
         updatedAt,
-        tuckMode: selectedTuckMode,
-        qualityMode: selectedQualityMode
+        tuckMode: effectiveTuckMode,
+        qualityMode: effectiveQualityMode
       });
     } catch (e: any) {
       setError(e?.message || t('Не удалось сгенерировать примерку'));
@@ -307,6 +313,46 @@ export function AiTryOnPreview({
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
+      {topGarment?.imageUri ? (
+        <View style={styles.qualityCard}>
+          <Text style={styles.qualityTitle}>{t('Посадка верха')}</Text>
+          <View style={styles.optionsRow}>
+            {(['auto', 'tucked', 'untucked'] as TuckMode[]).map((mode) => {
+              const active = effectiveTuckMode === mode;
+              const label = mode === 'auto' ? 'Авто' : mode === 'tucked' ? 'Заправить' : 'Навыпуск';
+              return (
+                <AppPressable
+                  key={mode}
+                  haptics
+                  style={[styles.optionPill, active && styles.optionPillActive]}
+                  onPress={() => setTuckOverride(mode)}
+                >
+                  <Text style={[styles.optionPillText, active && styles.optionPillTextActive]}>{t(label)}</Text>
+                </AppPressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+      <View style={styles.qualityCard}>
+        <Text style={styles.qualityTitle}>{t('Качество примерки')}</Text>
+        <View style={styles.optionsRow}>
+          {(['fast', 'quality'] as TryOnQualityMode[]).map((mode) => {
+            const active = effectiveQualityMode === mode;
+            const label = mode === 'fast' ? 'Быстро' : 'Качество';
+            return (
+              <AppPressable
+                key={mode}
+                haptics
+                style={[styles.optionPill, active && styles.optionPillActive]}
+                onPress={() => setQualityOverride(mode)}
+              >
+                <Text style={[styles.optionPillText, active && styles.optionPillTextActive]}>{t(label)}</Text>
+              </AppPressable>
+            );
+          })}
+        </View>
+      </View>
       <View style={styles.qualityCard}>
         <Text style={styles.qualityTitle}>{t('Проверка перед генерацией')}</Text>
         {readinessWarnings.map((item) => (
@@ -461,6 +507,33 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.muted,
     fontSize: 10,
     lineHeight: 14
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2
+  },
+  optionPill: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.card,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  optionPillActive: {
+    backgroundColor: c.accentGoldSoft,
+    borderColor: c.goldHairline
+  },
+  optionPillText: {
+    color: c.text,
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  optionPillTextActive: {
+    color: c.accentGold,
+    fontWeight: '700'
   },
   compareTitle: {
     color: c.text,
