@@ -62,12 +62,16 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Проверка после переезда
 
+Наружу nginx пускает только `/analyze` и `/tryon-generate-look` (с лимитом запросов по IP).
+Остальные эндпоинты и `/docs` проверяются на самом сервере напрямую в uvicorn:
+
 ```bash
-curl -sf https://<НОВЫЙ_IP>.nip.io/docs -o /dev/null && echo docs ok
-curl -sf -F file=@photo.jpg https://<НОВЫЙ_IP>.nip.io/analyze | head -c 300      # категория/цвет
-curl -sf -F file=@person.jpg https://<НОВЫЙ_IP>.nip.io/tryon-avatar | head -c 200
+curl -sf http://127.0.0.1:8000/docs -o /dev/null && echo docs ok
+curl -sf -F file=@photo.jpg https://<НОВЫЙ_IP>.nip.io/analyze | head -c 300      # снаружи: категория/цвет
+curl -sf -F file=@person.jpg http://127.0.0.1:8000/tryon-avatar | head -c 200
 curl -sf -F person_file=@person.jpg -F garment_file=@shirt.jpg \
-  https://<НОВЫЙ_IP>.nip.io/tryon-generate                                       # проверяет FASHN-ключ
+  http://127.0.0.1:8000/tryon-generate                                           # проверяет FASHN-ключ (1 кредит)
+curl -s -o /dev/null -w '%{http_code}\n' https://<НОВЫЙ_IP>.nip.io/docs          # снаружи должно быть 404
 ```
 
 ## Эксплуатация

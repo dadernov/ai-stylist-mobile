@@ -1,4 +1,4 @@
-const FALLBACK_AI_BASE_URL = 'https://193.233.250.130.nip.io';
+const FALLBACK_AI_BASE_URL = 'https://62.60.238.183.nip.io';
 
 const envBaseUrl = process.env.EXPO_PUBLIC_AI_BASE_URL?.trim();
 

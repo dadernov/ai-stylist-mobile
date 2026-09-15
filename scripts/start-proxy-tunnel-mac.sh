@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE22_BIN="/opt/homebrew/opt/node@22/bin"
-AI_BASE_URL="${EXPO_PUBLIC_AI_BASE_URL:-https://193.233.250.130.nip.io}"
+AI_BASE_URL="${EXPO_PUBLIC_AI_BASE_URL:-https://62.60.238.183.nip.io}"
 PORT="${EXPO_PORT:-8081}"
 NGROK_BIN="${NGROK_BIN:-/opt/homebrew/bin/ngrok}"
 EXPO_LOG="/tmp/ai-stylist-expo.log"
