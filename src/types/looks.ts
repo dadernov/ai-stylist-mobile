@@ -7,6 +7,9 @@ export type GeneratedLook = {
   event: string;
   makeup: string;
   hair: string;
+  temperature?: number | null;
+  stylingTips?: string[];
+  warnings?: string[];
   fitScore?: number;
   fitReasons?: string[];
   tuckMode?: 'auto' | 'tucked' | 'untucked';

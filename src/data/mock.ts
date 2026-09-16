@@ -11,6 +11,7 @@ export type ClothingItem = {
 
 export type WardrobeItem = ClothingItem & {
   imageUri?: string;
+  sourceImageUri?: string;
   size?: string;
   store?: string;
   material?: string;

@@ -21,6 +21,9 @@ import { PrimaryButton } from './src/components/ui/PrimaryButton';
 import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
+import { Shirt, ScanLine, Sparkles, Heart, UserRound, LucideIcon } from 'lucide-react-native';
+import { Gender, isGender } from './src/types/profile';
+import { PreferencesScreen } from './src/screens/PreferencesScreen';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
@@ -31,6 +34,8 @@ type ProfileState = {
   authMethod: string;
   avatarUri?: string;
   modelUri?: string;
+  gender?: Gender;
+  beautyAdvice?: boolean;
 };
 
 const STORAGE_KEYS = {
@@ -43,16 +48,16 @@ const STORAGE_KEYS = {
   onboardingSeen: 'onboardingSeen'
 };
 
-const TABS: Array<{ key: TabKey; icon: string; label: string }> = [
-  { key: 'wardrobe', icon: '👗', label: 'Гардероб' },
-  { key: 'builder', icon: '✨', label: 'Конструктор' },
-  { key: 'recommendations', icon: '💡', label: 'Идеи' },
-  { key: 'favorites', icon: '⭐️', label: 'Избранное' },
-  { key: 'profile', icon: '👤', label: 'Профиль' }
+const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
+  { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
+  { key: 'builder', icon: ScanLine, label: 'Примерка' },
+  { key: 'recommendations', icon: Sparkles, label: 'Идеи' },
+  { key: 'favorites', icon: Heart, label: 'Избранное' },
+  { key: 'profile', icon: UserRound, label: 'Профиль' }
 ];
 
 // Геометрия плавающего таб-бара.
-const TAB_BAR_RADIUS = 28;
+const TAB_BAR_RADIUS = 16;
 const TAB_BAR_HEIGHT = 62;
 const TAB_BAR_SIDE_MARGIN = 16;
 const TAB_INNER_PAD = 8;
@@ -211,10 +216,12 @@ function Onboarding({ onClose }: { onClose: () => void }) {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
+  const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
+  const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder'>('fitting');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
   const [isAuthenticated, setAuthenticated] = useState(false);
   const [displayName, setDisplayName] = useState('Гость');
@@ -222,6 +229,8 @@ function AppContent() {
   const [authMethod, setAuthMethod] = useState('Не выбран');
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
+  const [gender, setGender] = useState<Gender>();
+  const [beautyAdvice, setBeautyAdvice] = useState(false);
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
   const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
@@ -275,6 +284,8 @@ function AppContent() {
           setAuthMethod(profile.authMethod || 'Не выбран');
           setAvatarUri(profile.avatarUri);
           setModelUri(profile.modelUri);
+          setGender(isGender(profile.gender) ? profile.gender : undefined);
+          setBeautyAdvice(profile.beautyAdvice === true);
         }
 
         if (itemsRaw) {
@@ -326,12 +337,14 @@ function AppContent() {
       contact,
       authMethod,
       avatarUri,
-      modelUri
+      modelUri,
+      gender,
+      beautyAdvice
     };
     AsyncStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile)).catch((error) =>
       console.warn('Failed to save profile', error)
     );
-  }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri, modelUri]);
+  }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri, modelUri, gender, beautyAdvice]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -398,13 +411,19 @@ function AppContent() {
     const tryOnModelUri = modelUri || avatarUri;
     const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
-      return <WardrobeScreen items={items} onItemsChange={setItems} />;
+      return <WardrobeScreen items={items} onItemsChange={setItems} onTryOn={item => { setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     }
     if (activeTab === 'builder')
       return (
         <OutfitBuilderScreen
           items={items}
           modelUri={tryOnModelUri}
+          initialItemId={tryOnItemId}
+          initialTab={builderEntry}
+          gender={gender || 'unspecified'}
+          beautyAdvice={beautyAdvice}
+          onProfile={() => setActiveTab('profile')}
+          onWardrobe={() => setActiveTab('wardrobe')}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
           favoriteLookIds={favoriteLookIds}
@@ -430,11 +449,12 @@ function AppContent() {
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen looks={lastLooks} context={lastContext} />;
+      return <RecommendationsScreen looks={lastLooks} context={lastContext} items={items} beautyAdvice={beautyAdvice} onGoToBuilder={() => { setBuilderEntry('builder'); setActiveTab('builder'); }} />;
     if (activeTab === 'favorites')
       return (
         <FavoritesScreen
           looks={favoriteLooks}
+          beautyAdvice={beautyAdvice}
           items={items}
           onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
           onGoToBuilder={() => setActiveTab('builder')}
@@ -448,6 +468,10 @@ function AppContent() {
         avatarUri={avatarUri}
         modelUri={modelUri}
         favoritesCount={favoriteLooks.length}
+        gender={gender || 'unspecified'}
+        beautyAdvice={beautyAdvice}
+        onGenderChange={setGender}
+        onBeautyChange={setBeautyAdvice}
         onAvatarChange={(uri) => {
           setAvatarUri(uri);
           setModelUri((prev) => prev || uri);
@@ -461,6 +485,8 @@ function AppContent() {
           setAuthMethod('Не выбран');
           setAvatarUri(undefined);
           setModelUri(undefined);
+          setGender(undefined);
+          setBeautyAdvice(false);
         }}
       />
     );
@@ -502,6 +528,13 @@ function AppContent() {
     );
   }
 
+  if (!gender) {
+    return <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
+      <PreferencesScreen onComplete={preferences => { setGender(preferences.gender); setBeautyAdvice(preferences.beautyAdvice); }} />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </SafeAreaView>;
+  }
+
   const tabBarBottom = Math.max(insets.bottom, 12);
   const tabBarSpace = TAB_BAR_HEIGHT + tabBarBottom + 10;
 
@@ -526,14 +559,18 @@ function AppContent() {
             ) : null}
             {TABS.map((tab) => {
               const isActive = tab.key === activeTab;
+              const TabIcon = tab.icon;
               return (
                 <AppPressable
                   key={tab.key}
                   haptics
                   style={styles.tabItem}
-                  onPress={() => setActiveTab(tab.key)}
+                  accessibilityRole="tab"
+                  accessibilityLabel={t(tab.label)}
+                  accessibilityState={{ selected: isActive }}
+                  onPress={() => { setTryOnItemId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
-                  <Text style={[styles.tabIcon, isActive && styles.tabIconActive]}>{tab.icon}</Text>
+                  <TabIcon size={21} strokeWidth={isActive ? 1.9 : 1.5} color={isActive ? colors.accentGold : colors.muted} />
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
                 </AppPressable>
               );
@@ -723,11 +760,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   // --- Плавающий таб-бар ---
   tabBarWrap: {
     position: 'absolute',
-    left: TAB_BAR_SIDE_MARGIN,
-    right: TAB_BAR_SIDE_MARGIN,
+    width: '92%',
+    maxWidth: 600,
+    alignSelf: 'center',
     borderRadius: TAB_BAR_RADIUS,
     ...SHADOWS.floating,
-    backgroundColor: Platform.OS === 'android' ? c.card : c.goldTransparent
+    backgroundColor: c.card
   },
   tabBarClip: {
     borderRadius: TAB_BAR_RADIUS,
@@ -772,7 +810,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 10,
     color: c.muted,
     fontWeight: '600',
-    letterSpacing: 0.2
+    letterSpacing: 0
   },
   tabLabelActive: {
     color: c.accentGold,

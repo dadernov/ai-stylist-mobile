@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
+import { FittingRoom } from '../components/FittingRoom';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -31,7 +32,8 @@ import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
-import { pickBeauty } from '../constants/beauty';
+import { buildLooks } from '../domain/outfits';
+import { Gender } from '../types/profile';
 
 const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
 const events = ['Свидание', 'Прогулка', 'Совещание', 'Вечеринка', 'Спортзал'];
@@ -84,57 +86,12 @@ type OutfitBuilderProps = {
   onLooksGenerated: (looks: GeneratedLook[], context: { style: string; event: string; weather: string }) => void;
   onFavoriteAdd: (look: GeneratedLook) => void;
   favoriteLookIds?: Set<string>;
-};
-
-const colorGroups: Record<string, 'neutral' | 'warm' | 'cool'> = {
-  Белый: 'neutral',
-  Молочный: 'neutral',
-  Кремовый: 'neutral',
-  Бежевый: 'neutral',
-  Песочный: 'neutral',
-  Карамельный: 'neutral',
-  Коричневый: 'neutral',
-  Черный: 'neutral',
-  Графит: 'neutral',
-  Серый: 'neutral',
-  Серебристый: 'neutral',
-  Синий: 'cool',
-  'Синий деним': 'cool',
-  Голубой: 'cool',
-  Бирюзовый: 'cool',
-  Зеленый: 'cool',
-  Оливковый: 'cool',
-  Хаки: 'cool',
-  Желтый: 'warm',
-  Горчичный: 'warm',
-  Оранжевый: 'warm',
-  Красный: 'warm',
-  Бордовый: 'warm',
-  Розовый: 'warm',
-  Пудровый: 'warm',
-  Фиолетовый: 'cool',
-  Лавандовый: 'cool'
-};
-
-const patternPreferences: Record<string, string[]> = {
-  Минимализм: ['Однотонный'],
-  Офисный: ['Однотонный', 'Полоска'],
-  Романтичный: ['Цветочный', 'Горох'],
-  Бохо: ['Цветочный', 'Клетка'],
-  'Спорт-шик': ['Однотонный', 'Полоска'],
-  Кэжуал: ['Однотонный', 'Клетка']
-};
-
-type PaletteGroup = 'neutral' | 'warm' | 'cool';
-
-type LookPreferenceProfile = {
-  preferredCategories?: string[];
-  avoidedCategories?: string[];
-  preferredPatterns?: string[];
-  avoidedPatterns?: string[];
-  preferredColorGroups?: PaletteGroup[];
-  requiredSections?: string[];
-  discouragedSections?: string[];
+  onProfile: () => void;
+  onWardrobe: () => void;
+  initialItemId?: string;
+  initialTab?: 'fitting' | 'builder' | 'looks';
+  gender: Gender;
+  beautyAdvice: boolean;
 };
 
 const mergeTryOnHistory = (nextItem: TryOnHistoryItem, history: TryOnHistoryItem[] = []) => {
@@ -146,86 +103,6 @@ const mergeTryOnHistory = (nextItem: TryOnHistoryItem, history: TryOnHistoryItem
       return itemKey !== nextKey && item.imageUri !== nextItem.imageUri;
     })
   ].slice(0, 8);
-};
-
-const styleProfiles: Record<string, LookPreferenceProfile> = {
-  Кэжуал: {
-    preferredCategories: ['Футболка', 'Лонгслив', 'Рубашка', 'Джинсы', 'Брюки', 'Кеды', 'Кроссовки', 'Лоферы'],
-    preferredPatterns: ['Однотонный', 'Клетка', 'Полоска'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  'Спорт-шик': {
-    preferredCategories: ['Футболка', 'Майка', 'Топ', 'Худи', 'Свитшот', 'Джоггеры', 'Леггинсы', 'Шорты', 'Кроссовки', 'Кеды', 'Бомбер'],
-    avoidedCategories: ['Туфли', 'Балетки', 'Пальто'],
-    preferredPatterns: ['Однотонный', 'Полоска'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь'],
-    discouragedSections: ['Сумки']
-  },
-  Романтичный: {
-    preferredCategories: ['Блуза', 'Топ', 'Юбка', 'Платье', 'Сарафан', 'Кардиган', 'Туфли', 'Балетки', 'Сандалии'],
-    preferredPatterns: ['Цветочный', 'Горох', 'Однотонный'],
-    preferredColorGroups: ['warm', 'neutral'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Бохо: {
-    preferredCategories: ['Кардиган', 'Платье', 'Сарафан', 'Юбка', 'Шорты', 'Ботинки', 'Сандалии', 'Сумка'],
-    preferredPatterns: ['Цветочный', 'Клетка'],
-    preferredColorGroups: ['warm', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Минимализм: {
-    preferredCategories: ['Футболка', 'Рубашка', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли'],
-    preferredPatterns: ['Однотонный'],
-    avoidedPatterns: ['Цветочный', 'Горох'],
-    preferredColorGroups: ['neutral'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Офисный: {
-    preferredCategories: ['Рубашка', 'Блуза', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли', 'Ботинки'],
-    avoidedCategories: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Майка'],
-    preferredPatterns: ['Однотонный', 'Полоска'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  }
-};
-
-const eventProfiles: Record<string, LookPreferenceProfile> = {
-  Свидание: {
-    preferredCategories: ['Блуза', 'Топ', 'Юбка', 'Платье', 'Сарафан', 'Туфли', 'Балетки', 'Лоферы'],
-    preferredPatterns: ['Однотонный', 'Цветочный'],
-    preferredColorGroups: ['warm', 'neutral'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Прогулка: {
-    preferredCategories: ['Футболка', 'Лонгслив', 'Рубашка', 'Джинсы', 'Шорты', 'Кеды', 'Кроссовки', 'Бомбер'],
-    preferredPatterns: ['Однотонный', 'Клетка', 'Полоска'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Совещание: {
-    preferredCategories: ['Рубашка', 'Блуза', 'Брюки', 'Юбка', 'Пиджак', 'Пальто', 'Лоферы', 'Туфли', 'Ботинки'],
-    avoidedCategories: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Кроссовки'],
-    preferredPatterns: ['Однотонный', 'Полоска'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Вечеринка: {
-    preferredCategories: ['Топ', 'Блуза', 'Платье', 'Юбка', 'Пиджак', 'Туфли', 'Сапоги', 'Балетки'],
-    avoidedCategories: ['Джоггеры', 'Леггинсы'],
-    preferredPatterns: ['Однотонный', 'Горох'],
-    preferredColorGroups: ['warm', 'neutral'],
-    requiredSections: ['Верх', 'Низ', 'Обувь']
-  },
-  Спортзал: {
-    preferredCategories: ['Майка', 'Футболка', 'Топ', 'Леггинсы', 'Джоггеры', 'Шорты', 'Кроссовки', 'Кеды'],
-    avoidedCategories: ['Пиджак', 'Пальто', 'Юбка', 'Туфли', 'Лоферы'],
-    preferredPatterns: ['Однотонный'],
-    preferredColorGroups: ['neutral', 'cool'],
-    requiredSections: ['Верх', 'Низ', 'Обувь'],
-    discouragedSections: ['Верхняя одежда', 'Сумки']
-  }
 };
 
 const weatherCodeMap: Record<number, string> = {
@@ -240,468 +117,6 @@ const weatherCodeMap: Record<number, string> = {
   71: 'снег',
   80: 'ливень',
   95: 'гроза'
-};
-
-const getColorGroup = (color: string) => colorGroups[color] || 'neutral';
-
-const scoreColors = (colors: string[]) => {
-  const groups = new Set(colors.map(getColorGroup));
-  if (groups.size === 1) return 2;
-  if (groups.has('neutral')) return 1;
-  return -1;
-};
-
-const seasonScore = (item: WardrobeItem, temp: number | null) => {
-  if (temp === null) return 0;
-  if (item.season === 'Круглый год') return 1;
-  if (temp <= 5 && item.season === 'Зима') return 2;
-  if (temp <= 5 && item.season === 'Демисезон') return 1;
-  if (temp >= 18 && item.season === 'Лето') return 2;
-  if (temp >= 18 && item.season === 'Демисезон') return 1;
-  if (temp >= 18 && item.season === 'Зима') return -2;
-  if (temp <= 5 && item.season === 'Лето') return -2;
-  return 0;
-};
-
-// Решение о слоях. Верхняя одежда нужна только когда реально прохладно/холодно.
-// В тепле куртка/пальто — лишний слой, поэтому образ без верхней одежды должен
-// выигрывать. Это убирает поведение «всегда максимум слоёв».
-const layeringScore = (selection: WardrobeItem[], temp: number | null) => {
-  const hasOuter = selection.some((item) => item.section === 'Верхняя одежда');
-  if (temp === null) {
-    // Погода неизвестна — не навязываем верхнюю одежду.
-    return hasOuter ? -3 : 1;
-  }
-  if (temp >= 20) return hasOuter ? -18 : 5; // жарко: верхняя одежда не нужна
-  if (temp >= 14) return hasOuter ? -10 : 4; // тепло: обычно без куртки
-  if (temp >= 8) return hasOuter ? 0 : 2; // прохладно: куртка по желанию, без неё ок
-  if (temp >= 2) return hasOuter ? 6 : -4; // холодно: лучше с верхней одеждой
-  return hasOuter ? 12 : -12; // мороз: верхняя одежда обязательна
-};
-
-// Тяжёлая верхняя одежда (пуховик/пальто/шуба) в относительно тёплую погоду
-// выглядит неуместно — отдельно штрафуем, чтобы не предлагать пуховик в +10.
-const heavyOuterCategories = new Set(['Пуховик', 'Шуба', 'Парка', 'Пальто']);
-const outerWeightScore = (selection: WardrobeItem[], temp: number | null) => {
-  if (temp === null) return 0;
-  const heavy = selection.some(
-    (item) => item.section === 'Верхняя одежда' && heavyOuterCategories.has(item.category)
-  );
-  if (!heavy) return 0;
-  if (temp >= 12) return -10;
-  if (temp >= 6) return -4;
-  return 4;
-};
-
-const onePieceCategories = new Set(['Платье', 'Сарафан', 'Комбинезон']);
-
-const strictEventDisallowedCategories: Record<string, string[]> = {
-  Совещание: ['Шорты', 'Леггинсы', 'Худи', 'Свитшот', 'Майка'],
-  Спортзал: ['Пиджак', 'Пальто', 'Туфли', 'Лоферы', 'Сапоги', 'Юбка'],
-  Вечеринка: ['Джоггеры'],
-  Свидание: [],
-  Прогулка: []
-};
-
-const strictStyleDisallowedPatterns: Record<string, string[]> = {
-  Минимализм: ['Цветочный', 'Горох']
-};
-
-const alwaysUntuckedCategories = new Set([
-  'Худи',
-  'Свитшот',
-  'Свитер',
-  'Кардиган',
-  'Пиджак',
-  'Бомбер',
-  'Куртка',
-  'Пальто',
-  'Тренч',
-  'Плащ',
-  'Пуховик',
-  'Парка'
-]);
-
-const isIn = (value: string, list?: string[]) => Boolean(list?.includes(value));
-
-const hasOnePiece = (items: WardrobeItem[]) => items.some((item) => onePieceCategories.has(item.category));
-
-const sectionSatisfied = (items: WardrobeItem[], section: string) => {
-  if (section === 'Верх') {
-    return items.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
-  }
-  if (section === 'Низ' && hasOnePiece(items)) return true;
-  return items.some((item) => item.section === section);
-};
-
-const scoreItemByProfile = (item: WardrobeItem, profile?: LookPreferenceProfile) => {
-  if (!profile) return 0;
-  let score = 0;
-  if (isIn(item.category, profile.preferredCategories)) score += 6;
-  if (isIn(item.category, profile.avoidedCategories)) score -= 10;
-  if (isIn(item.pattern, profile.preferredPatterns)) score += 3;
-  if (isIn(item.pattern, profile.avoidedPatterns)) score -= 5;
-  if (profile.preferredColorGroups?.length) {
-    score += profile.preferredColorGroups.includes(getColorGroup(item.color) as PaletteGroup) ? 2 : -2;
-  }
-  if (item.imageUri) score += 1;
-  return score;
-};
-
-const scoreSectionExpectations = (
-  selection: WardrobeItem[],
-  profile: LookPreferenceProfile | undefined,
-  wardrobe: WardrobeItem[]
-) => {
-  if (!profile) return 0;
-  const wardrobeHasSection = (section: string) => {
-    if (section === 'Верх') {
-      return wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
-    }
-    if (section === 'Низ') {
-      return wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
-    }
-    return wardrobe.some((item) => item.section === section);
-  };
-
-  let score = 0;
-  (profile.requiredSections || []).forEach((section) => {
-    if (!wardrobeHasSection(section)) return;
-    score += sectionSatisfied(selection, section) ? 6 : -12;
-  });
-  (profile.discouragedSections || []).forEach((section) => {
-    if (sectionSatisfied(selection, section)) score -= 4;
-  });
-  return score;
-};
-
-const styleScore = (selection: WardrobeItem[], style: string, wardrobe: WardrobeItem[]) => {
-  const profile = styleProfiles[style];
-  const preferred = patternPreferences[style] || [];
-  let score = selection.reduce((sum, item) => sum + scoreItemByProfile(item, profile), 0);
-  score += scoreSectionExpectations(selection, profile, wardrobe);
-  selection.forEach((item) => {
-    if (preferred.includes(item.pattern)) score += 2;
-    if (style === 'Минимализм' && getColorGroup(item.color) === 'neutral') score += 2;
-    if (style === 'Романтичный' && ['Розовый', 'Пудровый', 'Лавандовый'].includes(item.color)) score += 2;
-    if (style === 'Бохо' && ['Оливковый', 'Коричневый', 'Бежевый'].includes(item.color)) score += 2;
-  });
-  return score;
-};
-
-const eventScore = (selection: WardrobeItem[], event: string, wardrobe: WardrobeItem[]) => {
-  const profile = eventProfiles[event];
-  let score = selection.reduce((sum, item) => sum + scoreItemByProfile(item, profile), 0);
-  score += scoreSectionExpectations(selection, profile, wardrobe);
-  if (event === 'Совещание' && selection.some((item) => item.pattern === 'Цветочный')) score -= 4;
-  if (event === 'Вечеринка' && selection.some((item) => getColorGroup(item.color) === 'warm')) score += 3;
-  if (event === 'Спортзал' && selection.some((item) => ['Пальто', 'Юбка'].includes(item.category))) score -= 5;
-  return score;
-};
-
-const scoreCompleteness = (selection: WardrobeItem[], wardrobe: WardrobeItem[]) => {
-  const wardrobeHasTop = wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
-  const wardrobeHasBottom = wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
-  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
-
-  const hasTop = sectionSatisfied(selection, 'Верх');
-  const hasBottom = sectionSatisfied(selection, 'Низ');
-  const hasShoes = sectionSatisfied(selection, 'Обувь');
-
-  let score = 0;
-  if (wardrobeHasTop) score += hasTop ? 5 : -14;
-  if (wardrobeHasBottom) score += hasBottom ? 5 : -14;
-  if (wardrobeHasShoes) score += hasShoes ? 4 : -10;
-  return score;
-};
-
-const evaluateStrictRules = (selection: WardrobeItem[], style: string, event: string, wardrobe: WardrobeItem[]) => {
-  const wardrobeHasTop = wardrobe.some((item) => item.section === 'Верх' || item.section === 'Верхняя одежда');
-  const wardrobeHasBottom = wardrobe.some((item) => item.section === 'Низ') || wardrobe.some((item) => onePieceCategories.has(item.category));
-  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
-
-  const hasTop = sectionSatisfied(selection, 'Верх');
-  const hasBottom = sectionSatisfied(selection, 'Низ');
-  const hasShoes = sectionSatisfied(selection, 'Обувь');
-
-  if (wardrobeHasTop && !hasTop) return false;
-  if (wardrobeHasBottom && !hasBottom) return false;
-  if (wardrobeHasShoes && !hasShoes) return false;
-
-  const strictDisallowedCategories = new Set([
-    ...(strictEventDisallowedCategories[event] || []),
-    ...((eventProfiles[event]?.avoidedCategories || []).slice(0, 5))
-  ]);
-  if (selection.some((item) => strictDisallowedCategories.has(item.category))) return false;
-
-  const strictDisallowedPatterns = new Set(strictStyleDisallowedPatterns[style] || []);
-  if (selection.some((item) => strictDisallowedPatterns.has(item.pattern))) return false;
-
-  return true;
-};
-
-const resolveTuckDecision = (selection: WardrobeItem[], style: string, event: string) => {
-  const top = selection.find((item) => item.section === 'Верх');
-  if (!top || !sectionSatisfied(selection, 'Низ') || onePieceCategories.has(top.category)) {
-    return { mode: 'auto' as TuckMode, tip: null as string | null };
-  }
-
-  if (alwaysUntuckedCategories.has(top.category)) {
-    return {
-      mode: 'untucked' as TuckMode,
-      tip: translate('Этот верх лучше носить навыпуск: так силуэт выглядит естественнее.')
-    };
-  }
-
-  let tuckScore = 0;
-  if (['Рубашка', 'Блуза'].includes(top.category)) tuckScore += 2;
-  if (top.category === 'Поло') tuckScore += 1;
-  if (['Офисный', 'Минимализм'].includes(style)) tuckScore += 2;
-  if (style === 'Романтичный') tuckScore += 1;
-  if (['Кэжуал', 'Бохо'].includes(style)) tuckScore -= 1;
-  if (style === 'Спорт-шик') tuckScore -= 2;
-  if (event === 'Совещание') tuckScore += 2;
-  if (['Свидание', 'Вечеринка'].includes(event)) tuckScore += 1;
-  if (event === 'Прогулка') tuckScore -= 1;
-  if (event === 'Спортзал') tuckScore -= 3;
-
-  if (tuckScore >= 4) {
-    return {
-      mode: 'tucked' as TuckMode,
-      tip: translate('Лучше заправить верх полностью: образ будет собраннее и аккуратнее.')
-    };
-  }
-  if (tuckScore >= 2) {
-    return {
-      mode: 'tucked' as TuckMode,
-      tip: translate('Оптимально сделать частичную заправку спереди — баланс строгости и расслабленности.')
-    };
-  }
-  if (tuckScore <= -2) {
-    return {
-      mode: 'untucked' as TuckMode,
-      tip: translate('Лучше оставить верх навыпуск: так лук выглядит живее и комфортнее.')
-    };
-  }
-  return {
-    mode: 'auto' as TuckMode,
-    tip: translate('Можно носить и заправленным, и навыпуск: выбери по настроению дня.')
-  };
-};
-
-const buildFitReasons = (
-  selection: WardrobeItem[],
-  style: string,
-  event: string,
-  temp: number | null,
-  wardrobe: WardrobeItem[],
-  totalScore: number
-) => {
-  const styleProfile = styleProfiles[style];
-  const eventProfile = eventProfiles[event];
-  const top = sectionSatisfied(selection, 'Верх');
-  const bottom = sectionSatisfied(selection, 'Низ');
-  const shoes = sectionSatisfied(selection, 'Обувь');
-
-  const reasons: string[] = [];
-
-  if (top && bottom && shoes) {
-    reasons.push(translate('Полный комплект: верх, низ и обувь в одном образе.'));
-  }
-
-  const tuckTip = resolveTuckDecision(selection, style, event).tip;
-  if (tuckTip) reasons.push(tuckTip);
-
-  const preferredMatches = selection.filter(
-    (item) =>
-      isIn(item.category, styleProfile?.preferredCategories) || isIn(item.category, eventProfile?.preferredCategories)
-  ).length;
-  if (preferredMatches > 0) {
-    const noun = preferredMatches === 1 ? 'вещь' : preferredMatches < 5 ? 'вещи' : 'вещей';
-    reasons.push(
-      translate('{count} {noun} попадает в приоритеты «{style}» и «{event}».', {
-        count: preferredMatches,
-        noun,
-        style: translate(style),
-        event: translate(event)
-      })
-    );
-  }
-
-  const avoidedMatches = selection.filter(
-    (item) =>
-      isIn(item.category, styleProfile?.avoidedCategories) || isIn(item.category, eventProfile?.avoidedCategories)
-  ).length;
-  if (avoidedMatches === 0) {
-    reasons.push(translate('Нет конфликтующих категорий для выбранного события.'));
-  }
-
-  const seasonTotal = selection.reduce((sum, item) => sum + seasonScore(item, temp), 0);
-  if (typeof temp === 'number') {
-    if (seasonTotal >= 2) reasons.push(translate('Сезонность подходит под текущую погоду ({temp}°C).', { temp }));
-    if (seasonTotal <= -2) reasons.push(translate('Сезонность спорная для текущей погоды ({temp}°C).', { temp }));
-  }
-
-  const hasOuter = selection.some((item) => item.section === 'Верхняя одежда');
-  if (typeof temp === 'number') {
-    if (!hasOuter && temp >= 14) reasons.push(translate('При {temp}°C верхняя одежда не нужна — без лишних слоёв.', { temp }));
-    if (hasOuter && temp <= 7) reasons.push(translate('Добавили верхнюю одежду: при {temp}°C без неё прохладно.', { temp }));
-  }
-
-  const groups = Array.from(new Set(selection.map((item) => getColorGroup(item.color))));
-  if (groups.length <= 2) {
-    reasons.push(translate('Палитра образа выглядит цельно по цветовым группам.'));
-  }
-
-  const wardrobeHasShoes = wardrobe.some((item) => item.section === 'Обувь');
-  if (wardrobeHasShoes && !shoes) {
-    reasons.push(translate('В гардеробе есть обувь, но в этот вариант она не попала.'));
-  }
-
-  if (totalScore >= 55) reasons.push(translate('Сильное совпадение с контекстом — один из лучших вариантов.'));
-
-  return reasons.slice(0, 4);
-};
-
-const buildLooks = (
-  items: WardrobeItem[],
-  style: string,
-  event: string,
-  weatherText: string,
-  temp: number | null
-) => {
-  const styleProfile = styleProfiles[style];
-  const eventProfile = eventProfiles[event];
-
-  const uniqueById = (list: WardrobeItem[]) =>
-    Array.from(new Map(list.map((item) => [item.id, item])).values());
-
-  const rankForContext = (item: WardrobeItem) =>
-    scoreItemByProfile(item, styleProfile) + scoreItemByProfile(item, eventProfile) + (item.imageUri ? 1 : 0);
-
-  const prioritizeForContext = (list: WardrobeItem[]) => {
-    const unique = uniqueById(list);
-    const withPhotoFirst = [...unique].sort((a, b) => Number(Boolean(b.imageUri)) - Number(Boolean(a.imageUri)));
-    const preferred = withPhotoFirst
-      .filter(
-        (item) =>
-          (isIn(item.category, styleProfile?.preferredCategories) || isIn(item.category, eventProfile?.preferredCategories)) &&
-          !isIn(item.category, styleProfile?.avoidedCategories) &&
-          !isIn(item.category, eventProfile?.avoidedCategories)
-      )
-      .sort((a, b) => rankForContext(b) - rankForContext(a));
-    const neutral = withPhotoFirst
-      .filter(
-        (item) =>
-          !isIn(item.category, styleProfile?.avoidedCategories) && !isIn(item.category, eventProfile?.avoidedCategories)
-      )
-      .sort((a, b) => rankForContext(b) - rankForContext(a));
-    const ranked = (preferred.length ? preferred : neutral.length ? neutral : withPhotoFirst).slice(0, 7);
-    return ranked;
-  };
-
-  const tops = prioritizeForContext(items.filter((item) => item.section === 'Верх'));
-  const bottoms = prioritizeForContext(items.filter((item) => item.section === 'Низ'));
-  const shoes = prioritizeForContext(items.filter((item) => item.section === 'Обувь'));
-  const outer = prioritizeForContext(items.filter((item) => item.section === 'Верхняя одежда'));
-  const bags = prioritizeForContext(items.filter((item) => item.section === 'Сумки'));
-
-  const safeTops = tops.length ? tops : [null];
-  const safeBottoms = bottoms.length ? bottoms : [null];
-  const safeShoes = shoes.length ? shoes : [null];
-  // Верхняя одежда и сумка — необязательные слои: всегда оставляем вариант «без них»,
-  // чтобы конструктор не лепил максимум слоёв, когда они не нужны (например, в тепло).
-  const safeOuter = [null, ...outer];
-  const safeBags = [null, ...bags];
-
-  type ScoredCombo = {
-    items: WardrobeItem[];
-    score: number;
-    strictValid: boolean;
-    signature: string;
-    reasons: string[];
-    tuckMode: TuckMode;
-  };
-  const combos: ScoredCombo[] = [];
-
-  const makeSignature = (selection: WardrobeItem[]) => {
-    const bySection = (section: string) => selection.find((item) => item.section === section)?.id || '_';
-    const topId = bySection('Верх') !== '_' ? bySection('Верх') : bySection('Верхняя одежда');
-    const bottomKey = hasOnePiece(selection) ? 'one-piece' : bySection('Низ');
-    return [topId, bottomKey, bySection('Обувь'), bySection('Верхняя одежда')].join('|');
-  };
-
-  safeTops.forEach((top) => {
-    safeBottoms.forEach((bottom) => {
-      safeShoes.forEach((shoe) => {
-        safeOuter.forEach((outerwear) => {
-          safeBags.forEach((bag) => {
-            const selectionRaw = [top, bottom, shoe, outerwear, bag].filter(Boolean) as WardrobeItem[];
-            const selection = uniqueById(selectionRaw);
-            if (!selection.length) return;
-
-            const strictValid = evaluateStrictRules(selection, style, event, items);
-            const colors = selection.map((item) => item.color);
-            const score =
-              scoreColors(colors) * 2 +
-              selection.reduce((sum, item) => sum + seasonScore(item, temp), 0) * 2 +
-              layeringScore(selection, temp) * 2 +
-              outerWeightScore(selection, temp) +
-              styleScore(selection, style, items) +
-              eventScore(selection, event, items) +
-              scoreCompleteness(selection, items);
-            const tuckDecision = resolveTuckDecision(selection, style, event);
-
-            combos.push({
-              items: selection,
-              score,
-              strictValid,
-              signature: makeSignature(selection),
-              reasons: buildFitReasons(selection, style, event, temp, items, score),
-              tuckMode: tuckDecision.mode
-            });
-          });
-        });
-      });
-    });
-  });
-
-  const ranked = [...combos].sort((a, b) => b.score - a.score);
-  const strictOnly = ranked.filter((combo) => combo.strictValid);
-  const pool = strictOnly.length ? strictOnly : ranked;
-  if (!pool.length) return [];
-
-  const uniqueBySignature: ScoredCombo[] = [];
-  const signatures = new Set<string>();
-  for (const combo of pool) {
-    if (signatures.has(combo.signature)) continue;
-    signatures.add(combo.signature);
-    uniqueBySignature.push(combo);
-  }
-  if (!uniqueBySignature.length) return [];
-
-  const bestScore = uniqueBySignature[0].score;
-  const minAcceptableScore = Math.max(10, bestScore - 10);
-  const qualityCombos = uniqueBySignature.filter((combo) => combo.score >= minAcceptableScore);
-  const finalCombos = qualityCombos.length ? qualityCombos : uniqueBySignature.slice(0, 1);
-
-  const dynamicLimit = bestScore >= 55 ? 5 : bestScore >= 42 ? 4 : bestScore >= 28 ? 3 : 2;
-  const selectedCombos = finalCombos.slice(0, dynamicLimit);
-  const beauty = pickBeauty(event);
-
-  return selectedCombos.map((combo, index) => ({
-    id: `look-${Date.now()}-${index}`,
-    title: translate('Лук {n} · {style}', { n: index + 1, style: translate(style) }),
-    itemIds: uniqueById(combo.items).map((item) => item.id),
-    weather: weatherText || translate('Погода недоступна'),
-    style,
-    event,
-    fitScore: combo.score,
-    fitReasons: combo.reasons,
-    tuckMode: combo.tuckMode,
-    makeup: beauty.makeup,
-    hair: beauty.hair
-  }));
 };
 
 // Гонка геолокации/fetch без таймаута вешает «Определяем погоду…» навсегда
@@ -761,6 +176,7 @@ const renderFitReasons = (
 };
 
 type GeneratedLookCardProps = {
+  beautyAdvice: boolean;
   look: GeneratedLook;
   index: number;
   modelUri?: string;
@@ -779,6 +195,7 @@ type GeneratedLookCardProps = {
 // любом несвязанном изменении экрана (смена стиля, тик тоста и т.д.), что на
 // реальном устройстве ощущается как тормозящий скролл и залипающий интерфейс.
 const GeneratedLookCard = memo(function GeneratedLookCard({
+  beautyAdvice,
   look,
   index,
   modelUri,
@@ -836,12 +253,17 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           </Text>
         ))}
         {renderFitReasons(look.fitReasons, styles, t)}
-        <View style={styles.beautyBlock}>
+        {look.stylingTips?.length ? <View style={styles.beautyBlock}>
+          <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
+          {look.stylingTips.map(tip => <Text key={tip} style={styles.beautyText}>{tip}</Text>)}
+        </View> : null}
+        {look.warnings?.map(warning => <Text key={warning} style={styles.beautyText}>{warning}</Text>)}
+        {beautyAdvice && (look.makeup || look.hair) ? <View style={styles.beautyBlock}>
           <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
           <Text style={styles.beautyText}>{t(look.makeup)}</Text>
           <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
           <Text style={styles.beautyText}>{t(look.hair)}</Text>
-        </View>
+        </View> : null}
       </View>
     </FadeInView>
   );
@@ -935,12 +357,18 @@ export function OutfitBuilderScreen({
   onSavedLooksChange,
   onLooksGenerated,
   onFavoriteAdd,
-  favoriteLookIds
+  favoriteLookIds,
+  onProfile,
+  onWardrobe,
+  initialItemId,
+  initialTab = 'fitting',
+  gender,
+  beautyAdvice
 }: OutfitBuilderProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors: themeColors } = useTheme();
   const t = useT();
-  const [activeTab, setActiveTab] = useState<'builder' | 'looks'>('builder');
+  const [activeTab, setActiveTab] = useState<'fitting' | 'builder' | 'looks'>(initialTab);
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
   const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
@@ -960,19 +388,12 @@ export function OutfitBuilderScreen({
 
   useEffect(() => {
     Animated.spring(segmentAnim, {
-      toValue: activeTab === 'looks' ? 1 : 0,
+      toValue: activeTab === 'looks' ? 2 : activeTab === 'builder' ? 1 : 0,
       friction: 9,
       tension: 90,
       useNativeDriver: true
     }).start();
   }, [activeTab, segmentAnim]);
-
-  const [selectedTop, setSelectedTop] = useState<WardrobeItem | null>(null);
-  const [selectedBottom, setSelectedBottom] = useState<WardrobeItem | null>(null);
-  const [selectedShoes, setSelectedShoes] = useState<WardrobeItem | null>(null);
-  const [selectedOuter, setSelectedOuter] = useState<WardrobeItem | null>(null);
-  const [selectedBag, setSelectedBag] = useState<WardrobeItem | null>(null);
-  const [manualName, setManualName] = useState('');
 
   const [isEditModalVisible, setEditModalVisible] = useState(false);
   const [editLookId, setEditLookId] = useState<string | null>(null);
@@ -992,19 +413,6 @@ export function OutfitBuilderScreen({
     () => Object.fromEntries(items.map((item) => [item.id, item])),
     [items]
   );
-  // Текущий выбор ручного конструктора — общий источник и для живого превью,
-  // и для сохранения, чтобы не задваивать один и тот же .filter(Boolean).
-  const manualSelection = useMemo(
-    () => [selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag].filter(Boolean) as WardrobeItem[],
-    [selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag]
-  );
-
-  useEffect(() => {
-    if (!selectedTop && tops.length) setSelectedTop(tops[0]);
-    if (!selectedBottom && bottoms.length) setSelectedBottom(bottoms[0]);
-    if (!selectedShoes && shoes.length) setSelectedShoes(shoes[0]);
-  }, [tops, bottoms, shoes, selectedTop, selectedBottom, selectedShoes]);
-
   const loadWeather = useCallback(async () => {
     setWeatherLoading(true);
     try {
@@ -1055,13 +463,13 @@ export function OutfitBuilderScreen({
   }, [t]);
 
   useEffect(() => {
-    loadWeather();
-  }, []);
+    if (activeTab === 'builder' && !weatherReady) loadWeather();
+  }, [activeTab]);
 
   const handleGenerateLooks = () => {
     if (isGenerating) return;
     if (!items.length) {
-      Alert.alert(t('Нет вещей'), t('Добавь хотя бы 3 вещи в гардероб.'));
+      Alert.alert(t('Нет вещей'), t('Добавь вещи в гардероб, чтобы подобрать сочетания.'));
       return;
     }
     setIsGenerating(true);
@@ -1071,7 +479,7 @@ export function OutfitBuilderScreen({
     const weatherForLook = weatherReady ? weatherText : '';
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
     setTimeout(() => {
-      const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature);
+      const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice);
       setIsGenerating(false);
       if (!generated.length) {
         Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
@@ -1080,23 +488,6 @@ export function OutfitBuilderScreen({
       setLooks(generated);
       onLooksGenerated(generated, { style: activeStyle, event: activeEvent, weather: weatherForLook });
     }, 650);
-  };
-
-  const handleSaveManualLook = () => {
-    if (manualSelection.length < 3) {
-      Alert.alert(t('Недостаточно вещей'), t('Добавь хотя бы верх, низ и обувь.'));
-      return;
-    }
-    const name = manualName.trim() || t('Лук {n}', { n: savedLooks.length + 1 });
-    const newLook: SavedLook = {
-      id: Date.now().toString(),
-      name,
-      itemIds: manualSelection.map((item) => item.id),
-      createdAt: Date.now()
-    };
-    onSavedLooksChange([newLook, ...savedLooks]);
-    setManualName('');
-    setActiveTab('looks');
   };
 
   const handleSaveGeneratedLook = useCallback(
@@ -1187,25 +578,25 @@ export function OutfitBuilderScreen({
   const openEditLook = useCallback(
     (look: SavedLook) => {
       const lookItems = Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
-      const pickSection = (section: string, fallback: WardrobeItem[]) =>
-        lookItems.find((item) => item.section === section) || fallback[0] || null;
+      const pickSection = (section: string) =>
+        lookItems.find((item) => item.section === section) || null;
       setEditLookId(look.id);
       setEditName(look.name);
-      setEditTop(pickSection('Верх', tops));
-      setEditBottom(pickSection('Низ', bottoms));
-      setEditShoes(pickSection('Обувь', shoes));
-      setEditOuter(pickSection('Верхняя одежда', outer));
-      setEditBag(pickSection('Сумки', bags));
+      setEditTop(pickSection('Верх'));
+      setEditBottom(pickSection('Низ'));
+      setEditShoes(pickSection('Обувь'));
+      setEditOuter(pickSection('Верхняя одежда'));
+      setEditBag(pickSection('Сумки'));
       setEditModalVisible(true);
     },
-    [itemsById, tops, bottoms, shoes, outer, bags]
+    [itemsById]
   );
 
   const handleSaveEditedLook = () => {
     if (!editLookId) return;
     const selection = [editTop, editBottom, editShoes, editOuter, editBag].filter(Boolean) as WardrobeItem[];
-    if (selection.length < 3) {
-      Alert.alert(t('Недостаточно вещей'), t('Добавь хотя бы верх, низ и обувь.'));
+    if (!selection.length) {
+      Alert.alert(t('Нет вещей'), t('Выбери хотя бы одну вещь.'));
       return;
     }
     const updated = savedLooks.map((look) =>
@@ -1247,7 +638,7 @@ export function OutfitBuilderScreen({
     title: string,
     list: WardrobeItem[],
     selected: WardrobeItem | null,
-    onSelect: (item: WardrobeItem) => void
+    onSelect: (item: WardrobeItem | null) => void
   ) => (
     <View style={styles.slotCard}>
       <View style={styles.slotHeader}>
@@ -1273,7 +664,7 @@ export function OutfitBuilderScreen({
                 key={item.id}
                 haptics
                 style={[styles.selectorCard, active && styles.selectorCardActive]}
-                onPress={() => onSelect(item)}
+                onPress={() => onSelect(active ? null : item)}
               >
                 {item.imageUri ? (
                   <Image source={{ uri: item.imageUri }} style={styles.selectorImage} resizeMode="cover" />
@@ -1292,7 +683,7 @@ export function OutfitBuilderScreen({
   );
 
   const weatherEmoji = weatherCode !== null ? weatherEmojiMap[weatherCode] || '🌤️' : '🌤️';
-  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 2 : 0;
+  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 3 : 0;
 
   return (
     <View style={styles.container}>
@@ -1305,9 +696,8 @@ export function OutfitBuilderScreen({
       />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pageContent}>
         <ScreenHeader
-          eyebrow={t('Студия стиля')}
-          title={t('Конструктор образов')}
-          subtitle={t('Выбери стиль и событие, а ИИ соберет луки из твоего гардероба с учетом погоды.')}
+          eyebrow={t('Твой стиль')}
+          title={t('Примерочная')}
         />
 
         <View style={styles.segment} onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}>
@@ -1321,8 +711,8 @@ export function OutfitBuilderScreen({
                   transform: [
                     {
                       translateX: segmentAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, segmentThumbWidth]
+                        inputRange: [0, 1, 2],
+                        outputRange: [0, segmentThumbWidth, segmentThumbWidth * 2]
                       })
                     }
                   ]
@@ -1330,16 +720,23 @@ export function OutfitBuilderScreen({
               ]}
             />
           ) : null}
+          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('fitting')}>
+            <Text style={[styles.segmentText, activeTab === 'fitting' && styles.segmentTextActive]}>{t('Примерка')}</Text>
+          </AppPressable>
           <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('builder')}>
             <Text style={[styles.segmentText, activeTab === 'builder' && styles.segmentTextActive]}>
-              {t('Конструктор')}
+              {t('Подбор')}
             </Text>
           </AppPressable>
           <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
-            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Луки')}</Text>
+            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Сохранённое')}</Text>
           </AppPressable>
         </View>
 
+        <View style={activeTab !== 'fitting' && { display: 'none' }}>
+          <FittingRoom items={items} modelUri={modelUri} initialItemId={initialItemId} onProfile={onProfile} onWardrobe={onWardrobe}
+            onSave={look => onSavedLooksChange([look, ...savedLooks])} />
+        </View>
         {activeTab === 'builder' ? (
           <>
             <SectionLabel>{t('Стиль')}</SectionLabel>
@@ -1420,61 +817,13 @@ export function OutfitBuilderScreen({
               <Text style={styles.generateHint}>{t('Покажем только те варианты, которые реально подходят под стиль и событие.')}</Text>
             )}
 
-            <View style={styles.manualWrap}>
-              <Text style={styles.manualTitle}>{t('Собери образ вручную')}</Text>
-
-              {/* Живое превью сразу под заголовком: видно, что получается,
-                  не долистывая до конца всех пикеров ниже (было только
-                  текстом в самом низу — пользователь жаловался, что образ
-                  не виден, пока не потыкаешь всё подряд). */}
-              <View style={styles.manualPreviewWrap}>
-                {manualSelection.length ? (
-                  <LookPreview items={manualSelection} />
-                ) : (
-                  <View style={styles.manualPreviewEmpty}>
-                    <Text style={styles.manualPreviewEmptyText}>
-                      {t('Пока пусто — выбирай вещи ниже, образ соберётся здесь.')}
-                    </Text>
-                  </View>
-                )}
-                <Text style={styles.manualPreviewCount}>
-                  {t('Выбрано вещей: {count}', { count: manualSelection.length })}
-                </Text>
-              </View>
-
-              {renderPicker('Верх', tops, selectedTop, setSelectedTop)}
-              {renderPicker('Низ', bottoms, selectedBottom, setSelectedBottom)}
-              {renderPicker('Обувь', shoes, selectedShoes, setSelectedShoes)}
-              {renderPicker('Верхняя одежда', outer, selectedOuter, setSelectedOuter)}
-              {renderPicker('Сумка', bags, selectedBag, setSelectedBag)}
-
-              <Text style={styles.manualLabel}>{t('Название образа')}</Text>
-              <TextInput
-                style={styles.manualInput}
-                placeholder={t('Например, Оранжевый кэжуал')}
-                placeholderTextColor={themeColors.muted}
-                value={manualName}
-                onChangeText={setManualName}
-              />
-
-              <PrimaryButton title={t('Добавить в образы')} onPress={handleSaveManualLook} style={styles.addLookButton} />
-
-              <View style={styles.manualResult}>
-                <Text style={styles.manualResultTitle}>{t('Текущий образ')}</Text>
-                {manualSelection.map((item) => (
-                  <Text key={item.id} style={styles.manualItem}>
-                    • {item.name}
-                  </Text>
-                ))}
-              </View>
-            </View>
-
             <View style={styles.looksWrap}>
               {looks.map((look, index) => (
                 <GeneratedLookCard
                   key={look.id}
                   look={look}
                   index={index}
+                  beautyAdvice={beautyAdvice}
                   modelUri={modelUri}
                   itemsById={itemsById}
                   favoriteLookIds={favoriteLookIds}
@@ -1485,7 +834,7 @@ export function OutfitBuilderScreen({
               ))}
             </View>
           </>
-        ) : (
+        ) : activeTab === 'looks' ? (
           <View style={styles.looksWrap}>
             {!savedLooks.length ? (
               <EmptyState
@@ -1493,7 +842,7 @@ export function OutfitBuilderScreen({
                 title={t('Пока нет сохраненных образов')}
                 hint={t('Собери лук вручную и добавь его в образы.')}
                 actionLabel={t('Собрать образ')}
-                onAction={() => setActiveTab('builder')}
+                onAction={() => setActiveTab('fitting')}
               />
             ) : null}
             {savedLooks.map((look, index) => (
@@ -1511,13 +860,13 @@ export function OutfitBuilderScreen({
               />
             ))}
           </View>
-        )}
+        ) : null}
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={isEditModalVisible} onRequestClose={() => setEditModalVisible(false)}>
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
                 <Text style={styles.modalTitle}>{t('Редактировать лук')}</Text>
                 <Text style={styles.modalLabel}>{t('Название')}</Text>
@@ -1561,14 +910,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     height: 220
   },
   pageContent: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
     paddingBottom: SPACING.xl
   },
   segment: {
     flexDirection: 'row',
-    backgroundColor: c.chip,
+    backgroundColor: c.surface,
     borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.border,
     padding: 4,
     marginBottom: SPACING.lg
   },
@@ -1580,8 +930,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: RADII.md - 4,
     backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: c.goldHairline,
-    ...SHADOWS.card
+    borderColor: c.border
   },
   segmentTab: {
     flex: 1,
@@ -1593,7 +942,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: c.muted,
-    letterSpacing: 0.2
+    letterSpacing: 0
   },
   segmentTextActive: {
     color: c.accentGold,
@@ -1998,7 +1347,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: c.goldHairline,
     padding: SPACING.lg,
-    maxHeight: '85%'
+    height: '85%'
   },
   modalContent: {
     paddingBottom: SPACING.xl

@@ -38,24 +38,19 @@ export function Chip({ label, active = false, onPress, icon }: ChipProps) {
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chip: {
-    backgroundColor: c.chip,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 22,
-    height: 44,
-    paddingHorizontal: 20,
+    backgroundColor: 'transparent',
+    borderRadius: 6,
+    height: 38,
+    paddingHorizontal: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 110,
-    marginRight: 12
+    marginRight: 6
   },
   activeLayer: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: 'none',
     backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 21
+    borderRadius: 6
   },
   content: {
     flexDirection: 'row',
@@ -70,14 +65,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   label: {
     color: c.text,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
     textAlign: 'center',
     lineHeight: 20,
     includeFontPadding: false,
     ...(Platform.OS === 'android' ? { textAlignVertical: 'center' as const } : null)
   },
   labelActive: {
-    fontWeight: '700'
+    fontWeight: '600',
+    color: c.accentGold
   }
 });

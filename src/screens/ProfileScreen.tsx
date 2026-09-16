@@ -10,6 +10,8 @@ import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { FadeInView } from '../components/ui/FadeInView';
+import { Gender } from '../types/profile';
+import { StylePreferencesFields } from '../components/StylePreferencesFields';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -22,6 +24,10 @@ type ProfileScreenProps = {
   onModelChange: (uri: string) => void;
   onShowGuide: () => void;
   onLogout: () => void;
+  gender: Gender;
+  beautyAdvice: boolean;
+  onGenderChange: (gender: Gender) => void;
+  onBeautyChange: (enabled: boolean) => void;
 };
 
 type CropPreset = {
@@ -48,7 +54,11 @@ export function ProfileScreen({
   onAvatarChange,
   onModelChange,
   onShowGuide,
-  onLogout
+  onLogout,
+  gender,
+  beautyAdvice,
+  onGenderChange,
+  onBeautyChange
 }: ProfileScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -182,6 +192,8 @@ export function ProfileScreen({
             </View>
           </View>
         </FadeInView>
+
+        <StylePreferencesFields gender={gender} beautyAdvice={beautyAdvice} onGenderChange={onGenderChange} onBeautyChange={onBeautyChange} />
 
         <FadeInView delay={60}>
           <SectionLabel>{t('Примерка')}</SectionLabel>

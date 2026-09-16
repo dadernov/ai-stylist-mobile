@@ -1,12 +1,19 @@
 import { AI_BASE_URL } from '../constants/ai';
+import { Platform } from 'react-native';
 
 export type AiResult = {
-  dominantColor: string;
+  dominantColor: string | null;
   palette: string[];
   bgRemovedBase64: string;
-  category?: string;
-  season?: string;
-  pattern?: string;
+  category?: string | null;
+  section?: string | null;
+  season?: string | null;
+  pattern?: string | null;
+  needsReview?: boolean;
+  categoryCandidates?: { category: string; section: string; score: number }[];
+  warnings?: string[];
+  analysisSource?: string;
+  backgroundRemoved?: boolean;
   error?: string;
 };
 
@@ -76,14 +83,23 @@ const parseJsonOrThrow = async (res: Response) => {
   }
 };
 
-export async function analyzeImage(uri: string): Promise<AiResult> {
+const appendPhoto = async (form: FormData, field: string, uri: string) => {
+  if (Platform.OS === 'web') {
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Не удалось прочитать выбранное фото. Выбери его ещё раз.');
+    const blob = await response.blob();
+    form.append(field, blob, `${field}.${blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'}`);
+    return;
+  }
+  const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
+  const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
+  form.append(field, { uri, name: `${field}.${png ? 'png' : webp ? 'webp' : 'jpg'}`, type: png ? 'image/png' : webp ? 'image/webp' : 'image/jpeg' } as any);
+};
+
+export async function analyzeImage(uri: string, sectionHint?: string): Promise<AiResult> {
   const form = new FormData();
-  const filename = uri.split('/').pop() || 'image.jpg';
-  form.append('file', {
-    uri,
-    name: filename,
-    type: 'image/jpeg'
-  } as any);
+  await appendPhoto(form, 'file', uri);
+  if (sectionHint) form.append('section_hint', sectionHint);
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/analyze', {
     method: 'POST',
@@ -93,7 +109,7 @@ export async function analyzeImage(uri: string): Promise<AiResult> {
   const data = await parseJsonOrThrow(res);
 
   if (res.ok === false) {
-    throw new Error(data?.error || `AI analyze failed (${res.status})`);
+    throw new Error(data?.error || (typeof data?.detail === 'string' ? data.detail : 'Не удалось проанализировать фото. Попробуй ещё раз.'));
   }
 
   if (data?.error) {

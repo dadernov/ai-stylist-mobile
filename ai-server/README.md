@@ -9,10 +9,11 @@ cd ai-server
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python download_analysis_model.py
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Опционально (для CLIP-классификации + детекции позы вместо fallback-эвристик):
+Опционально для дополнительных моделей детекции позы (анализ одежды использует ONNX-модель выше):
 
 ```bash
 pip install -r requirements-ml.txt
@@ -20,7 +21,28 @@ pip install -r requirements-ml.txt
 
 ## Endpoint
 
-`POST /analyze` (multipart form: `file`)
+`POST /analyze` (multipart form: `file`, optional `section_hint`: `Верх`, `Низ`, `Обувь`, `Сумки`, `Верхняя одежда`).
+
+Analysis runs locally using ONNX CLIP, without torch or an external image API.
+Weights are pinned by `download_analysis_model.py`; set `AI_ANALYSIS_MODEL_DIR`
+to override the default `models/clip` directory. Legacy `AI_ENABLE_CLIP` does
+not control this endpoint. Missing weights return a partial result with
+`analysisSource: "unavailable"`, never a made-up garment category.
+
+The installer computes `text_features.npy` once with the FP16 text model.
+Only the quantized vision model and this small feature table are loaded at
+runtime. Re-run the downloader after changing the category/prompt dictionary.
+For photographs of people, the dominant colour is left unset: the foreground
+mask can include skin and other garments, not just the target item.
+
+Responses include `categoryCandidates`, `needsReview`, `warnings`,
+`backgroundRemoved` and `analysisSource`. Category, pattern and dominant colour
+may be null. Candidate scores are relative similarities, not calibrated
+probabilities. Season is a category-based suggestion, not fabric analysis.
+The client preserves the original photo and lets users confirm or correct
+results. Upload limit: 15 MB / 25 megapixels; a busy analyser returns 503.
+
+Tests: `python -m unittest test_analysis.py` from this directory.
 
 Response:
 ```json

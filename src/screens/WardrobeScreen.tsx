@@ -10,11 +10,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
@@ -28,11 +28,15 @@ import { RADII, SERIF, SHADOWS, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { analyzeImage } from '../services/ai';
+import { analyzeImage, AiResult } from '../services/ai';
+import { Camera, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine } from 'lucide-react-native';
+import { GarmentTile } from '../components/GarmentTile';
+import { IconButton } from '../components/ui/IconButton';
 
 type WardrobeScreenProps = {
   items: WardrobeItem[];
   onItemsChange: (items: WardrobeItem[]) => void;
+  onTryOn: (item: WardrobeItem) => void;
 };
 
 const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Верхняя одежда'];
@@ -96,7 +100,7 @@ const categoryOptions = [
   'Клатч'
 ];
 const seasonOptions = ['Лето', 'Зима', 'Демисезон', 'Круглый год'];
-const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный'];
+const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный', 'Принт'];
 
 type CropPreset = {
   key: string;
@@ -264,92 +268,16 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
   );
 }
 
-type WardrobeItemCardProps = {
-  item: WardrobeItem;
-  index: number;
-  onRetake: (id: string) => void;
-  onDelete: (id: string) => void;
-  onEdit: (item: WardrobeItem) => void;
-};
-
-// Мемоизировано: в несмемоизированном списке любой несвязанный ререндер экрана
-// (тост, анимация таб-бара, обновление другой вещи) заново перекладывал и
-// декодировал фото каждой карточки — на реальном устройстве это и есть то,
-// что ощущается как «тормозит скролл». Карточка перерисовывается только
-// когда реально меняются её собственные проп��.
-const WardrobeItemCard = memo(function WardrobeItemCard({ item, index, onRetake, onDelete, onEdit }: WardrobeItemCardProps) {
-  const styles = useThemedStyles(makeStyles);
-  const t = useT();
-  return (
-    <FadeInView delay={Math.min(index, 6) * 60}>
-      <View style={styles.itemCard}>
-        {item.imageUri ? (
-          <View style={styles.photoBlock}>
-            <View style={styles.photoFrame}>
-              <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
-            </View>
-            <View style={styles.photoActions}>
-              <AppPressable haptics style={styles.retakeButton} onPress={() => onRetake(item.id)}>
-                <Text style={styles.retakeText}>{t('Переснять')}</Text>
-              </AppPressable>
-              <AppPressable haptics style={styles.deleteButton} onPress={() => onDelete(item.id)}>
-                <Text style={styles.deleteText}>{t('Удалить')}</Text>
-              </AppPressable>
-            </View>
-          </View>
-        ) : null}
-        <View style={styles.itemHeader}>
-          <Text style={styles.itemName}>{t(item.name)}</Text>
-          <AppPressable haptics style={styles.editButton} onPress={() => onEdit(item)}>
-            <Text style={styles.editButtonText}>{t('Исправить')}</Text>
-          </AppPressable>
-        </View>
-        <View style={styles.metaRow}>
-          {[item.category, item.color, item.season, item.pattern]
-            .filter((value) => value && value !== 'Не определено')
-            .map((value, metaIndex) => {
-              const hex = normalizeHex(value);
-              return (
-                <View key={`${item.id}-meta-${metaIndex}`} style={styles.metaChip}>
-                  {hex ? <View style={[styles.colorSwatch, { backgroundColor: hex }]} /> : null}
-                  <Text style={styles.metaChipText}>{hex ? t(getClosestColorName(hex)) : t(value)}</Text>
-                </View>
-              );
-            })}
-        </View>
-        <View style={styles.tagsRow}>
-          {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, tagIndex) => (
-            <View key={`${label}-${tagIndex}`} style={styles.tag}>
-              <Text style={styles.tagText}>{t(label)}</Text>
-            </View>
-          ))}
-        </View>
-        {!item.imageUri ? (
-          <View style={styles.cardFooterActions}>
-            <AppPressable haptics style={styles.deleteButton} onPress={() => onDelete(item.id)}>
-              <Text style={styles.deleteText}>{t('Удалить')}</Text>
-            </AppPressable>
-          </View>
-        ) : null}
-        {(item.size || item.store || item.material) && (
-          <Text style={styles.itemDetails}>
-            {item.size ? t('Размер: {value}', { value: item.size }) : ''}
-            {item.size && item.store ? ' · ' : ''}
-            {item.store ? t('Магазин: {value}', { value: item.store }) : ''}
-            {(item.size || item.store) && item.material ? ' · ' : ''}
-            {item.material ? t('Материал: {value}', { value: item.material }) : ''}
-          </Text>
-        )}
-      </View>
-    </FadeInView>
-  );
-});
-
-export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
+export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
   const [activeFilter, setActiveFilter] = useState('Все');
+  const [search, setSearch] = useState('');
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = items.find(item => item.id === detailId);
+  const { width } = useWindowDimensions();
+  const columns = width >= 720 ? 3 : 2;
 
   const [draftPhoto, setDraftPhoto] = useState<string | null>(null);
   const [draftSize, setDraftSize] = useState('');
@@ -365,7 +293,16 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const [draftPattern, setDraftPattern] = useState(patternOptions[0]);
   const [isAnalyzing, setAnalyzing] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
-  const [hasManualDraftCategory, setHasManualDraftCategory] = useState(false);
+  const manualFields = useRef(new Set<string>());
+  const [sourcePhoto, setSourcePhoto] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<AiResult | null>(null);
+  const [analysisError, setAnalysisError] = useState('');
+  const [draftExistingId, setDraftExistingId] = useState<string | null>(null);
+  const [categoryConfirmed, setCategoryConfirmed] = useState(false);
+  const closeDraft = () => { analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); };
+  const manual = (field: string, setter: (value: string) => void) => (value: string) => {
+    manualFields.current.add(field); setter(value);
+  };
   // Счётчик текущего запроса AI-анализа: если пользователь пересняёт фото, пока
   // висит предыдущий запрос, устаревший ответ должен быть проигнорирован, а не
   // перезаписать уже новый черновик (см. аудит #34).
@@ -442,6 +379,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     });
 
   const requestPhoto = async () => {
+    if (Platform.OS === 'web') return requestGallery(cropPresets[0]);
     const source = await choosePhotoSource();
     if (!source) return null;
     const preset = await chooseCropPreset();
@@ -455,28 +393,31 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     const photo = await requestPhoto();
     if (!photo) return;
     setDraftPhoto(photo);
+    setSourcePhoto(photo);
+    setDraftExistingId(null);
     setDraftName('');
-    setDraftColor(colorOptions[0]);
+    setDraftColor('');
     setDraftColorHex('');
     setDraftPalette([]);
-    setDraftCategory(categoryOptions[0]);
-    setDraftSeason(seasonOptions[0]);
-    setDraftPattern(patternOptions[0]);
+    setDraftCategory('');
+    setDraftSeason('');
+    setDraftPattern('');
     setDraftSize('');
     setDraftStore('');
     setDraftMaterial('');
     setDraftSection(activeFilter === 'Все' ? sectionOptions[0] : activeFilter);
-    setHasManualDraftCategory(false);
+    manualFields.current.clear();
+    setCategoryConfirmed(false);
     setModalVisible(true);
-    void applyAi(photo);
+    void applyAi(photo, activeFilter === 'Все' ? undefined : activeFilter);
   };
 
   const handleSaveItem = () => {
-    if (!draftPhoto || isAnalyzing) return;
+    if (!draftPhoto || isAnalyzing || !draftCategory || !categoryConfirmed) return;
     const resolvedSection = draftSection || getSectionByCategory(draftCategory);
     const newItem: WardrobeItem = {
-      id: Date.now().toString(),
-      name: draftName.trim() || 'Новая вещь',
+      id: draftExistingId || Date.now().toString(),
+      name: draftName.trim() || draftCategory,
       category: draftCategory || 'Не определено',
       color: draftColor || 'Не определено',
       season: draftSeason || 'Не определено',
@@ -484,60 +425,68 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
       section: resolvedSection,
       tags: draftPalette.length ? draftPalette : [],
       imageUri: draftPhoto,
+      sourceImageUri: sourcePhoto || draftPhoto,
       size: draftSize,
       store: draftStore,
       material: draftMaterial
     };
-    onItemsChange([newItem, ...items]);
-    setModalVisible(false);
+    onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
+    closeDraft();
   };
 
   const handleRetake = async () => {
       const photo = await requestPhoto();
     if (photo) {
       setDraftPhoto(photo);
-      setHasManualDraftCategory(false);
+      setSourcePhoto(photo);
+      manualFields.current.clear();
+      setDraftCategory(''); setDraftSeason(''); setDraftPattern(''); setDraftColor('');
+      setDraftPalette([]); setDraftColorHex('');
+      setCategoryConfirmed(false);
       void applyAi(photo);
     }
   };
 
-  const applyAi = async (photoUri: string) => {
+  const applyAi = async (photoUri: string, sectionHint?: string) => {
     const requestId = ++analysisRequestRef.current;
     try {
       setAnalyzing(true);
-      const result = await analyzeImage(photoUri);
+      setAnalysis(null); setAnalysisError('');
+      const result = await analyzeImage(photoUri, sectionHint);
       if (analysisRequestRef.current !== requestId) return; // ответ на уже неактуальное фото
-      const hex = normalizeHex(result.dominantColor);
+      setAnalysis(result);
+      const hex = normalizeHex(result.dominantColor || '');
       const named = hex ? getClosestColorName(hex) : 'Не определено';
-      setDraftColor(named);
+      if (!manualFields.current.has('color')) setDraftColor(hex ? named : '');
       setDraftColorHex(hex);
       const normalizedPalette = (result.palette || []).map((color) => normalizeHex(color)).filter(Boolean);
       const paletteNames = normalizedPalette
         .map((color) => getClosestColorName(color))
         .filter((name) => name && name !== 'Не определено');
       const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
-      setDraftPalette(uniquePalette);
-      if (result.category && !hasManualDraftCategory) {
+      if (!manualFields.current.has('color')) setDraftPalette(uniquePalette);
+      if (result.category && !manualFields.current.has('category')) {
         setDraftCategory(result.category);
-        setDraftSection(getSectionByCategory(result.category));
+        setCategoryConfirmed(!result.needsReview);
+        if (!manualFields.current.has('section')) setDraftSection(getSectionByCategory(result.category));
       }
-      if (result.season) setDraftSeason(result.season);
-      if (result.pattern) setDraftPattern(result.pattern);
+      if (result.season && !manualFields.current.has('season')) setDraftSeason(result.season);
+      if (result.pattern && !manualFields.current.has('pattern')) setDraftPattern(result.pattern);
       if (result.bgRemovedBase64) {
         setDraftPhoto(result.bgRemovedBase64);
       }
     } catch (error: any) {
       if (analysisRequestRef.current !== requestId) return;
       const message = String(error?.message || error || t('Неизвестная ошибка'));
-      Alert.alert(t('AI анализ не удался'), message);
+      setAnalysisError(message);
     } finally {
       if (analysisRequestRef.current === requestId) setAnalyzing(false);
     }
   };
 
   const handleAnalyze = async () => {
-    if (!draftPhoto) return;
-    await applyAi(draftPhoto);
+    if (!sourcePhoto) return;
+    await applyAi(sourcePhoto, manualFields.current.has('section') ? draftSection : undefined);
   };
 
   const handleEditItem = useCallback((item: WardrobeItem) => {
@@ -594,13 +543,29 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const handleRetakeExisting = async (id: string) => {
     const photo = await requestPhoto();
     if (!photo) return;
-    onItemsChange(items.map((item) => (item.id === id ? { ...item, imageUri: photo } : item)));
+    const item = items.find(item => item.id === id);
+    if (item) reanalyzeExisting(item, photo);
+  };
+
+  const reanalyzeExisting = (item: WardrobeItem, photo = item.sourceImageUri || item.imageUri) => {
+    if (!photo) return;
+    setDraftExistingId(item.id); setSourcePhoto(photo); setDraftPhoto(photo);
+    setDraftName(item.name); setDraftSize(item.size || ''); setDraftStore(item.store || ''); setDraftMaterial(item.material || '');
+    setDraftCategory(''); setDraftColor(''); setDraftSeason(''); setDraftPattern(''); setDraftPalette([]);
+    setDraftSection(item.section); setCategoryConfirmed(false); manualFields.current.clear();
+    setModalVisible(true); void applyAi(photo);
   };
 
   const handleDraftCategoryChange = (value: string) => {
-    setHasManualDraftCategory(true);
+    manualFields.current.add('category');
+    setCategoryConfirmed(true);
     setDraftCategory(value);
     setDraftSection(getSectionByCategory(value));
+  };
+
+  const handleDraftColorChange = (value: string) => {
+    manualFields.current.add('color'); setDraftColor(value); setDraftPalette([value]);
+    setDraftColorHex(namedColors.find(color => color.name === value)?.hex || '');
   };
 
   const handleEditCategoryChange = (value: string) => {
@@ -615,10 +580,13 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         return (
           <AppPressable
             key={option}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
             haptics
             style={[styles.modalChip, isActive && styles.modalChipActive]}
             onPress={() => onSelect(option)}
           >
+            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
             <Text style={[styles.modalChipText, isActive && styles.modalChipTextActive]}>{t(option)}</Text>
           </AppPressable>
         );
@@ -634,11 +602,18 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader
-        eyebrow={t('Твоя коллекция')}
-        title={t('Гардероб')}
-        subtitle={t('Загрузи фото вещи, проверь AI-анализ и при необходимости исправь данные.')}
-      />
+      <View style={styles.collectionHeader}>
+        <View style={{ flex: 1 }}><ScreenHeader eyebrow={t('Личная коллекция')} title={t('Гардероб')} /></View>
+        <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} haptics style={styles.addButton} onPress={handleAddItem}>
+          <Plus size={23} strokeWidth={1.6} color={colors.buttonPrimaryText} />
+        </AppPressable>
+      </View>
+      <View style={styles.searchBar}>
+        <Search size={18} color={colors.muted} strokeWidth={1.5} />
+        <TextInput style={styles.searchInput} placeholder={t('Найти в гардеробе')} accessibilityLabel={t('Найти в гардеробе')}
+          placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} />
+        {search.length > 0 && <AppPressable accessibilityRole="button" accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
+      </View>
 
       <ScrollView
         horizontal
@@ -650,42 +625,22 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
           <Chip
             key={filter}
             label={t(filter)}
-            icon={filterIcons[filter]}
             active={filter === activeFilter}
             onPress={() => setActiveFilter(filter)}
           />
         ))}
       </ScrollView>
 
-      <FadeInView delay={40}>
-        <AppPressable haptics style={styles.uploadCard} onPress={handleAddItem}>
-          <LinearGradient
-            colors={[colors.accentGoldSoft, colors.card] as const}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.uploadGradient}
-          />
-          <View style={styles.uploadRow}>
-            <LinearGradient
-              colors={[colors.goldFrom, colors.goldTo] as const}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.uploadPlusCircle}
-            >
-              <Text style={styles.uploadPlus}>+</Text>
-            </LinearGradient>
-            <View style={styles.uploadTextBlock}>
-              <Text style={styles.uploadTitle}>{t('Добавить вещь')}</Text>
-              <Text style={styles.uploadText}>
-                {t('Фото на белом фоне или на себе, затем автоматическое вырезание фона.')}
-              </Text>
-            </View>
-          </View>
-        </AppPressable>
-      </FadeInView>
+      <View style={styles.collectionMeta}>
+        <Text style={styles.collectionLabel}>{t(activeFilter === 'Все' ? 'Все вещи' : activeFilter)}</Text>
+        <Text style={styles.collectionCount}>{filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).length}</Text>
+      </View>
 
       <FlatList
-        data={filteredItems}
+        key={columns}
+        numColumns={columns}
+        columnWrapperStyle={{ gap: 14 }}
+        data={filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.itemsWrap}
@@ -695,13 +650,9 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         windowSize={7}
         removeClippedSubviews
         renderItem={({ item, index }) => (
-          <WardrobeItemCard
-            item={item}
-            index={index}
-            onRetake={handleRetakeExisting}
-            onDelete={handleDeleteItem}
-            onEdit={handleEditItem}
-          />
+          <FadeInView delay={Math.min(index, 5) * 40} style={{ flex: 1, maxWidth: columns === 3 ? '32%' : '48.2%' }}>
+            <GarmentTile item={item} onPress={() => setDetailId(item.id)} />
+          </FadeInView>
         )}
         ListEmptyComponent={
           <EmptyState
@@ -718,17 +669,47 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         }
       />
 
-      <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
+      <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => setDetailId(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.detailSheet}>
+            <View style={styles.detailToolbar}>
+              <Text style={styles.collectionLabel}>{t('Детали вещи')}</Text>
+              <IconButton icon={X} label={t('Закрыть')} onPress={() => setDetailId(null)} />
+            </View>
+            {detail && <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 24 }}>
+              {detail.imageUri && <Image source={{ uri: detail.imageUri }} style={styles.detailPhoto} resizeMode="contain" />}
+              <View style={{ gap: 6 }}>
+                <Text style={styles.detailTitle}>{detail.name}</Text>
+                <Text style={styles.detailMeta}>{[detail.category, detail.color, detail.season, detail.pattern].filter(Boolean).map(value => t(value)).join(' · ')}</Text>
+                {(detail.size || detail.store || detail.material) && <Text style={styles.detailMeta}>{[detail.size, detail.store, detail.material].filter(Boolean).join(' · ')}</Text>}
+              </View>
+              <View style={styles.detailToolbar}>
+                <AppPressable accessibilityRole="button" style={styles.detailEdit} onPress={() => { setDetailId(null); handleEditItem(detail); }}>
+                  <Pencil size={16} color={colors.text} /><Text style={{ color: colors.text, fontSize: 14 }}>{t('Редактировать')}</Text>
+                </AppPressable>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <IconButton icon={ScanLine} label={t('Повторить анализ')} onPress={() => { setDetailId(null); reanalyzeExisting(detail); }} />
+                  <IconButton icon={Camera} label={t('Переснять')} onPress={() => { setDetailId(null); handleRetakeExisting(detail.id); }} />
+                  <IconButton icon={Trash2} label={t('Удалить')} danger onPress={() => { setDetailId(null); handleDeleteItem(detail.id); }} />
+                </View>
+              </View>
+              {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
+            </ScrollView>}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={closeDraft}>
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <View style={styles.modalHandle} />
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"
               >
-                <Text style={styles.modalTitle}>{t('Новая вещь')}</Text>
+                <Text style={styles.modalTitle}>{t(draftExistingId ? 'Анализ вещи' : 'Новая вещь')}</Text>
                 {draftPhoto ? (
                   <View style={styles.modalPhotoFrame}>
                     <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
@@ -761,18 +742,24 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                     <Skeleton width={210} height={11} />
                   </View>
                 ) : draftColor ? (
-                  <Text style={styles.aiHint}>{t('AI цвет: {color}', { color: t(draftColor) })}</Text>
+                  <Text style={styles.aiHint}>{t('Цвет: {color}', { color: t(draftColor) })}</Text>
                 ) : null}
+                {!isAnalyzing && analysisError ? <Text style={styles.aiHint}>{analysisError}</Text> : null}
+                {!isAnalyzing && analysis && <View style={{ gap: 10 }}>
+                  <Text style={styles.aiStatusText}>{t(categoryConfirmed ? 'Вещь распознана' : 'Подтверди тип вещи')}</Text>
+                  {analysis.categoryCandidates?.length ? renderChips(analysis.categoryCandidates.map(candidate => candidate.category), categoryConfirmed ? draftCategory : '', handleDraftCategoryChange) : null}
+                  {analysis.warnings?.map(warning => <Text key={warning} style={styles.aiHint}>{warning}</Text>)}
+                </View>}
                 {renderFieldLabel(t('Категория'))}
                 {renderChips(categoryOptions, draftCategory, handleDraftCategoryChange)}
                 {renderFieldLabel(t('Цвет'))}
-                {renderChips(colorOptions, draftColor || colorOptions[0], setDraftColor)}
+                {renderChips(colorOptions, draftColor, handleDraftColorChange)}
                 {renderFieldLabel(t('Сезон'))}
-                {renderChips(seasonOptions, draftSeason, setDraftSeason)}
+                {renderChips(seasonOptions, draftSeason, manual('season', setDraftSeason))}
                 {renderFieldLabel(t('Паттерн'))}
-                {renderChips(patternOptions, draftPattern, setDraftPattern)}
+                {renderChips(patternOptions, draftPattern, manual('pattern', setDraftPattern))}
                 {renderFieldLabel(t('Раздел'))}
-                {renderChips(sectionOptions, draftSection, setDraftSection)}
+                {renderChips(sectionOptions, draftSection, manual('section', setDraftSection))}
                 {renderFieldLabel(t('Размер'))}
                 <AtelierInput placeholder={t('Например, M')} value={draftSize} onChangeText={setDraftSize} />
                 {renderFieldLabel(t('Бренд / магазин'))}
@@ -788,12 +775,12 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
                   onPress={handleSaveItem}
                   variant="gold"
                   size="lg"
-                  disabled={isAnalyzing}
+                  disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
                   style={styles.modalSave}
                 />
                 <PrimaryButton
                   title={t('Отмена')}
-                  onPress={() => setModalVisible(false)}
+                  onPress={closeDraft}
                   variant="ghost"
                   style={styles.modalCancel}
                 />
@@ -812,7 +799,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
           <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
             <View style={styles.modalHandle} />
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
               <ScrollView
                 contentContainerStyle={styles.modalContent}
                 keyboardShouldPersistTaps="handled"
@@ -869,8 +856,24 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
-    flex: 1
+    flex: 1,
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center'
   },
+  collectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  addButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 8, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
+  searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
+  collectionMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
+  collectionLabel: { color: c.text, fontSize: 14, fontWeight: '600' },
+  collectionCount: { color: c.muted, fontSize: 12 },
+  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  detailToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+  detailPhoto: { width: '100%', height: 300, borderRadius: 8, backgroundColor: c.surface },
+  detailTitle: { fontFamily: SERIF, fontSize: 26, color: c.text },
+  detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
+  detailEdit: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
   filterRow: {
     paddingBottom: 6,
     marginBottom: 0,
@@ -881,7 +884,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginBottom: 0
   },
   filterScroll: {
-    minHeight: 48
+    minHeight: 40,
+    maxHeight: 40
   },
   uploadCard: {
     backgroundColor: c.card,
@@ -933,7 +937,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.muted
   },
   itemsWrap: {
-    gap: 14,
+    gap: 24,
     paddingBottom: 24
   },
   itemCard: {
@@ -1084,7 +1088,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: 16,
-    maxHeight: '85%'
+    height: '85%'
   },
   modalHandle: {
     alignSelf: 'center',
@@ -1177,6 +1181,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingBottom: 6
   },
   modalChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: c.surface,
     borderWidth: 1,
     borderColor: c.border,

@@ -5,13 +5,15 @@ from io import BytesIO
 import math
 import os
 import time
+import threading
 
 import httpx
 import numpy as np
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
-from rembg import remove
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
+from rembg import remove, new_session
+from clothing_analysis import get_classifier, extract_palette, CATEGORIES
 
 AI_ENABLE_CLIP = os.getenv("AI_ENABLE_CLIP", "false").strip().lower() in ("1", "true", "yes", "on")
 CLIP_MODEL_ID = os.getenv("CLIP_MODEL_ID", "openai/clip-vit-base-patch32").strip() or "openai/clip-vit-base-patch32"
@@ -62,6 +64,10 @@ app.add_middleware(
 _TRYON_LOOK_CACHE: dict[str, dict] = {}
 _TRYON_LOOK_INFLIGHT: dict[str, asyncio.Task] = {}
 _TRYON_LOOK_LOCK = asyncio.Lock()
+_ANALYSIS_LOCK = threading.Lock()
+_ANALYSIS_CACHE = {}
+_REMBG_LOCK = threading.Lock()
+_rembg_session = None
 
 
 def _rgb_to_hex(rgb):
@@ -242,7 +248,12 @@ async def _face_locked_output_url(client: httpx.AsyncClient, original_content: b
 
 
 def _prepare_image_for_analysis(content: bytes):
-    original = Image.open(BytesIO(content)).convert("RGB")
+    source = Image.open(BytesIO(content))
+    if source.width * source.height > 25_000_000:
+        raise ValueError("Фото слишком большое. Выбери изображение до 25 мегапикселей.")
+    source = ImageOps.exif_transpose(source).convert("RGBA")
+    original = Image.new("RGB", source.size, "white")
+    original.paste(source, mask=source.getchannel("A"))
     max_side = int(os.getenv("AI_ANALYZE_MAX_SIDE", "1280"))
     if max_side > 0 and max(original.size) > max_side:
         original.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
@@ -728,11 +739,16 @@ def _segment_person_with_mediapipe(original_rgb: Image.Image):
 
 
 def _remove_background_rgba(content: bytes, original_rgb: Image.Image):
+    global _rembg_session
     if not REMBG_RUNTIME_AVAILABLE:
         rgba = _segment_person_with_mediapipe(original_rgb)
         return rgba, _rgba_to_png_bytes(rgba)
     try:
-        removed_bytes = remove(content)
+        with _REMBG_LOCK:
+            if _rembg_session is None:
+                os.environ.setdefault("OMP_NUM_THREADS", "1")
+                _rembg_session = new_session("u2net", providers=["CPUExecutionProvider"])
+        removed_bytes = remove(content, session=_rembg_session)
         rgba = Image.open(BytesIO(removed_bytes)).convert("RGBA")
         return rgba, removed_bytes
     except Exception:
@@ -926,108 +942,58 @@ def clip_classify(image: Image.Image, labels, prompts):
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+def analyze(file: UploadFile = File(...), section_hint: str = Form("")):
+    if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
+        raise HTTPException(422, "Неизвестная категория гардероба.")
+    content = file.file.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    if not _ANALYSIS_LOCK.acquire(timeout=2):
+        raise HTTPException(503, "Анализ занят. Повтори через несколько секунд.")
     try:
-        content = await file.read()
-        original, analysis_content = _prepare_image_for_analysis(content)
-
-        bg_removed_img, bg_removed_bytes = _remove_background_rgba(analysis_content, original)
-        bg_on_white = Image.new("RGB", bg_removed_img.size, (255, 255, 255))
-        bg_on_white.paste(bg_removed_img, mask=bg_removed_img.split()[-1])
-        bg_b64 = base64.b64encode(bg_removed_bytes).decode("utf-8")
-        bg_data_url = f"data:image/png;base64,{bg_b64}"
-
-        alpha_mask = bg_removed_img.split()[-1]
-        dom = dominant_color(bg_on_white, mask=alpha_mask)
-        pal_raw = palette_colors(bg_on_white, n=7, mask=alpha_mask)
-        pal = _filter_palette(pal_raw)[:5]
-        category_labels = [
-            "Футболка",
-            "Поло",
-            "Лонгслив",
-            "Рубашка",
-            "Блуза",
-            "Топ",
-            "Майка",
-            "Водолазка",
-            "Свитер",
-            "Худи",
-            "Свитшот",
-            "Кардиган",
-            "Пиджак",
-            "Бомбер",
-            "Куртка",
-            "Пальто",
-            "Платье",
-            "Юбка",
-            "Джинсы",
-            "Брюки",
-            "Шорты",
-            "Леггинсы",
-            "Обувь",
-            "Сумка"
-        ]
-        category_prompts = [
-            "a t-shirt",
-            "a polo shirt",
-            "a long sleeve shirt",
-            "a shirt",
-            "a blouse",
-            "a crop top",
-            "a tank top",
-            "a turtleneck",
-            "a sweater",
-            "a hoodie",
-            "a sweatshirt",
-            "a cardigan",
-            "a blazer",
-            "a bomber jacket",
-            "a jacket",
-            "a coat",
-            "a dress",
-            "a skirt",
-            "jeans",
-            "pants",
-            "shorts",
-            "leggings",
-            "shoes",
-            "a handbag"
-        ]
-
-        pattern_labels = ["Клетка", "Полоска", "Горох", "Цветочный", "Однотонный"]
-        pattern_prompts = [
-            "plaid pattern",
-            "striped pattern",
-            "polka dot pattern",
-            "floral pattern",
-            "solid color clothing"
-        ]
-
-        season_labels = ["Лето", "Зима", "Демисезон"]
-        season_prompts = ["summer outfit", "winter outfit", "mid-season outfit"]
-
-        category = clip_classify(bg_on_white, category_labels, category_prompts) or infer_category(bg_removed_img)
-        pattern = clip_classify(bg_on_white, pattern_labels, pattern_prompts) or infer_pattern(bg_on_white)
-        season = clip_classify(bg_on_white, season_labels, season_prompts) or infer_season(bg_on_white)
-
-        return {
-            "dominantColor": _rgb_to_hex(dom),
-            "palette": [_rgb_to_hex(c) for c in pal],
-            "bgRemovedBase64": bg_data_url,
-            "category": category,
-            "season": season,
-            "pattern": pattern
-        }
-    except Exception as exc:
-        return {
-            "error": f"analyze exception: {type(exc).__name__}: {str(exc)}",
-            "dominantColor": "#ffffff",
-            "palette": [],
-            "bgRemovedBase64": "",
-            "category": "Футболка",
-            "season": "Круглый год",
-            "pattern": "Однотонный"
-        }
+        key = hashlib.sha256(content + section_hint.encode()).hexdigest()
+        if key in _ANALYSIS_CACHE:
+            return _ANALYSIS_CACHE[key]
+        try:
+            original, analysis_content = _prepare_image_for_analysis(content)
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+            raise HTTPException(422, "Не удалось открыть фото. Выбери JPEG, PNG или WebP до 25 мегапикселей.")
+        foreground, _ = _remove_background_rgba(analysis_content, original)
+        alpha = foreground.getchannel("A")
+        coverage = float((np.asarray(alpha) > 180).mean())
+        background_removed = 0.02 < coverage < 0.98
+        if coverage <= 0.02:
+            foreground = original.convert("RGBA")
+            alpha = foreground.getchannel("A")
+        try:
+            result = get_classifier().predict(original, foreground, section_hint or None)
+        except Exception as exc:
+            print(f"Clothing classifier unavailable: {type(exc).__name__}")
+            result = {"category": None, "section": section_hint or None, "season": None, "pattern": None,
+                      "categoryCandidates": [], "needsReview": True, "analysisSource": "unavailable",
+                      "warnings": ["Распознавание сейчас недоступно. Выбери тип вещи вручную или повтори анализ."]}
+        palette = extract_palette(foreground, alpha)
+        if not background_removed:
+            result["warnings"].append("Фон не удалось надёжно отделить. Цвет может включать фон фотографии.")
+            result["needsReview"] = True
+        cutout = ""
+        if background_removed:
+            box = alpha.getbbox()
+            if box:
+                x0, y0, x1, y1 = box
+                margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
+                foreground = foreground.crop((max(0, x0 - margin), max(0, y0 - margin),
+                                              min(foreground.width, x1 + margin), min(foreground.height, y1 + margin)))
+            cutout = _image_to_data_url(foreground)
+        result.update({"dominantColor": palette[0] if palette and not result.get('wornByPerson') else None, "palette": palette,
+                       "bgRemovedBase64": cutout, "backgroundRemoved": background_removed})
+        if result['analysisSource'] != 'unavailable':
+            _ANALYSIS_CACHE[key] = result
+        while len(_ANALYSIS_CACHE) > 12:
+            _ANALYSIS_CACHE.pop(next(iter(_ANALYSIS_CACHE)))
+        return result
+    finally:
+        _ANALYSIS_LOCK.release()
 
 
 @app.post("/tryon-model")

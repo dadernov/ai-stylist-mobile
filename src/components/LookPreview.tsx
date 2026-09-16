@@ -1,4 +1,4 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
@@ -28,12 +28,13 @@ export function LookPreview({ items }: LookPreviewProps) {
   return (
     <View style={styles.preview}>
       {sorted.map((item, index) => (
-        <View key={item.id} style={[styles.previewItem, index > 0 && styles.previewGap]}>
+        <View key={item.id} style={[styles.previewItem, sorted.length === 1 && { width: '100%' }]}>
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.previewImage} resizeMode="contain" />
           ) : (
             <View style={styles.previewPlaceholder} />
           )}
+          <Text style={styles.caption} numberOfLines={1}>{item.name}</Text>
         </View>
       ))}
     </View>
@@ -42,32 +43,29 @@ export function LookPreview({ items }: LookPreviewProps) {
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   preview: {
-    backgroundColor: c.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: c.border,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    marginBottom: 8
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginVertical: 12
   },
   previewItem: {
-    width: '100%',
-    height: 92,
-    alignItems: 'center',
-    justifyContent: 'center'
+    width: '48%',
+    gap: 6
   },
   previewGap: {
     marginTop: 8
   },
   previewImage: {
     width: '100%',
-    height: '100%'
+    height: 160,
+    backgroundColor: c.surface,
+    borderRadius: 6
   },
   previewPlaceholder: {
     width: '100%',
-    height: '100%',
-    borderRadius: 10,
+    height: 160,
+    borderRadius: 6,
     backgroundColor: c.surface
-  }
+  },
+  caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 }
 });

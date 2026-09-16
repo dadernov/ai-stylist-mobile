@@ -26,4 +26,5 @@ export const beautyMap: Record<string, BeautyTip> = {
   }
 };
 
-export const pickBeauty = (event: string): BeautyTip => beautyMap[event] || beautyMap['Прогулка'];
+export const pickBeauty = (event: string, enabled = false): BeautyTip =>
+  enabled ? beautyMap[event] || beautyMap['Прогулка'] : { makeup: '', hair: '' };

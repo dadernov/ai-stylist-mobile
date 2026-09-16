@@ -8,6 +8,8 @@ import { useT, translate } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { analyzeTryOnGenerateLook, TryOnQualityMode, TuckMode } from '../services/ai';
 import { TryOnHistoryItem } from '../types/looks';
+import { ArrowUpRight, ChevronDown, ChevronUp, SlidersHorizontal, X } from 'lucide-react-native';
+import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
   modelUri?: string;
@@ -18,6 +20,7 @@ type AiTryOnPreviewProps = {
   tuckMode?: TuckMode;
   qualityMode?: TryOnQualityMode;
   history?: TryOnHistoryItem[];
+  showSourcePhoto?: boolean;
   onGenerated?: (payload: {
     imageUri: string;
     warning?: string;
@@ -128,10 +131,14 @@ export function AiTryOnPreview({
   tuckMode,
   qualityMode,
   history = [],
+  showSourcePhoto = false,
   onGenerated
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { colors } = useTheme();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
   const [isLoading, setLoading] = useState(false);
   const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +155,11 @@ export function AiTryOnPreview({
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
   const effectiveQualityMode: TryOnQualityMode = qualityOverride ?? qualityMode ?? 'fast';
   const cachedRemoteUris = useRef<Record<string, boolean>>({});
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const topRawGarment = useMemo(() => pickTopGarment(items), [items]);
   const outerRawGarment = useMemo(() => pickOuterGarment(items), [items]);
@@ -159,16 +171,11 @@ export function AiTryOnPreview({
   const shoesGarment = useMemo(() => pickShoesGarment(items), [items]);
   const canGenerate = Boolean(modelUri && (topGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
   const isBusy = isLoading;
-  const missingSections = [
-    !topGarment?.imageUri ? 'верх' : null,
-    !bottomGarment?.imageUri ? 'низ' : null,
-    !shoesGarment?.imageUri ? 'обувь' : null
-  ].filter(Boolean) as string[];
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
-    !topGarment?.imageUri && !bottomGarment?.imageUri ? t('Нужна хотя бы вещь с фото: верх или низ.') : null,
-    missingSections.length ? t('Не хватает фото для: {list}.', { list: missingSections.map((s) => t(s)).join(', ') }) : null,
-    modelUri && missingSections.length === 0 ? t('Фото готовы. Можно генерировать образ.') : null
+    !topGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
+    items.some(item => !item.imageUri) ? t('Вещи без фото не участвуют в примерке.') : null,
+    items.some(item => !['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(item.section)) ? t('Примерка сумок и аксессуаров пока недоступна.') : null
   ].filter(Boolean) as string[];
 
   useEffect(() => {
@@ -195,6 +202,7 @@ export function AiTryOnPreview({
       const nextWarning = mergeMessages(warningMessage, cached.warning);
       setResultUri(cached.imageUri);
       setWarning(nextWarning || null);
+      setShowOriginal(false);
       onGenerated?.({
         imageUri: cached.imageUri,
         warning: nextWarning,
@@ -243,7 +251,7 @@ export function AiTryOnPreview({
   };
 
   const run = async () => {
-    if (!modelUri) return;
+    if (!canGenerate || isLoading) return;
     setLoading(true);
     setError(null);
     setWarning(null);
@@ -251,6 +259,7 @@ export function AiTryOnPreview({
       const generated = await runGenerate();
       const updatedAt = Date.now();
       const cached = await cacheTryOnImage(generated.imageUri, updatedAt);
+      if (!mounted.current) return;
       const nextWarning = mergeMessages(generated.warning, cached.warning);
       setResultUri(cached.imageUri);
       setWarning(nextWarning || null);
@@ -270,10 +279,16 @@ export function AiTryOnPreview({
 
   return (
     <View style={styles.wrap}>
+      {resultUri && modelUri && <View style={styles.comparison} accessibilityRole="tablist">
+        {[false, true].map(original => <AppPressable key={String(original)} accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
+          style={[styles.compareTab, showOriginal === original && styles.compareTabActive]} onPress={() => setShowOriginal(original)}>
+          <Text style={styles.compareTitle}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
+        </AppPressable>)}
+      </View>}
       {resultUri ? (
-        <AppPressable style={styles.imageWrap} onPress={() => { setPreviewUri(resultUri); setPreviewOpen(true); }}>
+        <AppPressable style={styles.imageWrap} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
-            source={{ uri: resultUri }}
+            source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
             style={styles.image}
             resizeMode="contain"
             onLoadStart={() => {
@@ -305,14 +320,15 @@ export function AiTryOnPreview({
           ) : null}
         </AppPressable>
       ) : null}
-      {!resultUri ? (
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>{t('ИИ примерка пока не сгенерирована')}</Text>
-        </View>
-      ) : null}
-
+      {!resultUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
+      <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
+        <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
+        <Text style={styles.settingsLabel}>{t('Настройки примерки')}</Text>
+        {settingsOpen ? <ChevronUp size={16} color={colors.muted} /> : <ChevronDown size={16} color={colors.muted} />}
+      </AppPressable>
+      {settingsOpen && <View style={styles.settingsContent}>
       {topGarment?.imageUri ? (
         <View style={styles.qualityCard}>
           <Text style={styles.qualityTitle}>{t('Посадка верха')}</Text>
@@ -353,12 +369,12 @@ export function AiTryOnPreview({
           })}
         </View>
       </View>
-      <View style={styles.qualityCard}>
-        <Text style={styles.qualityTitle}>{t('Проверка перед генерацией')}</Text>
+      </View>}
+      {readinessWarnings.length > 0 && <View style={styles.qualityCard}>
         {readinessWarnings.map((item) => (
           <Text key={item} style={styles.qualityText}>• {item}</Text>
         ))}
-      </View>
+      </View>}
       {history.length ? (
         <View style={styles.historyWrap}>
           <Text style={styles.compareTitle}>{t('История генераций')}</Text>
@@ -399,21 +415,24 @@ export function AiTryOnPreview({
         style={[styles.button, (!canGenerate || isBusy) && styles.buttonDisabled]}
         onPress={run}
         disabled={!canGenerate || isBusy}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !canGenerate || isBusy, busy: isBusy }}
       >
+        {isLoading ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
         <Text style={styles.buttonText}>
           {isLoading
             ? t('Генерируем образ…')
             : resultUri
               ? t('Перегенерировать')
-              : t('Сгенерировать')}
+              : t('Примерить')}
         </Text>
       </AppPressable>
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>
           {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" /> : null}
-          <AppPressable style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
-            <Text style={styles.previewCloseText}>{t('Закрыть')}</Text>
+          <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
+            <X size={22} color={colors.text} />
           </AppPressable>
         </View>
       </Modal>
@@ -423,20 +442,18 @@ export function AiTryOnPreview({
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrap: {
-    gap: 8,
+    gap: 14,
     marginTop: 6,
     marginBottom: 4
   },
   image: {
     width: '100%',
     height: 420,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: c.border,
+    borderRadius: 8,
     backgroundColor: c.surface
   },
   imageWrap: {
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: 'hidden',
     position: 'relative'
   },
@@ -470,8 +487,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   button: {
     backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 10,
-    paddingVertical: 10,
+    borderRadius: 8,
+    minHeight: 52,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
     alignItems: 'center'
   },
   buttonDisabled: {
@@ -479,11 +500,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   buttonText: {
     color: c.buttonPrimaryText,
-    fontSize: 12,
-    fontWeight: '700'
+    fontSize: 15,
+    fontWeight: '600'
   },
   error: {
-    color: '#7B3A2A',
+    color: c.danger,
     fontSize: 12
   },
   hint: {
@@ -491,22 +512,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 11
   },
   qualityCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.surface,
-    padding: 10,
-    gap: 3
+    paddingVertical: 8,
+    gap: 8
   },
   qualityTitle: {
     color: c.text,
-    fontSize: 11,
-    fontWeight: '700'
+    fontSize: 13,
+    fontWeight: '500'
   },
   qualityText: {
     color: c.muted,
-    fontSize: 10,
-    lineHeight: 14
+    fontSize: 12,
+    lineHeight: 18
   },
   optionsRow: {
     flexDirection: 'row',
@@ -515,12 +532,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginTop: 2
   },
   optionPill: {
-    borderRadius: 14,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.card,
     paddingHorizontal: 12,
-    paddingVertical: 6
+    paddingVertical: 10
   },
   optionPillActive: {
     backgroundColor: c.accentGoldSoft,
@@ -528,7 +545,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   optionPillText: {
     color: c.text,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600'
   },
   optionPillTextActive: {
@@ -540,6 +557,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700'
   },
+  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 8 },
+  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 6 },
+  compareTabActive: { backgroundColor: c.card },
+  settingsToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  settingsLabel: { flex: 1, color: c.muted, fontSize: 13 },
+  settingsContent: { paddingBottom: 8, borderBottomWidth: 1, borderColor: c.border },
   historyWrap: {
     gap: 6
   },

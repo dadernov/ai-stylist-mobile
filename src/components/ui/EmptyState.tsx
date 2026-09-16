@@ -1,5 +1,5 @@
-import { StyleSheet, Text } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { StyleSheet, Text, View } from 'react-native';
+import { FolderOpen } from 'lucide-react-native';
 import { SERIF, ThemeColors, TYPE } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../constants/ThemeContext';
 import { FadeInView } from './FadeInView';
@@ -20,14 +20,9 @@ export function EmptyState({ emoji, title, hint, actionLabel, onAction }: EmptyS
   const styles = useThemedStyles(makeStyles);
   return (
     <FadeInView style={styles.wrap}>
-      <LinearGradient
-        colors={[colors.accentGoldSoft, colors.surface] as const}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.circle}
-      >
-        <Text style={styles.emoji}>{emoji}</Text>
-      </LinearGradient>
+      <View style={styles.circle}>
+        <FolderOpen size={32} strokeWidth={1.2} color={colors.accentGold} />
+      </View>
       <Text style={styles.title}>{title}</Text>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
       {actionLabel && onAction ? (
@@ -44,13 +39,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 24
   },
   circle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: c.goldHairline
+    backgroundColor: c.surface
   },
   emoji: {
     fontSize: 40,
@@ -59,8 +53,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   title: {
     fontFamily: SERIF,
     fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    fontWeight: '400',
+    letterSpacing: 0,
     color: c.text,
     textAlign: 'center',
     marginTop: 18

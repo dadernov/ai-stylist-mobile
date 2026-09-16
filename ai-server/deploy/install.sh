@@ -13,7 +13,7 @@ APP_DIR="${APP_DIR:-/opt/wardrobe/ai-server}"
 PORT="${PORT:-8000}"
 SERVICE_NAME="${SERVICE_NAME:-wardrobe-ai}"
 ENV_FILE="${ENV_FILE:-/etc/wardrobe-ai.env}"
-WITH_CLIP="${WITH_CLIP:-1}"        # 1 = ставить torch+transformers (CLIP-классификация)
+WITH_CLIP="${WITH_CLIP:-0}"        # Legacy torch is optional; analysis uses ONNX.
 INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-1}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -28,7 +28,7 @@ fi
 
 # 2. Код
 mkdir -p "$APP_DIR"
-for f in app.py requirements.txt README.md; do
+for f in app.py clothing_analysis.py download_analysis_model.py requirements.txt README.md; do
   [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP_DIR/$f"
 done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"
@@ -37,6 +37,7 @@ cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip wheel
 "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
+"$APP_DIR/.venv/bin/python" "$APP_DIR/download_analysis_model.py"
 
 if [ "$WITH_CLIP" = "1" ]; then
   # CPU-сборка torch: venv выходит ~1.6 ГБ вместо 5.4 ГБ на CUDA-колёсах, GPU на VPS нет.

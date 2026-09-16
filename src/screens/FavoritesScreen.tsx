@@ -15,6 +15,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
 
 type FavoritesScreenProps = {
+  beautyAdvice: boolean;
   looks: GeneratedLook[];
   items: WardrobeItem[];
   onRemove: (id: string) => void;
@@ -30,6 +31,7 @@ function formatDate(ts: number): string {
 }
 
 type FavoriteLookCardProps = {
+  beautyAdvice: boolean;
   look: GeneratedLook;
   index: number;
   itemsById: Record<string, WardrobeItem>;
@@ -40,7 +42,7 @@ type FavoriteLookCardProps = {
 // Мемоизировано по той же причине, что и карточка вещи в гардеробе: без этого
 // каждая карточка (с примеркой и превью-картинкой) перерисовывалась при любом
 // несвязанном обновлении экрана.
-const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview }: FavoriteLookCardProps) {
+const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview, beautyAdvice }: FavoriteLookCardProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
@@ -81,7 +83,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
           </View>
         )}
 
-        {look.makeup || look.hair ? (
+        {beautyAdvice && (look.makeup || look.hair) ? (
           <View style={styles.beautyBlock}>
             {look.makeup ? (
               <View style={styles.beautyRow}>
@@ -113,7 +115,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
   );
 });
 
-export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: FavoritesScreenProps) {
+export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, beautyAdvice }: FavoritesScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const t = useT();
@@ -148,7 +150,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: Favor
         windowSize={7}
         removeClippedSubviews
         renderItem={({ item, index }) => (
-          <FavoriteLookCard look={item} index={index} itemsById={itemsById} onRemove={handleRemove} onPreview={setPreviewUri} />
+          <FavoriteLookCard look={item} index={index} itemsById={itemsById} onRemove={handleRemove} onPreview={setPreviewUri} beautyAdvice={beautyAdvice} />
         )}
         ListEmptyComponent={
           <EmptyState
