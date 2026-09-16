@@ -992,6 +992,12 @@ export function OutfitBuilderScreen({
     () => Object.fromEntries(items.map((item) => [item.id, item])),
     [items]
   );
+  // Текущий выбор ручного конструктора — общий источник и для живого превью,
+  // и для сохранения, чтобы не задваивать один и тот же .filter(Boolean).
+  const manualSelection = useMemo(
+    () => [selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag].filter(Boolean) as WardrobeItem[],
+    [selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag]
+  );
 
   useEffect(() => {
     if (!selectedTop && tops.length) setSelectedTop(tops[0]);
@@ -1077,10 +1083,7 @@ export function OutfitBuilderScreen({
   };
 
   const handleSaveManualLook = () => {
-    const selectedItems = [selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag].filter(
-      Boolean
-    ) as WardrobeItem[];
-    if (selectedItems.length < 3) {
+    if (manualSelection.length < 3) {
       Alert.alert(t('Недостаточно вещей'), t('Добавь хотя бы верх, низ и обувь.'));
       return;
     }
@@ -1088,7 +1091,7 @@ export function OutfitBuilderScreen({
     const newLook: SavedLook = {
       id: Date.now().toString(),
       name,
-      itemIds: selectedItems.map((item) => item.id),
+      itemIds: manualSelection.map((item) => item.id),
       createdAt: Date.now()
     };
     onSavedLooksChange([newLook, ...savedLooks]);
@@ -1419,6 +1422,26 @@ export function OutfitBuilderScreen({
 
             <View style={styles.manualWrap}>
               <Text style={styles.manualTitle}>{t('Собери образ вручную')}</Text>
+
+              {/* Живое превью сразу под заголовком: видно, что получается,
+                  не долистывая до конца всех пикеров ниже (было только
+                  текстом в самом низу — пользователь жаловался, что образ
+                  не виден, пока не потыкаешь всё подряд). */}
+              <View style={styles.manualPreviewWrap}>
+                {manualSelection.length ? (
+                  <LookPreview items={manualSelection} />
+                ) : (
+                  <View style={styles.manualPreviewEmpty}>
+                    <Text style={styles.manualPreviewEmptyText}>
+                      {t('Пока пусто — выбирай вещи ниже, образ соберётся здесь.')}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.manualPreviewCount}>
+                  {t('Выбрано вещей: {count}', { count: manualSelection.length })}
+                </Text>
+              </View>
+
               {renderPicker('Верх', tops, selectedTop, setSelectedTop)}
               {renderPicker('Низ', bottoms, selectedBottom, setSelectedBottom)}
               {renderPicker('Обувь', shoes, selectedShoes, setSelectedShoes)}
@@ -1438,13 +1461,11 @@ export function OutfitBuilderScreen({
 
               <View style={styles.manualResult}>
                 <Text style={styles.manualResultTitle}>{t('Текущий образ')}</Text>
-                {[selectedTop, selectedBottom, selectedShoes, selectedOuter, selectedBag]
-                  .filter(Boolean)
-                  .map((item) => (
-                    <Text key={(item as WardrobeItem).id} style={styles.manualItem}>
-                      • {(item as WardrobeItem).name}
-                    </Text>
-                  ))}
+                {manualSelection.map((item) => (
+                  <Text key={item.id} style={styles.manualItem}>
+                    • {item.name}
+                  </Text>
+                ))}
               </View>
             </View>
 
@@ -1686,6 +1707,31 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...TYPE.title,
     color: c.text,
     marginBottom: SPACING.md
+  },
+  manualPreviewWrap: {
+    marginBottom: SPACING.lg
+  },
+  manualPreviewEmpty: {
+    borderRadius: RADII.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderStyle: 'dashed',
+    backgroundColor: c.surface,
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  manualPreviewEmptyText: {
+    ...TYPE.caption,
+    color: c.muted,
+    textAlign: 'center'
+  },
+  manualPreviewCount: {
+    ...TYPE.caption,
+    color: c.accentGold,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   manualLabel: {
     ...TYPE.eyebrow,
