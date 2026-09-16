@@ -1,5 +1,6 @@
 import {
   Alert,
+  FlatList,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,7 +12,7 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
@@ -263,6 +264,87 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
   );
 }
 
+type WardrobeItemCardProps = {
+  item: WardrobeItem;
+  index: number;
+  onRetake: (id: string) => void;
+  onDelete: (id: string) => void;
+  onEdit: (item: WardrobeItem) => void;
+};
+
+// Мемоизировано: в несмемоизированном списке любой несвязанный ререндер экрана
+// (тост, анимация таб-бара, обновление другой вещи) заново перекладывал и
+// декодировал фото каждой карточки — на реальном устройстве это и есть то,
+// что ощущается как «тормозит скролл». Карточка перерисовывается только
+// когда реально меняются её собственные проп��.
+const WardrobeItemCard = memo(function WardrobeItemCard({ item, index, onRetake, onDelete, onEdit }: WardrobeItemCardProps) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  return (
+    <FadeInView delay={Math.min(index, 6) * 60}>
+      <View style={styles.itemCard}>
+        {item.imageUri ? (
+          <View style={styles.photoBlock}>
+            <View style={styles.photoFrame}>
+              <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
+            </View>
+            <View style={styles.photoActions}>
+              <AppPressable haptics style={styles.retakeButton} onPress={() => onRetake(item.id)}>
+                <Text style={styles.retakeText}>{t('Переснять')}</Text>
+              </AppPressable>
+              <AppPressable haptics style={styles.deleteButton} onPress={() => onDelete(item.id)}>
+                <Text style={styles.deleteText}>{t('Удалить')}</Text>
+              </AppPressable>
+            </View>
+          </View>
+        ) : null}
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemName}>{t(item.name)}</Text>
+          <AppPressable haptics style={styles.editButton} onPress={() => onEdit(item)}>
+            <Text style={styles.editButtonText}>{t('Исправить')}</Text>
+          </AppPressable>
+        </View>
+        <View style={styles.metaRow}>
+          {[item.category, item.color, item.season, item.pattern]
+            .filter((value) => value && value !== 'Не определено')
+            .map((value, metaIndex) => {
+              const hex = normalizeHex(value);
+              return (
+                <View key={`${item.id}-meta-${metaIndex}`} style={styles.metaChip}>
+                  {hex ? <View style={[styles.colorSwatch, { backgroundColor: hex }]} /> : null}
+                  <Text style={styles.metaChipText}>{hex ? t(getClosestColorName(hex)) : t(value)}</Text>
+                </View>
+              );
+            })}
+        </View>
+        <View style={styles.tagsRow}>
+          {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, tagIndex) => (
+            <View key={`${label}-${tagIndex}`} style={styles.tag}>
+              <Text style={styles.tagText}>{t(label)}</Text>
+            </View>
+          ))}
+        </View>
+        {!item.imageUri ? (
+          <View style={styles.cardFooterActions}>
+            <AppPressable haptics style={styles.deleteButton} onPress={() => onDelete(item.id)}>
+              <Text style={styles.deleteText}>{t('Удалить')}</Text>
+            </AppPressable>
+          </View>
+        ) : null}
+        {(item.size || item.store || item.material) && (
+          <Text style={styles.itemDetails}>
+            {item.size ? t('Размер: {value}', { value: item.size }) : ''}
+            {item.size && item.store ? ' · ' : ''}
+            {item.store ? t('Магазин: {value}', { value: item.store }) : ''}
+            {(item.size || item.store) && item.material ? ' · ' : ''}
+            {item.material ? t('Материал: {value}', { value: item.material }) : ''}
+          </Text>
+        )}
+      </View>
+    </FadeInView>
+  );
+});
+
 export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -458,7 +540,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     await applyAi(draftPhoto);
   };
 
-  const handleEditItem = (item: WardrobeItem) => {
+  const handleEditItem = useCallback((item: WardrobeItem) => {
     setEditItemId(item.id);
     setEditName(item.name || '');
     setEditCategory(item.category || categoryOptions[0]);
@@ -470,7 +552,7 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     setEditStore(item.store || '');
     setEditMaterial(item.material || '');
     setEditModalVisible(true);
-  };
+  }, []);
 
   const handleSaveEdit = () => {
     if (!editItemId) return;
@@ -495,16 +577,19 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
     setEditModalVisible(false);
   };
 
-  const handleDeleteItem = (id: string) => {
-    Alert.alert(t('Удалить вещь?'), t('Действие нельзя отменить.'), [
-      { text: t('Отмена'), style: 'cancel' },
-      {
-        text: t('Удалить'),
-        style: 'destructive',
-        onPress: () => onItemsChange(items.filter((item) => item.id !== id))
-      }
-    ]);
-  };
+  const handleDeleteItem = useCallback(
+    (id: string) => {
+      Alert.alert(t('Удалить вещь?'), t('Действие нельзя отменить.'), [
+        { text: t('Отмена'), style: 'cancel' },
+        {
+          text: t('Удалить'),
+          style: 'destructive',
+          onPress: () => onItemsChange(items.filter((item) => item.id !== id))
+        }
+      ]);
+    },
+    [items, onItemsChange, t]
+  );
 
   const handleRetakeExisting = async (id: string) => {
     const photo = await requestPhoto();
@@ -599,8 +684,26 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
         </AppPressable>
       </FadeInView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.itemsWrap}>
-        {filteredItems.length === 0 ? (
+      <FlatList
+        data={filteredItems}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.itemsWrap}
+        // Рендерим только видимые карточки + небольшой запас — раньше ScrollView
+        // держал в памяти и декодировал фото ВСЕХ вещей гардероба сразу.
+        initialNumToRender={6}
+        windowSize={7}
+        removeClippedSubviews
+        renderItem={({ item, index }) => (
+          <WardrobeItemCard
+            item={item}
+            index={index}
+            onRetake={handleRetakeExisting}
+            onDelete={handleDeleteItem}
+            onEdit={handleEditItem}
+          />
+        )}
+        ListEmptyComponent={
           <EmptyState
             emoji="👗"
             title={t('Здесь пока пусто')}
@@ -612,72 +715,8 @@ export function WardrobeScreen({ items, onItemsChange }: WardrobeScreenProps) {
             actionLabel={items.length === 0 ? t('Добавить вещь') : undefined}
             onAction={items.length === 0 ? handleAddItem : undefined}
           />
-        ) : (
-          filteredItems.map((item, index) => (
-            <FadeInView key={item.id} delay={Math.min(index, 6) * 60}>
-              <View style={styles.itemCard}>
-                {item.imageUri ? (
-                  <View style={styles.photoBlock}>
-                    <View style={styles.photoFrame}>
-                      <Image source={{ uri: item.imageUri }} style={styles.photo} resizeMode="contain" />
-                    </View>
-                    <View style={styles.photoActions}>
-                      <AppPressable haptics style={styles.retakeButton} onPress={() => handleRetakeExisting(item.id)}>
-                        <Text style={styles.retakeText}>{t('Переснять')}</Text>
-                      </AppPressable>
-                      <AppPressable haptics style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
-                        <Text style={styles.deleteText}>{t('Удалить')}</Text>
-                      </AppPressable>
-                    </View>
-                  </View>
-                ) : null}
-                <View style={styles.itemHeader}>
-                  <Text style={styles.itemName}>{t(item.name)}</Text>
-                  <AppPressable haptics style={styles.editButton} onPress={() => handleEditItem(item)}>
-                    <Text style={styles.editButtonText}>{t('Исправить')}</Text>
-                  </AppPressable>
-                </View>
-                <View style={styles.metaRow}>
-                  {[item.category, item.color, item.season, item.pattern]
-                    .filter((value) => value && value !== 'Не определено')
-                    .map((value, metaIndex) => {
-                      const hex = normalizeHex(value);
-                      return (
-                        <View key={`${item.id}-meta-${metaIndex}`} style={styles.metaChip}>
-                          {hex ? <View style={[styles.colorSwatch, { backgroundColor: hex }]} /> : null}
-                          <Text style={styles.metaChipText}>{hex ? t(getClosestColorName(hex)) : t(value)}</Text>
-                        </View>
-                      );
-                    })}
-                </View>
-                <View style={styles.tagsRow}>
-                  {Array.from(new Set(item.tags.map(tagToLabel))).slice(0, 5).map((label, index) => (
-                    <View key={`${label}-${index}`} style={styles.tag}>
-                      <Text style={styles.tagText}>{t(label)}</Text>
-                    </View>
-                  ))}
-                </View>
-                {!item.imageUri ? (
-                  <View style={styles.cardFooterActions}>
-                    <AppPressable haptics style={styles.deleteButton} onPress={() => handleDeleteItem(item.id)}>
-                      <Text style={styles.deleteText}>{t('Удалить')}</Text>
-                    </AppPressable>
-                  </View>
-                ) : null}
-                {(item.size || item.store || item.material) && (
-                  <Text style={styles.itemDetails}>
-                    {item.size ? t('Размер: {value}', { value: item.size }) : ''}
-                    {item.size && item.store ? ' · ' : ''}
-                    {item.store ? t('Магазин: {value}', { value: item.store }) : ''}
-                    {(item.size || item.store) && item.material ? ' · ' : ''}
-                    {item.material ? t('Материал: {value}', { value: item.material }) : ''}
-                  </Text>
-                )}
-              </View>
-            </FadeInView>
-          ))
-        )}
-      </ScrollView>
+        }
+      />
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={() => setModalVisible(false)}>
         <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>

@@ -12,7 +12,7 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
@@ -712,6 +712,222 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Prom
     new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms))
   ]);
 
+// Чистая функция без зависимостей от состояния экрана — вынесена из компонента,
+// чтобы карточка сохранённого лука могла мемоизироваться (см. SavedLookCard).
+const savedLookToGeneratedLook = (look: SavedLook): GeneratedLook => ({
+  id: look.id,
+  title: look.name,
+  itemIds: look.itemIds,
+  weather: '',
+  style: '',
+  event: '',
+  makeup: '',
+  hair: '',
+  fitScore: look.fitScore,
+  fitReasons: look.fitReasons,
+  tuckMode: look.tuckMode,
+  tryOnImageUri: look.tryOnImageUri,
+  tryOnWarning: look.tryOnWarning,
+  tryOnUpdatedAt: look.tryOnUpdatedAt,
+  tryOnQualityMode: look.tryOnQualityMode,
+  tryOnHistory: look.tryOnHistory
+});
+
+const renderFitBadge = (score: number | undefined, styles: ReturnType<typeof makeStyles>) => {
+  if (typeof score !== 'number') return null;
+  return (
+    <View style={styles.fitBadge}>
+      <Text style={styles.fitBadgeText}>✦ {Math.round(score)}</Text>
+    </View>
+  );
+};
+
+const renderFitReasons = (
+  reasons: string[] | undefined,
+  styles: ReturnType<typeof makeStyles>,
+  t: (source: string, vars?: Record<string, string | number>) => string
+) => {
+  if (!reasons?.length) return null;
+  return (
+    <View style={styles.reasonBlock}>
+      <Text style={styles.reasonTitle}>{t('Почему этот лук подходит')}</Text>
+      {reasons.map((reason, index) => (
+        <Text key={`${reason}-${index}`} style={styles.reasonText}>
+          • {reason}
+        </Text>
+      ))}
+    </View>
+  );
+};
+
+type GeneratedLookCardProps = {
+  look: GeneratedLook;
+  index: number;
+  modelUri?: string;
+  itemsById: Record<string, WardrobeItem>;
+  favoriteLookIds?: Set<string>;
+  onSaveToLooks: (look: GeneratedLook) => void;
+  onFavoriteAdd: (look: GeneratedLook) => void;
+  onTryOnGenerated: (
+    lookId: string,
+    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+  ) => void;
+};
+
+// Мемоизировано: карточка лука несёт LookPreview + AiTryOnPreview (своя история
+// генераций, состояние загрузки) — без этого весь список перерисовывался при
+// любом несвязанном изменении экрана (смена стиля, тик тоста и т.д.), что на
+// реальном устройстве ощущается как тормозящий скролл и залипающий интерфейс.
+const GeneratedLookCard = memo(function GeneratedLookCard({
+  look,
+  index,
+  modelUri,
+  itemsById,
+  favoriteLookIds,
+  onSaveToLooks,
+  onFavoriteAdd,
+  onTryOnGenerated
+}: GeneratedLookCardProps) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  const lookItems = useMemo(
+    () => Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[],
+    [look.itemIds, itemsById]
+  );
+  const isFavorited = favoriteLookIds?.has(look.id);
+  return (
+    <FadeInView delay={index * 60}>
+      <View style={styles.lookCard}>
+        <View style={styles.lookHeader}>
+          <View style={styles.lookTitleWrap}>
+            <Text style={styles.lookTitle}>{look.title}</Text>
+            {renderFitBadge(look.fitScore, styles)}
+          </View>
+          <View style={styles.lookActions}>
+            <AppPressable haptics style={styles.actionSoft} onPress={() => onSaveToLooks(look)}>
+              <Text style={styles.actionSoftText}>{t('В луки')}</Text>
+            </AppPressable>
+            <AppPressable
+              haptics
+              style={[styles.actionGhost, isFavorited && styles.actionGhostDone]}
+              disabled={isFavorited}
+              onPress={() => onFavoriteAdd(look)}
+            >
+              <Text style={styles.actionGhostText}>{isFavorited ? t('Добавлено') : t('В избранное')}</Text>
+            </AppPressable>
+          </View>
+        </View>
+        <Text style={styles.lookWeather}>{look.weather}</Text>
+        <LookPreview items={lookItems} />
+        <AiTryOnPreview
+          modelUri={modelUri}
+          items={lookItems}
+          tuckMode={look.tuckMode}
+          resultUri={look.tryOnImageUri}
+          warningMessage={look.tryOnWarning}
+          updatedAt={look.tryOnUpdatedAt}
+          qualityMode={look.tryOnQualityMode}
+          history={look.tryOnHistory}
+          onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
+        />
+        {lookItems.map((item) => (
+          <Text key={item.id} style={styles.lookItem}>
+            • {item.name}
+          </Text>
+        ))}
+        {renderFitReasons(look.fitReasons, styles, t)}
+        <View style={styles.beautyBlock}>
+          <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+          <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+          <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+          <Text style={styles.beautyText}>{t(look.hair)}</Text>
+        </View>
+      </View>
+    </FadeInView>
+  );
+});
+
+type SavedLookCardProps = {
+  look: SavedLook;
+  index: number;
+  modelUri?: string;
+  itemsById: Record<string, WardrobeItem>;
+  favoriteLookIds?: Set<string>;
+  onEdit: (look: SavedLook) => void;
+  onFavoriteAdd: (look: GeneratedLook) => void;
+  onDelete: (id: string) => void;
+  onTryOnGenerated: (
+    lookId: string,
+    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+  ) => void;
+};
+
+const SavedLookCard = memo(function SavedLookCard({
+  look,
+  index,
+  modelUri,
+  itemsById,
+  favoriteLookIds,
+  onEdit,
+  onFavoriteAdd,
+  onDelete,
+  onTryOnGenerated
+}: SavedLookCardProps) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  const lookItems = useMemo(
+    () => Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[],
+    [look.itemIds, itemsById]
+  );
+  const isFavorited = favoriteLookIds?.has(look.id);
+  return (
+    <FadeInView delay={index * 60}>
+      <View style={styles.lookCard}>
+        <View style={styles.lookHeader}>
+          <View style={styles.lookTitleWrap}>
+            <Text style={styles.lookTitle}>{look.name}</Text>
+            {renderFitBadge(look.fitScore, styles)}
+          </View>
+          <View style={styles.lookActions}>
+            <AppPressable haptics style={styles.actionSoft} onPress={() => onEdit(look)}>
+              <Text style={styles.actionSoftText}>{t('Изменить')}</Text>
+            </AppPressable>
+            <AppPressable
+              haptics
+              style={[styles.actionGhost, isFavorited && styles.actionGhostDone]}
+              disabled={isFavorited}
+              onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}
+            >
+              <Text style={styles.actionGhostText}>{isFavorited ? t('Добавлено') : t('В избранное')}</Text>
+            </AppPressable>
+            <AppPressable haptics style={styles.actionDanger} onPress={() => onDelete(look.id)}>
+              <Text style={styles.actionDangerText}>{t('Удалить')}</Text>
+            </AppPressable>
+          </View>
+        </View>
+        <LookPreview items={lookItems} />
+        <AiTryOnPreview
+          modelUri={modelUri}
+          items={lookItems}
+          tuckMode={look.tuckMode}
+          resultUri={look.tryOnImageUri}
+          warningMessage={look.tryOnWarning}
+          updatedAt={look.tryOnUpdatedAt}
+          qualityMode={look.tryOnQualityMode}
+          history={look.tryOnHistory}
+          onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
+        />
+        {lookItems.map((item) => (
+          <Text key={item.id} style={styles.lookItem}>
+            • {item.name}
+          </Text>
+        ))}
+        {renderFitReasons(look.fitReasons, styles, t)}
+      </View>
+    </FadeInView>
+  );
+});
+
 export function OutfitBuilderScreen({
   items,
   modelUri,
@@ -776,30 +992,6 @@ export function OutfitBuilderScreen({
     () => Object.fromEntries(items.map((item) => [item.id, item])),
     [items]
   );
-
-  const getLookItems = (ids: string[]) => {
-    const uniqueIds = Array.from(new Set(ids));
-    return uniqueIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
-  };
-
-  const savedLookToGeneratedLook = (look: SavedLook): GeneratedLook => ({
-    id: look.id,
-    title: look.name,
-    itemIds: look.itemIds,
-    weather: '',
-    style: '',
-    event: '',
-    makeup: '',
-    hair: '',
-    fitScore: look.fitScore,
-    fitReasons: look.fitReasons,
-    tuckMode: look.tuckMode,
-    tryOnImageUri: look.tryOnImageUri,
-    tryOnWarning: look.tryOnWarning,
-    tryOnUpdatedAt: look.tryOnUpdatedAt,
-    tryOnQualityMode: look.tryOnQualityMode,
-    tryOnHistory: look.tryOnHistory
-  });
 
   useEffect(() => {
     if (!selectedTop && tops.length) setSelectedTop(tops[0]);
@@ -904,95 +1096,107 @@ export function OutfitBuilderScreen({
     setActiveTab('looks');
   };
 
-  const handleSaveGeneratedLook = (look: GeneratedLook) => {
-    const name = look.title || t('Лук {n}', { n: savedLooks.length + 1 });
-    const newLook: SavedLook = {
-      id: Date.now().toString(),
-      name,
-      itemIds: look.itemIds,
-      createdAt: Date.now(),
-      fitScore: look.fitScore,
-      fitReasons: look.fitReasons,
-      tuckMode: look.tuckMode,
-      tryOnImageUri: look.tryOnImageUri,
-      tryOnWarning: look.tryOnWarning,
-      tryOnUpdatedAt: look.tryOnUpdatedAt,
-      tryOnQualityMode: look.tryOnQualityMode,
-      tryOnHistory: look.tryOnHistory
-    };
-    onSavedLooksChange([newLook, ...savedLooks]);
-    setActiveTab('looks');
-  };
+  const handleSaveGeneratedLook = useCallback(
+    (look: GeneratedLook) => {
+      const name = look.title || t('Лук {n}', { n: savedLooks.length + 1 });
+      const newLook: SavedLook = {
+        id: Date.now().toString(),
+        name,
+        itemIds: look.itemIds,
+        createdAt: Date.now(),
+        fitScore: look.fitScore,
+        fitReasons: look.fitReasons,
+        tuckMode: look.tuckMode,
+        tryOnImageUri: look.tryOnImageUri,
+        tryOnWarning: look.tryOnWarning,
+        tryOnUpdatedAt: look.tryOnUpdatedAt,
+        tryOnQualityMode: look.tryOnQualityMode,
+        tryOnHistory: look.tryOnHistory
+      };
+      onSavedLooksChange([newLook, ...savedLooks]);
+      setActiveTab('looks');
+    },
+    [savedLooks, onSavedLooksChange, t]
+  );
 
-  const updateSavedLookTryOn = (
-    lookId: string,
-    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
-  ) => {
-    onSavedLooksChange(
-      savedLooks.map((look) => {
-        if (look.id !== lookId) return look;
-        const historyItem: TryOnHistoryItem = {
-          id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
-          imageUri: payload.imageUri,
-          updatedAt: payload.updatedAt,
-          tuckMode: payload.tuckMode,
-          qualityMode: payload.qualityMode
-        };
-        if (payload.warning) historyItem.warning = payload.warning;
-        return {
-          ...look,
-          tuckMode: payload.tuckMode,
-          tryOnImageUri: payload.imageUri,
-          tryOnWarning: payload.warning,
-          tryOnUpdatedAt: payload.updatedAt,
-          tryOnQualityMode: payload.qualityMode,
-          tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
-        };
-      })
-    );
-  };
+  const updateSavedLookTryOn = useCallback(
+    (
+      lookId: string,
+      payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+    ) => {
+      onSavedLooksChange(
+        savedLooks.map((look) => {
+          if (look.id !== lookId) return look;
+          const historyItem: TryOnHistoryItem = {
+            id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
+            imageUri: payload.imageUri,
+            updatedAt: payload.updatedAt,
+            tuckMode: payload.tuckMode,
+            qualityMode: payload.qualityMode
+          };
+          if (payload.warning) historyItem.warning = payload.warning;
+          return {
+            ...look,
+            tuckMode: payload.tuckMode,
+            tryOnImageUri: payload.imageUri,
+            tryOnWarning: payload.warning,
+            tryOnUpdatedAt: payload.updatedAt,
+            tryOnQualityMode: payload.qualityMode,
+            tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
+          };
+        })
+      );
+    },
+    [savedLooks, onSavedLooksChange]
+  );
 
-  const updateGeneratedLookTryOn = (
-    lookId: string,
-    payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
-  ) => {
-    setLooks((prev) =>
-      prev.map((look) => {
-        if (look.id !== lookId) return look;
-        const historyItem: TryOnHistoryItem = {
-          id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
-          imageUri: payload.imageUri,
-          updatedAt: payload.updatedAt,
-          tuckMode: payload.tuckMode,
-          qualityMode: payload.qualityMode
-        };
-        if (payload.warning) historyItem.warning = payload.warning;
-        return {
-          ...look,
-          tuckMode: payload.tuckMode,
-          tryOnImageUri: payload.imageUri,
-          tryOnWarning: payload.warning,
-          tryOnUpdatedAt: payload.updatedAt,
-          tryOnQualityMode: payload.qualityMode,
-          tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
-        };
-      })
-    );
-  };
+  const updateGeneratedLookTryOn = useCallback(
+    (
+      lookId: string,
+      payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
+    ) => {
+      setLooks((prev) =>
+        prev.map((look) => {
+          if (look.id !== lookId) return look;
+          const historyItem: TryOnHistoryItem = {
+            id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
+            imageUri: payload.imageUri,
+            updatedAt: payload.updatedAt,
+            tuckMode: payload.tuckMode,
+            qualityMode: payload.qualityMode
+          };
+          if (payload.warning) historyItem.warning = payload.warning;
+          return {
+            ...look,
+            tuckMode: payload.tuckMode,
+            tryOnImageUri: payload.imageUri,
+            tryOnWarning: payload.warning,
+            tryOnUpdatedAt: payload.updatedAt,
+            tryOnQualityMode: payload.qualityMode,
+            tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
+          };
+        })
+      );
+    },
+    []
+  );
 
-  const openEditLook = (look: SavedLook) => {
-    const lookItems = getLookItems(look.itemIds);
-    const pickSection = (section: string, fallback: WardrobeItem[]) =>
-      lookItems.find((item) => item.section === section) || fallback[0] || null;
-    setEditLookId(look.id);
-    setEditName(look.name);
-    setEditTop(pickSection('Верх', tops));
-    setEditBottom(pickSection('Низ', bottoms));
-    setEditShoes(pickSection('Обувь', shoes));
-    setEditOuter(pickSection('Верхняя одежда', outer));
-    setEditBag(pickSection('Сумки', bags));
-    setEditModalVisible(true);
-  };
+  const openEditLook = useCallback(
+    (look: SavedLook) => {
+      const lookItems = Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
+      const pickSection = (section: string, fallback: WardrobeItem[]) =>
+        lookItems.find((item) => item.section === section) || fallback[0] || null;
+      setEditLookId(look.id);
+      setEditName(look.name);
+      setEditTop(pickSection('Верх', tops));
+      setEditBottom(pickSection('Низ', bottoms));
+      setEditShoes(pickSection('Обувь', shoes));
+      setEditOuter(pickSection('Верхняя одежда', outer));
+      setEditBag(pickSection('Сумки', bags));
+      setEditModalVisible(true);
+    },
+    [itemsById, tops, bottoms, shoes, outer, bags]
+  );
 
   const handleSaveEditedLook = () => {
     if (!editLookId) return;
@@ -1022,16 +1226,19 @@ export function OutfitBuilderScreen({
     setEditModalVisible(false);
   };
 
-  const handleDeleteLook = (id: string) => {
-    Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
-      { text: t('Отмена'), style: 'cancel' },
-      {
-        text: t('Удалить'),
-        style: 'destructive',
-        onPress: () => onSavedLooksChange(savedLooks.filter((look) => look.id !== id))
-      }
-    ]);
-  };
+  const handleDeleteLook = useCallback(
+    (id: string) => {
+      Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+        { text: t('Отмена'), style: 'cancel' },
+        {
+          text: t('Удалить'),
+          style: 'destructive',
+          onPress: () => onSavedLooksChange(savedLooks.filter((look) => look.id !== id))
+        }
+      ]);
+    },
+    [savedLooks, onSavedLooksChange, t]
+  );
 
   const renderPicker = (
     title: string,
@@ -1080,29 +1287,6 @@ export function OutfitBuilderScreen({
       )}
     </View>
   );
-
-  const renderFitReasons = (reasons?: string[]) => {
-    if (!reasons?.length) return null;
-    return (
-      <View style={styles.reasonBlock}>
-        <Text style={styles.reasonTitle}>{t('Почему этот лук подходит')}</Text>
-        {reasons.map((reason, index) => (
-          <Text key={`${reason}-${index}`} style={styles.reasonText}>
-            • {reason}
-          </Text>
-        ))}
-      </View>
-    );
-  };
-
-  const renderFitBadge = (score?: number) => {
-    if (typeof score !== 'number') return null;
-    return (
-      <View style={styles.fitBadge}>
-        <Text style={styles.fitBadgeText}>✦ {Math.round(score)}</Text>
-      </View>
-    );
-  };
 
   const weatherEmoji = weatherCode !== null ? weatherEmojiMap[weatherCode] || '🌤️' : '🌤️';
   const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 2 : 0;
@@ -1265,61 +1449,19 @@ export function OutfitBuilderScreen({
             </View>
 
             <View style={styles.looksWrap}>
-              {looks.map((look, index) => {
-                const lookItems = getLookItems(look.itemIds);
-                return (
-                  <FadeInView key={look.id} delay={index * 60}>
-                    <View style={styles.lookCard}>
-                      <View style={styles.lookHeader}>
-                        <View style={styles.lookTitleWrap}>
-                          <Text style={styles.lookTitle}>{look.title}</Text>
-                          {renderFitBadge(look.fitScore)}
-                        </View>
-                        <View style={styles.lookActions}>
-                          <AppPressable haptics style={styles.actionSoft} onPress={() => handleSaveGeneratedLook(look)}>
-                            <Text style={styles.actionSoftText}>{t('В луки')}</Text>
-                          </AppPressable>
-                          <AppPressable
-                            haptics
-                            style={[styles.actionGhost, favoriteLookIds?.has(look.id) && styles.actionGhostDone]}
-                            disabled={favoriteLookIds?.has(look.id)}
-                            onPress={() => onFavoriteAdd(look)}
-                          >
-                            <Text style={styles.actionGhostText}>
-                              {favoriteLookIds?.has(look.id) ? t('Добавлено') : t('В избранное')}
-                            </Text>
-                          </AppPressable>
-                        </View>
-                      </View>
-                      <Text style={styles.lookWeather}>{look.weather}</Text>
-                      <LookPreview items={lookItems} />
-                      <AiTryOnPreview
-                        modelUri={modelUri}
-                        items={lookItems}
-                        tuckMode={look.tuckMode}
-                        resultUri={look.tryOnImageUri}
-                        warningMessage={look.tryOnWarning}
-                        updatedAt={look.tryOnUpdatedAt}
-                        qualityMode={look.tryOnQualityMode}
-                        history={look.tryOnHistory}
-                        onGenerated={(payload) => updateGeneratedLookTryOn(look.id, payload)}
-                      />
-                      {lookItems.map((item) => (
-                        <Text key={item.id} style={styles.lookItem}>
-                          • {item.name}
-                        </Text>
-                      ))}
-                      {renderFitReasons(look.fitReasons)}
-                      <View style={styles.beautyBlock}>
-                        <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-                        <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-                        <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-                        <Text style={styles.beautyText}>{t(look.hair)}</Text>
-                      </View>
-                    </View>
-                  </FadeInView>
-                );
-              })}
+              {looks.map((look, index) => (
+                <GeneratedLookCard
+                  key={look.id}
+                  look={look}
+                  index={index}
+                  modelUri={modelUri}
+                  itemsById={itemsById}
+                  favoriteLookIds={favoriteLookIds}
+                  onSaveToLooks={handleSaveGeneratedLook}
+                  onFavoriteAdd={onFavoriteAdd}
+                  onTryOnGenerated={updateGeneratedLookTryOn}
+                />
+              ))}
             </View>
           </>
         ) : (
@@ -1333,57 +1475,20 @@ export function OutfitBuilderScreen({
                 onAction={() => setActiveTab('builder')}
               />
             ) : null}
-            {savedLooks.map((look, index) => {
-              const lookItems = getLookItems(look.itemIds);
-              return (
-                <FadeInView key={look.id} delay={index * 60}>
-                  <View style={styles.lookCard}>
-                    <View style={styles.lookHeader}>
-                      <View style={styles.lookTitleWrap}>
-                        <Text style={styles.lookTitle}>{look.name}</Text>
-                        {renderFitBadge(look.fitScore)}
-                      </View>
-                      <View style={styles.lookActions}>
-                        <AppPressable haptics style={styles.actionSoft} onPress={() => openEditLook(look)}>
-                          <Text style={styles.actionSoftText}>{t('Изменить')}</Text>
-                        </AppPressable>
-                        <AppPressable
-                          haptics
-                          style={[styles.actionGhost, favoriteLookIds?.has(look.id) && styles.actionGhostDone]}
-                          disabled={favoriteLookIds?.has(look.id)}
-                          onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}
-                        >
-                          <Text style={styles.actionGhostText}>
-                            {favoriteLookIds?.has(look.id) ? t('Добавлено') : t('В избранное')}
-                          </Text>
-                        </AppPressable>
-                        <AppPressable haptics style={styles.actionDanger} onPress={() => handleDeleteLook(look.id)}>
-                          <Text style={styles.actionDangerText}>{t('Удалить')}</Text>
-                        </AppPressable>
-                      </View>
-                    </View>
-                    <LookPreview items={lookItems} />
-                    <AiTryOnPreview
-                      modelUri={modelUri}
-                      items={lookItems}
-                      tuckMode={look.tuckMode}
-                      resultUri={look.tryOnImageUri}
-                      warningMessage={look.tryOnWarning}
-                      updatedAt={look.tryOnUpdatedAt}
-                      qualityMode={look.tryOnQualityMode}
-                      history={look.tryOnHistory}
-                      onGenerated={(payload) => updateSavedLookTryOn(look.id, payload)}
-                    />
-                    {lookItems.map((item) => (
-                      <Text key={item.id} style={styles.lookItem}>
-                        • {item.name}
-                      </Text>
-                    ))}
-                    {renderFitReasons(look.fitReasons)}
-                  </View>
-                </FadeInView>
-              );
-            })}
+            {savedLooks.map((look, index) => (
+              <SavedLookCard
+                key={look.id}
+                look={look}
+                index={index}
+                modelUri={modelUri}
+                itemsById={itemsById}
+                favoriteLookIds={favoriteLookIds}
+                onEdit={openEditLook}
+                onFavoriteAdd={onFavoriteAdd}
+                onDelete={handleDeleteLook}
+                onTryOnGenerated={updateSavedLookTryOn}
+              />
+            ))}
           </View>
         )}
       </ScrollView>

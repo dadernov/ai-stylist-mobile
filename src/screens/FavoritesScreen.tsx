@@ -1,5 +1,5 @@
-import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useState } from 'react';
+import { Alert, FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -29,6 +29,90 @@ function formatDate(ts: number): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
+type FavoriteLookCardProps = {
+  look: GeneratedLook;
+  index: number;
+  itemsById: Record<string, WardrobeItem>;
+  onRemove: (id: string) => void;
+  onPreview: (uri: string) => void;
+};
+
+// Мемоизировано по той же причине, что и карточка вещи в гардеробе: без этого
+// каждая карточка (с примеркой и превью-картинкой) перерисовывалась при любом
+// несвязанном обновлении экрана.
+const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview }: FavoriteLookCardProps) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
+  const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
+  const metaParts = [t(look.style), t(look.event), look.weather].filter(Boolean);
+  const meta = look.tryOnUpdatedAt
+    ? [...metaParts, formatDate(look.tryOnUpdatedAt)].join(' · ')
+    : metaParts.join(' · ');
+  return (
+    <FadeInView delay={Math.min(index, 6) * 60}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{look.title}</Text>
+          <AppPressable style={styles.deleteButton} haptics onPress={() => onRemove(look.id)}>
+            <Text style={styles.deleteText}>{t('Удалить')}</Text>
+          </AppPressable>
+        </View>
+        <View style={styles.metaRow}>
+          <Text style={styles.cardMeta}>{meta}</Text>
+          {tryOnUri ? (
+            <View style={styles.tryOnBadge}>
+              <Text style={styles.tryOnBadgeText}>✨ {t('Примерка')}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <SectionLabel>{t('Образ из вещей')}</SectionLabel>
+        <LookPreview items={lookItems} />
+
+        <SectionLabel>{t('Сгенерированный образ')}</SectionLabel>
+        {tryOnUri ? (
+          <AppPressable style={styles.generatedWrap} onPress={() => onPreview(tryOnUri)}>
+            <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />
+          </AppPressable>
+        ) : (
+          <View style={styles.generatedPlaceholder}>
+            <Text style={styles.generatedPlaceholderText}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
+          </View>
+        )}
+
+        {look.makeup || look.hair ? (
+          <View style={styles.beautyBlock}>
+            {look.makeup ? (
+              <View style={styles.beautyRow}>
+                <View style={styles.beautyIcon}>
+                  <Text style={styles.beautyEmoji}>💄</Text>
+                </View>
+                <View style={styles.beautyBody}>
+                  <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                  <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                </View>
+              </View>
+            ) : null}
+            {look.makeup && look.hair ? <View style={styles.beautyDivider} /> : null}
+            {look.hair ? (
+              <View style={styles.beautyRow}>
+                <View style={styles.beautyIcon}>
+                  <Text style={styles.beautyEmoji}>💇‍♀️</Text>
+                </View>
+                <View style={styles.beautyBody}>
+                  <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                  <Text style={styles.beautyText}>{t(look.hair)}</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    </FadeInView>
+  );
+});
+
 export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: FavoritesScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
@@ -36,12 +120,15 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: Favor
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const itemsById = Object.fromEntries(items.map((item) => [item.id, item]));
 
-  const handleRemove = (id: string) => {
-    Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
-      { text: t('Отмена'), style: 'cancel' },
-      { text: t('Удалить'), style: 'destructive', onPress: () => onRemove(id) }
-    ]);
-  };
+  const handleRemove = useCallback(
+    (id: string) => {
+      Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+        { text: t('Отмена'), style: 'cancel' },
+        { text: t('Удалить'), style: 'destructive', onPress: () => onRemove(id) }
+      ]);
+    },
+    [onRemove, t]
+  );
 
   return (
     <View style={styles.container}>
@@ -52,8 +139,18 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: Favor
         subtitle={t('Сохраняй лучшие варианты, чтобы быстро их находить.')}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listWrap}>
-        {!looks.length ? (
+      <FlatList
+        data={looks}
+        keyExtractor={(look) => look.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listWrap}
+        initialNumToRender={4}
+        windowSize={7}
+        removeClippedSubviews
+        renderItem={({ item, index }) => (
+          <FavoriteLookCard look={item} index={index} itemsById={itemsById} onRemove={handleRemove} onPreview={setPreviewUri} />
+        )}
+        ListEmptyComponent={
           <EmptyState
             emoji="🤍"
             title={t('Пока нет избранных образов')}
@@ -61,79 +158,8 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder }: Favor
             actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
             onAction={onGoToBuilder}
           />
-        ) : null}
-
-        {looks.map((look, index) => {
-          const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
-          const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
-          const metaParts = [t(look.style), t(look.event), look.weather].filter(Boolean);
-          const meta = look.tryOnUpdatedAt
-            ? [...metaParts, formatDate(look.tryOnUpdatedAt)].join(' · ')
-            : metaParts.join(' · ');
-          return (
-            <FadeInView key={look.id} delay={Math.min(index, 6) * 60}>
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{look.title}</Text>
-                  <AppPressable style={styles.deleteButton} haptics onPress={() => handleRemove(look.id)}>
-                    <Text style={styles.deleteText}>{t('Удалить')}</Text>
-                  </AppPressable>
-                </View>
-                <View style={styles.metaRow}>
-                  <Text style={styles.cardMeta}>{meta}</Text>
-                  {tryOnUri ? (
-                    <View style={styles.tryOnBadge}>
-                      <Text style={styles.tryOnBadgeText}>✨ {t('Примерка')}</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <SectionLabel>{t('Образ из вещей')}</SectionLabel>
-                <LookPreview items={lookItems} />
-
-                <SectionLabel>{t('Сгенерированный образ')}</SectionLabel>
-                {tryOnUri ? (
-                  <AppPressable style={styles.generatedWrap} onPress={() => setPreviewUri(tryOnUri)}>
-                    <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />
-                  </AppPressable>
-                ) : (
-                  <View style={styles.generatedPlaceholder}>
-                    <Text style={styles.generatedPlaceholderText}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
-                  </View>
-                )}
-
-                {look.makeup || look.hair ? (
-                  <View style={styles.beautyBlock}>
-                    {look.makeup ? (
-                      <View style={styles.beautyRow}>
-                        <View style={styles.beautyIcon}>
-                          <Text style={styles.beautyEmoji}>💄</Text>
-                        </View>
-                        <View style={styles.beautyBody}>
-                          <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-                          <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-                        </View>
-                      </View>
-                    ) : null}
-                    {look.makeup && look.hair ? <View style={styles.beautyDivider} /> : null}
-                    {look.hair ? (
-                      <View style={styles.beautyRow}>
-                        <View style={styles.beautyIcon}>
-                          <Text style={styles.beautyEmoji}>💇‍♀️</Text>
-                        </View>
-                        <View style={styles.beautyBody}>
-                          <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-                          <Text style={styles.beautyText}>{t(look.hair)}</Text>
-                        </View>
-                      </View>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-            </FadeInView>
-          );
-        })}
-      </ScrollView>
+        }
+      />
 
       <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
         <View style={styles.previewBackdrop}>
