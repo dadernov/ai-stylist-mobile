@@ -42,6 +42,14 @@ class Gate(unittest.TestCase):
             self.call(token="guessed")
         self.assertEqual(raised.exception.status_code, 401)
 
+    def test_non_ascii_token_is_rejected_cleanly(self):
+        # Заголовок присылает клиент, и там может быть что угодно. Сравнение
+        # постоянного времени не принимает не-ASCII строки, поэтому без
+        # приведения к байтам такой запрос падал бы с 500 вместо 401.
+        with self.assertRaises(HTTPException) as raised:
+            self.call(token="подобранный")
+        self.assertEqual(raised.exception.status_code, 401)
+
     def test_missing_header_is_rejected(self):
         with self.assertRaises(HTTPException) as raised:
             self.call(token=None)

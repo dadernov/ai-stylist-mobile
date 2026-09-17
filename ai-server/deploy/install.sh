@@ -40,6 +40,14 @@ done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"
 
 # 3. venv + зависимости
+# Venv помнит путь к интерпретатору, которым создан. Если тот жил во временном
+# каталоге и исчез, venv остаётся на месте, но любой его скрипт падает с
+# «No such file or directory» — служба при этом бесконечно перезапускается.
+# Поэтому окружение проверяется и при негодности пересоздаётся.
+if [ -x "$APP_DIR/.venv/bin/python" ] && ! "$APP_DIR/.venv/bin/python" -c "import sys" >/dev/null 2>&1; then
+  echo "==> venv сломан (интерпретатор недоступен), пересоздаю"
+  rm -rf "$APP_DIR/.venv"
+fi
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip wheel
 "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"

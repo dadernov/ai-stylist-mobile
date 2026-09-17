@@ -83,8 +83,11 @@ def charge(device: str, cost: int = 1):
 def token_is_known(presented: str):
     known = configured_tokens()
     # Сравнение постоянного времени: иначе по скорости ответа можно подобрать
-    # токен посимвольно.
-    return any(hmac.compare_digest(presented, token) for token in known)
+    # токен посимвольно. Сравниваются байты, а не строки: compare_digest
+    # отказывается работать со строкой, где есть не-ASCII, и подставленный
+    # кем-то заголовок с кириллицей ронял бы запрос с 500 вместо честного 401.
+    presented_bytes = presented.encode("utf-8", "surrogatepass")
+    return any(hmac.compare_digest(presented_bytes, token.encode("utf-8")) for token in known)
 
 
 def require_client(authorization: str | None = Header(default=None), x_device_id: str | None = Header(default=None)):
