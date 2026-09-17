@@ -199,7 +199,9 @@ export async function analyzeTryOnGenerateLook(
   tuckMode: TuckMode = 'auto',
   compareMode = false,
   qualityMode: TryOnQualityMode = 'quality',
-  outerUri?: string
+  outerUri?: string,
+  topCategory?: string,
+  outerCategory?: string
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   form.append('person_file', {
@@ -236,6 +238,11 @@ export async function analyzeTryOnGenerateLook(
       type: 'image/jpeg'
     } as any);
   }
+  // Сервер решает по категориям, видно ли верх под верхней одеждой: если нет,
+  // отдельный проход по верху не запускается — это лишняя оплаченная генерация
+  // и лишняя потеря качества на кадре.
+  if (topCategory) form.append('top_category', topCategory);
+  if (outerCategory) form.append('outer_category', outerCategory);
   form.append('tuck_mode', tuckMode);
   form.append('quality_mode', qualityMode);
   if (compareMode) {

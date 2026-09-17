@@ -161,19 +161,18 @@ export function AiTryOnPreview({
     return () => { mounted.current = false; };
   }, []);
 
-  const topRawGarment = useMemo(() => pickTopGarment(items), [items]);
-  const outerRawGarment = useMemo(() => pickOuterGarment(items), [items]);
-  // Если есть и рубашка («Верх»), и верхняя одежда — рубашка идёт нижним слоем (top),
-  // куртка надевается сверху (outer). Если рубашки нет, одиночная куртка едет как top.
-  const topGarment = topRawGarment || outerRawGarment;
-  const outerGarment = topRawGarment ? outerRawGarment : undefined;
+  // Каждая вещь едет своим слотом, включая одинокую куртку. Раньше она
+  // подменялась слотом «верх», и сервер считал, что менялся только торс, —
+  // пальто до колена при этом обрезалось по линии бедра.
+  const topGarment = useMemo(() => pickTopGarment(items), [items]);
+  const outerGarment = useMemo(() => pickOuterGarment(items), [items]);
   const bottomGarment = useMemo(() => pickBottomGarment(items), [items]);
   const shoesGarment = useMemo(() => pickShoesGarment(items), [items]);
-  const canGenerate = Boolean(modelUri && (topGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
+  const canGenerate = Boolean(modelUri && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
   const isBusy = isLoading;
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
-    !topGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
+    !topGarment && !outerGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
     items.some(item => !item.imageUri) ? t('Вещи без фото не участвуют в примерке.') : null,
     items.some(item => !['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(item.section)) ? t('Примерка сумок и аксессуаров пока недоступна.') : null
   ].filter(Boolean) as string[];
@@ -242,7 +241,9 @@ export function AiTryOnPreview({
       effectiveTuckMode,
       false,
       effectiveQualityMode,
-      outerGarment?.imageUri
+      outerGarment?.imageUri,
+      topGarment?.category,
+      outerGarment?.category
     );
     if (!generated.outputUrl) {
       throw new Error(generated.error || t('FASHN не вернул итоговую картинку'));

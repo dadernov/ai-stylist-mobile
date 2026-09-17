@@ -14,27 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES
-
-AI_ENABLE_CLIP = os.getenv("AI_ENABLE_CLIP", "false").strip().lower() in ("1", "true", "yes", "on")
-CLIP_MODEL_ID = os.getenv("CLIP_MODEL_ID", "openai/clip-vit-base-patch32").strip() or "openai/clip-vit-base-patch32"
-CLIP_LOCAL_ONLY = os.getenv("CLIP_LOCAL_ONLY", "false").strip().lower() in ("1", "true", "yes", "on")
-
-if AI_ENABLE_CLIP:
-    try:
-        import torch
-        from transformers import CLIPModel, CLIPProcessor
-
-        CLIP_AVAILABLE = True
-    except Exception:
-        CLIP_AVAILABLE = False
-        CLIPModel = None
-        CLIPProcessor = None
-        torch = None
-else:
-    CLIP_AVAILABLE = False
-    CLIPModel = None
-    CLIPProcessor = None
-    torch = None
+import tryon_composite
 
 try:
     import mediapipe as mp
@@ -61,6 +41,12 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+# Застёгнутый слой полностью скрывает то, что под ним; открытый — нет.
+COVERING_OUTERWEAR = {"Пуховик", "Парка", "Пальто", "Шуба", "Тренч", "Плащ"}
+# У FASHN платье и комбинезон — отдельная категория: как «верх» они садятся
+# по линии талии и обрезаются.
+ONE_PIECE_GARMENTS = {"Платье", "Сарафан", "Комбинезон"}
+
 _TRYON_LOOK_CACHE: dict[str, dict] = {}
 _TRYON_LOOK_INFLIGHT: dict[str, asyncio.Task] = {}
 _TRYON_LOOK_LOCK = asyncio.Lock()
@@ -68,10 +54,6 @@ _ANALYSIS_LOCK = threading.Lock()
 _ANALYSIS_CACHE = {}
 _REMBG_LOCK = threading.Lock()
 _rembg_session = None
-
-
-def _rgb_to_hex(rgb):
-    return "#%02x%02x%02x" % rgb
 
 
 def clamp(value, min_value, max_value):
@@ -165,56 +147,31 @@ async def _load_image_from_url_or_data_url(client: httpx.AsyncClient, source: st
     return None
 
 
-def _face_lock_mask(size: tuple[int, int], pose, person_rgba: Image.Image):
-    width, height = size
-    mask = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(mask)
-    bbox = _object_bbox(person_rgba.resize(size, Image.Resampling.LANCZOS))
-
-    if pose and pose.get("nose"):
-        nose = pose["nose"]
-        cx = clamp(nose["x"], 0, 1) * width
-        cy = clamp(nose["y"], 0, 1) * height
-    elif bbox:
-        x0, y0, x1, y1 = bbox
-        cx = (x0 + x1) * 0.5
-        cy = y0 + (y1 - y0) * 0.11
-    else:
-        cx = width * 0.5
-        cy = height * 0.16
-
-    shoulder_width = 0
-    if pose and pose.get("leftShoulder") and pose.get("rightShoulder"):
-        shoulder_width = abs(pose["rightShoulder"]["x"] - pose["leftShoulder"]["x"]) * width
-
-    if bbox:
-        x0, y0, x1, y1 = bbox
-        body_width = max(1, x1 - x0)
-        body_height = max(1, y1 - y0)
-    else:
-        body_width = width * 0.45
-        body_height = height * 0.8
-
-    rx = max(30, min(width * 0.23, max(shoulder_width * 0.48, body_width * 0.18)))
-    ry = max(38, min(height * 0.20, max(shoulder_width * 0.66, body_height * 0.115)))
-    cy += ry * 0.12
-
-    draw.ellipse((cx - rx, cy - ry * 1.08, cx + rx, cy + ry * 1.22), fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(radius=max(5, int(min(width, height) * 0.008))))
-    return mask
+def _silhouette(image: Image.Image):
+    """Cut the person out so the composite can tell body from background."""
+    buffer = BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    rgba, _ = _remove_background_rgba(buffer.getvalue(), image.convert("RGB"))
+    return rgba
 
 
-def _apply_face_lock(original_content: bytes, generated_image: Image.Image):
+def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots):
     original = ImageOps.exif_transpose(Image.open(BytesIO(original_content))).convert("RGB")
-    generated = generated_image.convert("RGB")
-    original_for_output = original.resize(generated.size, Image.Resampling.LANCZOS)
-    person_rgba = _segment_person_with_mediapipe(original)
-    pose = _extract_pose_landmarks(original, person_rgba)
-    mask = _face_lock_mask(generated.size, pose, person_rgba)
-    return Image.composite(original_for_output, generated, mask)
+    return tryon_composite.compose(
+        original,
+        generated_image,
+        _silhouette(original),
+        _silhouette(generated_image),
+        changed_slots,
+    )
 
 
-async def _face_locked_output_url(client: httpx.AsyncClient, original_content: bytes, output_url: str):
+async def _face_locked_output_url(
+    client: httpx.AsyncClient,
+    original_content: bytes,
+    output_url: str,
+    changed_slots=()
+):
     # Always pull the final image to our server and return it inline as base64 so the
     # mobile client downloads the result from us (not the temporary FASHN CDN, which is
     # geo/VPN-blocked for some clients and is deleted after 72h). Face lock is applied on
@@ -228,9 +185,15 @@ async def _face_locked_output_url(client: httpx.AsyncClient, original_content: b
     final_image = generated_image
     if _env_bool("FASHN_FACE_LOCK", True):
         try:
-            final_image = _apply_face_lock(original_content, generated_image)
+            # Два прохода rembg — это секунды CPU. В event loop они бы
+            # заморозили все остальные запросы, поэтому уходят в поток.
+            final_image, status = await asyncio.to_thread(
+                _apply_identity_lock, original_content, generated_image, changed_slots
+            )
+            if status != "composed":
+                print(f"Identity lock skipped: {status}")
         except Exception as exc:
-            print(f"Face lock failed: {type(exc).__name__}: {exc}")
+            print(f"Identity lock failed: {type(exc).__name__}: {exc}")
             final_image = generated_image
 
     try:
@@ -441,6 +404,24 @@ def _prune_tryon_look_cache():
         _TRYON_LOOK_CACHE.pop(oldest[idx][0], None)
 
 
+def _reason_to_skip_top(outer_category: str, look_model_name: str):
+    """Why a separate pass over the top layer would be wasted, or "" if it would not.
+
+    Two torso passes in a row are rarely worth what they cost. Under a zipped
+    puffer or a coat the top is not visible in any frame. And on models without
+    "max" the second torso pass is simply unreliable: in a live run (tryon-v1.6,
+    a hoodie plus a leather jacket) the outer step came back one brightness
+    level out of 255 away from the frame before it — the jacket never appeared,
+    while the credit was still spent. In both cases only the visible layer is
+    generated.
+    """
+    if outer_category.strip() in COVERING_OUTERWEAR:
+        return f"под «{outer_category.strip().lower()}» его не видно"
+    if "max" not in look_model_name:
+        return "в быстром режиме виден только верхний слой"
+    return ""
+
+
 def _cache_key_for_tryon_look(
     person_content: bytes,
     top_content: bytes | None,
@@ -452,10 +433,13 @@ def _cache_key_for_tryon_look(
     look_mode: str,
     look_generation_mode: str,
     base_prompt: str,
-    quality_mode: str
+    quality_mode: str,
+    categories: str = ""
 ):
     hasher = hashlib.sha256()
-    hasher.update(os.getenv("FASHN_LOOK_CACHE_VERSION", "v3-outer-layer").encode("utf-8"))
+    # Композит и раскладка по слоям поменялись — старые кадры под теми же
+    # фотографиями больше не соответствуют тому, что сервер сделал бы сейчас.
+    hasher.update(os.getenv("FASHN_LOOK_CACHE_VERSION", "v4-identity-composite").encode("utf-8"))
     hasher.update(str(_env_bool("FASHN_FACE_LOCK", True)).encode("utf-8"))
     hasher.update(str(_env_int("FASHN_FACE_LOCK_JPEG_QUALITY", 92)).encode("utf-8"))
     hasher.update(look_model_name.encode("utf-8"))
@@ -464,6 +448,7 @@ def _cache_key_for_tryon_look(
     hasher.update(base_prompt.encode("utf-8"))
     hasher.update(quality_mode.encode("utf-8"))
     hasher.update(tuck_mode_normalized.encode("utf-8"))
+    hasher.update(categories.encode("utf-8"))
     hasher.update(person_content)
     hasher.update(top_content or b"")
     hasher.update(bottom_content or b"")
@@ -540,42 +525,6 @@ async def _run_fashn_tryon_with_category_fallback(
         "error": "FASHN generation failed for all categories",
         "attempts": errors
     }
-
-
-def dominant_color(image: Image.Image, mask=None):
-    img = image.convert("RGB").resize((120, 120))
-    arr = np.array(img).reshape(-1, 3)
-    if mask is not None:
-        mask_resized = mask.resize((120, 120))
-        mask_arr = np.array(mask_resized).reshape(-1)
-        arr = arr[mask_arr > 10]
-    if arr.size == 0:
-        return (255, 255, 255)
-    colors, counts = np.unique(arr, axis=0, return_counts=True)
-    return tuple(colors[counts.argmax()])
-
-
-def palette_colors(image: Image.Image, n=5, mask=None):
-    img = image.convert("RGB").resize((160, 160))
-    if mask is not None:
-        mask_resized = mask.resize((160, 160))
-        mask_arr = np.array(mask_resized)
-        rgb = np.array(img)
-        rgb[mask_arr <= 10] = [255, 255, 255]
-        img = Image.fromarray(rgb)
-    pal = img.quantize(colors=n, method=Image.MEDIANCUT)
-    palette = pal.getpalette()[: n * 3]
-    return [tuple(palette[i : i + 3]) for i in range(0, len(palette), 3)]
-
-
-def _filter_palette(colors, mask_white=True):
-    filtered = []
-    for c in colors:
-        r, g, b = c
-        if mask_white and r > 240 and g > 240 and b > 240:
-            continue
-        filtered.append(c)
-    return filtered
 
 
 def _object_bbox(rgba: Image.Image):
@@ -829,118 +778,6 @@ def _build_avatar_model(original_rgb: Image.Image, person_rgba: Image.Image, pos
     return avatar_rgba
 
 
-def infer_category(rgba: Image.Image):
-    bbox = _object_bbox(rgba)
-    if not bbox:
-        return "Футболка"
-    x0, y0, x1, y1 = bbox
-    width = max(1, x1 - x0 + 1)
-    height = max(1, y1 - y0 + 1)
-    aspect = height / width
-    area_ratio = (width * height) / (rgba.width * rgba.height)
-    alpha = rgba.split()[-1].crop(bbox).resize((96, 96))
-    mask = np.array(alpha) > 12
-    if mask.any():
-        ys, xs = np.where(mask)
-        upper_density = float(mask[:32].mean())
-        middle_density = float(mask[32:64].mean())
-        lower_density = float(mask[64:].mean())
-        edge_touch = (
-            float(mask[:, :8].mean())
-            + float(mask[:, -8:].mean())
-            + float(mask[:8, :].mean())
-            + float(mask[-8:, :].mean())
-        )
-        compact_width = (xs.max() - xs.min() + 1) / 96
-        compact_height = (ys.max() - ys.min() + 1) / 96
-        is_low_wide = aspect < 0.92 and compact_width > 0.62 and compact_height < 0.72
-        is_pair_like = lower_density >= middle_density * 0.85 and upper_density < lower_density * 0.75
-        if is_low_wide or (area_ratio < 0.38 and is_pair_like and edge_touch < 0.9):
-            return "Кроссовки"
-    if area_ratio < 0.2:
-        return "Кроссовки" if aspect < 1.05 else "Сумка"
-    if aspect > 1.6:
-        return "Пальто" if area_ratio > 0.55 else "Брюки"
-    if aspect > 1.3:
-        return "Платье"
-    if aspect > 1.1:
-        return "Юбка" if area_ratio > 0.3 else "Лонгслив"
-    if area_ratio > 0.5:
-        return "Худи"
-    return "Футболка"
-
-
-def infer_season(image: Image.Image):
-    arr = np.array(image.convert("RGB")).astype(np.float32) / 255.0
-    maxc = arr.max(axis=2)
-    minc = arr.min(axis=2)
-    v = maxc
-    s = np.where(maxc == 0, 0, (maxc - minc) / maxc)
-    v_mean = float(v.mean())
-    s_mean = float(s.mean())
-    if v_mean < 0.35:
-        return "Зима"
-    if v_mean > 0.65 and s_mean > 0.35:
-        return "Лето"
-    if v_mean > 0.7 and s_mean <= 0.35:
-        return "Лето"
-    return "Демисезон"
-
-
-def infer_pattern(image: Image.Image):
-    gray = image.convert("L").resize((128, 128))
-    arr = np.array(gray, dtype=np.float32)
-    dx = np.abs(np.diff(arr, axis=1))
-    dy = np.abs(np.diff(arr, axis=0))
-    score = float((dx.mean() + dy.mean()) / 2.0)
-    colorfulness = float(np.std(np.array(image.convert("RGB")), axis=(0, 1)).mean())
-    if score < 6:
-        return "Однотонный"
-    if score < 12:
-        return "Полоска"
-    if score < 18:
-        return "Клетка"
-    return "Цветочный" if colorfulness > 40 else "Горох"
-
-
-_clip_model = None
-_clip_processor = None
-
-
-def _get_clip():
-    global _clip_model, _clip_processor, CLIP_AVAILABLE
-    if not CLIP_AVAILABLE:
-        return None, None
-    if _clip_model is None or _clip_processor is None:
-        try:
-            _clip_model = CLIPModel.from_pretrained(CLIP_MODEL_ID, local_files_only=CLIP_LOCAL_ONLY)
-            _clip_processor = CLIPProcessor.from_pretrained(CLIP_MODEL_ID, local_files_only=CLIP_LOCAL_ONLY)
-        except Exception as exc:
-            print(f"CLIP unavailable, falling back to local heuristics: {type(exc).__name__}: {exc}")
-            CLIP_AVAILABLE = False
-            _clip_model = None
-            _clip_processor = None
-            return None, None
-    return _clip_model, _clip_processor
-
-
-def clip_classify(image: Image.Image, labels, prompts):
-    try:
-        model, processor = _get_clip()
-        if model is None or processor is None:
-            return None
-        inputs = processor(text=prompts, images=image, return_tensors="pt", padding=True)
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits_per_image[0]
-            probs = logits.softmax(dim=0)
-        best_idx = int(probs.argmax().item())
-        return labels[best_idx]
-    except Exception as exc:
-        print(f"CLIP classification failed, falling back to local heuristics: {type(exc).__name__}: {exc}")
-        return None
-
-
 @app.post("/analyze")
 def analyze(file: UploadFile = File(...), section_hint: str = Form("")):
     if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
@@ -1084,7 +921,7 @@ async def tryon_generate(person_file: UploadFile = File(...), garment_file: Uplo
                 prompt_override=single_prompt
             )
             if result.get("outputUrl"):
-                result["outputUrl"] = await _face_locked_output_url(client, person_content, result["outputUrl"])
+                result["outputUrl"] = await _face_locked_output_url(client, person_content, result["outputUrl"], ["unknown"])
             return result
     except Exception as exc:
         return {"error": f"tryon-generate exception: {type(exc).__name__}: {str(exc)}"}
@@ -1099,7 +936,9 @@ async def tryon_generate_look(
     outer_file: UploadFile | None = File(None),
     tuck_mode: str = Form("auto"),
     compare_mode: str = Form("false"),
-    quality_mode: str = Form("quality")
+    quality_mode: str = Form("quality"),
+    top_category: str = Form(""),
+    outer_category: str = Form("")
 ):
     try:
         token = os.getenv("FASHN_API_KEY", "").strip()
@@ -1144,6 +983,9 @@ async def tryon_generate_look(
         if tuck_mode_normalized not in ("auto", "tucked", "untucked"):
             tuck_mode_normalized = "auto"
 
+        skip_reason = _reason_to_skip_top(outer_category, look_model_name)
+        top_hidden_under_outer = bool(skip_reason)
+
         person_content = await person_file.read()
         person_mime = person_file.content_type or "image/jpeg"
 
@@ -1159,6 +1001,10 @@ async def tryon_generate_look(
         outer_content = await outer_file.read() if outer_file is not None else None
         outer_mime = (outer_file.content_type or "image/jpeg") if outer_file is not None else None
 
+        if top_content and outer_content and top_hidden_under_outer:
+            top_content = None
+            top_mime = None
+
         cache_key = _cache_key_for_tryon_look(
             person_content,
             top_content,
@@ -1170,7 +1016,8 @@ async def tryon_generate_look(
             look_mode,
             look_generation_mode,
             base_prompt,
-            quality_mode_normalized
+            quality_mode_normalized,
+            f"{top_category.strip()}|{outer_category.strip()}"
         )
 
         async def _generate_look():
@@ -1213,7 +1060,9 @@ async def tryon_generate_look(
                     elif tuck_mode_normalized == "untucked":
                         tuck_instruction = " Leave the shirt/top untucked and relaxed over the waist."
                     top_prompt = f"{base_prompt} Replace the upper-body garment only.{tuck_instruction} Keep the face, head, hair, and lower body unchanged."
-                    top_categories = _category_candidates("top", ["tops"])
+                    top_categories = _category_candidates(
+                        "top", ["one-pieces", "auto"] if top_category.strip() in ONE_PIECE_GARMENTS else ["tops"]
+                    )
                     top_result = await _run_fashn_tryon_with_category_fallback(
                         client,
                         token,
@@ -1305,6 +1154,8 @@ async def tryon_generate_look(
                         return {"error": "Outer garment generation failed", "outer": outer_result, "steps": steps}
 
                 warning_messages = []
+                if top_hidden_under_outer and outer_image is not None:
+                    warning_messages.append(f"Верх не примерялся: {skip_reason}")
                 if shoes_image is not None:
                     if is_fast_mode:
                         steps.append(
@@ -1346,8 +1197,18 @@ async def tryon_generate_look(
             if not steps:
                 return {"error": "No garments provided (top_file, bottom_file, shoes_file, or outer_file required)"}
 
+            # Only the slots that actually ran may repaint the body; every other
+            # zone (and the background and head) comes back from the source photo.
+            changed_slots = sorted({
+                step["step"].split("_")[0]
+                for step in steps
+                if not step["result"].get("error") and step["result"].get("status") != "skipped"
+            })
+
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
-                locked_output_url = await _face_locked_output_url(output_client, person_content, current_model)
+                locked_output_url = await _face_locked_output_url(
+                    output_client, person_content, current_model, changed_slots
+                )
             response = {
                 "status": "succeeded",
                 "outputUrl": locked_output_url,

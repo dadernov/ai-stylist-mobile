@@ -13,7 +13,7 @@ python download_analysis_model.py
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Опционально для дополнительных моделей детекции позы (анализ одежды использует ONNX-модель выше):
+Опционально для детекции позы (распознавание одежды её не требует):
 
 ```bash
 pip install -r requirements-ml.txt
@@ -23,15 +23,20 @@ pip install -r requirements-ml.txt
 
 `POST /analyze` (multipart form: `file`, optional `section_hint`: `Верх`, `Низ`, `Обувь`, `Сумки`, `Верхняя одежда`).
 
-Analysis runs locally using ONNX CLIP, without torch or an external image API.
-Weights are pinned by `download_analysis_model.py`; set `AI_ANALYSIS_MODEL_DIR`
-to override the default `models/clip` directory. Legacy `AI_ENABLE_CLIP` does
-not control this endpoint. Missing weights return a partial result with
-`analysisSource: "unavailable"`, never a made-up garment category.
+Recognition runs locally on Marqo's fashion SigLIP (quantized ONNX, Apache-2.0),
+without torch or an external image API. On a benchmark of 42 labelled garment
+photos it names the right category in 93% of cases and has the right one in its
+top three every time; the general-purpose CLIP it replaced scored 76% and 93%.
 
-The installer computes `text_features.npy` once with the FP16 text model.
-Only the quantized vision model and this small feature table are loaded at
-runtime. Re-run the downloader after changing the category/prompt dictionary.
+Weights are pinned by `download_analysis_model.py`; set `AI_ANALYSIS_MODEL_DIR`
+to override the default `models/clip` directory. Missing weights return a
+partial result with `analysisSource: "unavailable"`, never a made-up category.
+
+The installer computes `text_features.npy` once with the quantized text model;
+only the vision model and that small table are loaded at runtime. The file is
+fingerprinted with the prompt set it was built from, so a stale one makes the
+server refuse to start rather than answer from mismatched prompts — re-run the
+downloader after changing the category or prompt dictionary.
 For photographs of people, the dominant colour is left unset: the foreground
 mask can include skin and other garments, not just the target item.
 

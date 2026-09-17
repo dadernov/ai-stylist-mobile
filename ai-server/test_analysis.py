@@ -72,5 +72,47 @@ class AnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(sum(score for _, score in choices), 1)
 
 
+
+class LookCacheKey(unittest.TestCase):
+    def key(self, **overrides):
+        arguments = dict(person_content=b"person", top_content=b"top", bottom_content=None,
+                         shoes_content=None, outer_content=b"outer", tuck_mode_normalized="auto",
+                         look_model_name="tryon-v1.6", look_mode="quality", look_generation_mode="",
+                         base_prompt="keep identity", quality_mode="quality", categories="Рубашка|Пуховик")
+        arguments.update(overrides)
+        return app._cache_key_for_tryon_look(**arguments)
+
+    def test_categories_change_the_result_and_the_key(self):
+        # Категории решают, запускается ли отдельный проход по верху, поэтому
+        # кадр под теми же фотографиями может отличаться — и кеш обязан это видеть.
+        self.assertNotEqual(self.key(), self.key(categories="Рубашка|Пиджак"))
+
+    def test_same_request_hits_the_same_key(self):
+        self.assertEqual(self.key(), self.key())
+
+
+class Layering(unittest.TestCase):
+    def test_closed_outerwear_hides_the_top(self):
+        self.assertIn("Пуховик", app.COVERING_OUTERWEAR)
+        self.assertIn("Пальто", app.COVERING_OUTERWEAR)
+
+    def test_open_outerwear_leaves_the_top_visible(self):
+        for category in ("Пиджак", "Бомбер", "Куртка", "Кардиган"):
+            self.assertNotIn(category, app.COVERING_OUTERWEAR)
+        self.assertEqual(app._reason_to_skip_top("Пиджак", "tryon-max"), "")
+
+    def test_closed_outerwear_skips_the_top_on_any_model(self):
+        self.assertIn("не видно", app._reason_to_skip_top("Пуховик", "tryon-max"))
+
+    def test_second_torso_pass_is_skipped_on_models_without_max(self):
+        # Живой прогон: на tryon-v1.6 шаг outer вернул тот же кадр, куртка
+        # не появилась, кредит списался. Генерируем только видимый слой.
+        self.assertIn("быстром режиме", app._reason_to_skip_top("Куртка", "tryon-v1.6"))
+
+    def test_dresses_use_the_one_piece_category(self):
+        # Как «верх» платье сажается по талии и обрезается.
+        self.assertTrue(app.ONE_PIECE_GARMENTS.issubset({"Платье", "Сарафан", "Комбинезон"}))
+        self.assertIn("one-pieces", app._category_candidates("top", ["one-pieces", "auto"]))
+
 if __name__ == '__main__':
     unittest.main()
