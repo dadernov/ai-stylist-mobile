@@ -9,13 +9,15 @@ import threading
 
 import httpx
 import numpy as np
-from fastapi import Depends, FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES
 import tryon_composite
 import access
+import accounts
 
 try:
     import mediapipe as mp
@@ -809,8 +811,37 @@ def _build_avatar_model(original_rgb: Image.Image, person_rgba: Image.Image, pos
     return avatar_rgba
 
 
+class Credentials(BaseModel):
+    login: str
+    password: str
+    displayName: str = ""
+
+
+@app.post("/auth/register")
+def auth_register(body: Credentials, _: bool = Depends(access.require_app)):
+    return accounts.register(body.login, body.password, body.displayName)
+
+
+@app.post("/auth/login")
+def auth_login(body: Credentials, _: bool = Depends(access.require_app)):
+    return accounts.login_user(body.login, body.password)
+
+
+@app.post("/auth/logout")
+def auth_logout(_: bool = Depends(access.require_app), x_session_token: str | None = Header(default=None)):
+    accounts.forget_session((x_session_token or "").strip() or None)
+    return {"status": "ok"}
+
+
+@app.get("/auth/me")
+def auth_me(login: str = Depends(access.require_account)):
+    """Приложение спрашивает это при запуске, чтобы понять, жива ли сессия."""
+    return {**(accounts.profile(login) or {"login": login, "displayName": ""}),
+            "spentToday": access.spent_today(login), "dailyQuota": access.daily_quota()}
+
+
 @app.post("/analyze")
-def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_client)):
+def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
     if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
         raise HTTPException(422, "Неизвестная категория гардероба.")
     content = file.file.read(15 * 1024 * 1024 + 1)
@@ -865,7 +896,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
 
 
 @app.post("/tryon-model")
-async def tryon_model(file: UploadFile = File(...), device: str = Depends(access.require_client)):
+async def tryon_model(file: UploadFile = File(...), device: str = Depends(access.require_account)):
     content = await file.read()
     original = Image.open(BytesIO(content)).convert("RGB")
 
@@ -892,7 +923,7 @@ async def tryon_model(file: UploadFile = File(...), device: str = Depends(access
 
 
 @app.post("/tryon-avatar")
-async def tryon_avatar(file: UploadFile = File(...), device: str = Depends(access.require_client)):
+async def tryon_avatar(file: UploadFile = File(...), device: str = Depends(access.require_account)):
     content = await file.read()
     original = Image.open(BytesIO(content)).convert("RGB")
 
@@ -917,7 +948,7 @@ async def tryon_avatar(file: UploadFile = File(...), device: str = Depends(acces
 
 @app.post("/tryon-generate")
 async def tryon_generate(person_file: UploadFile = File(...), garment_file: UploadFile = File(...),
-                         device: str = Depends(access.require_client)):
+                         device: str = Depends(access.require_account)):
     try:
         token = os.getenv("FASHN_API_KEY", "").strip()
         if not token:
@@ -970,7 +1001,7 @@ async def tryon_generate_look(
     quality_mode: str = Form("quality"),
     top_category: str = Form(""),
     outer_category: str = Form(""),
-    device: str = Depends(access.require_client)
+    device: str = Depends(access.require_account)
 ):
     try:
         token = os.getenv("FASHN_API_KEY", "").strip()

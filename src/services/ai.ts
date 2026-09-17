@@ -1,6 +1,6 @@
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { Platform } from 'react-native';
-import { getDeviceId } from './device';
+import { readStoredSession } from './auth';
 
 export type AiResult = {
   dominantColor: string | null;
@@ -59,12 +59,17 @@ export type TryOnGenerateResult = {
 export type TuckMode = 'auto' | 'tucked' | 'untucked';
 export type TryOnQualityMode = 'fast' | 'quality';
 
-// Сервер отказывает без токена приложения и идентификатора установки: платные
-// генерации больше не открыты всем подряд, а норма считается на устройство.
-const authHeaders = async (): Promise<Record<string, string>> => ({
-  ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
-  'X-Device-Id': await getDeviceId()
-});
+// Сервер отказывает без токена сборки и без живой сессии: платные генерации
+// больше не открыты всем подряд, а суточная норма считается по аккаунту.
+// Сессия читается из хранилища на каждый запрос, чтобы после входа или выхода
+// не остался заголовок от прошлого пользователя.
+const authHeaders = async (): Promise<Record<string, string>> => {
+  const session = await readStoredSession();
+  return {
+    ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
+    ...(session ? { 'X-Session-Token': session.token } : {})
+  };
+};
 
 const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 15000) => {
   const controller = new AbortController();

@@ -14,7 +14,6 @@ FASHN. До сих пор они не проверяли вызывающего 
 """
 import hmac
 import os
-import re
 import sqlite3
 import threading
 import time
@@ -22,9 +21,10 @@ from pathlib import Path
 
 from fastapi import Header, HTTPException
 
+import accounts
+
 _DB_LOCK = threading.Lock()
 _connection = None
-_DEVICE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
 
 def configured_tokens():
@@ -90,8 +90,11 @@ def token_is_known(presented: str):
     return any(hmac.compare_digest(presented_bytes, token.encode("utf-8")) for token in known)
 
 
-def require_client(authorization: str | None = Header(default=None), x_device_id: str | None = Header(default=None)):
-    """Пропускает запрос дальше и возвращает устройство, на которое списывать."""
+def require_app(authorization: str | None = Header(default=None)):
+    """Пропускает запрос от известной сборки приложения.
+
+    Этого достаточно для входа и регистрации: пользователя там ещё нет.
+    """
     known = configured_tokens()
     if not known:
         # Закрыто по умолчанию: пустой список — это не «пускать всех», а
@@ -103,12 +106,25 @@ def require_client(authorization: str | None = Header(default=None), x_device_id
         presented = authorization[7:].strip()
     if not token_is_known(presented):
         raise HTTPException(401, "Нужен действующий токен приложения.")
+    return True
 
-    device = (x_device_id or "").strip()
-    if not _DEVICE_PATTERN.match(device):
-        raise HTTPException(400, "Не передан идентификатор устройства.")
+
+def require_account(
+    authorization: str | None = Header(default=None),
+    x_session_token: str | None = Header(default=None)
+):
+    """Всё, что тратит ресурсы, требует вошедшего пользователя.
+
+    Квота считается по аккаунту, а не по устройству: переустановка приложения
+    больше не обнуляет израсходованное, а один человек не может умножить свою
+    норму, переставив приложение.
+    """
+    require_app(authorization)
+    login = accounts.session_owner((x_session_token or "").strip() or None)
+    if not login:
+        raise HTTPException(401, "Нужно войти в аккаунт.")
 
     limit = daily_quota()
-    if limit >= 0 and spent_today(device) >= limit:
+    if limit >= 0 and spent_today(login) >= limit:
         raise HTTPException(429, f"На сегодня исчерпан лимит примерок ({limit}). Попробуй завтра.")
-    return device
+    return login

@@ -7,6 +7,7 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 import access
+import accounts
 import app
 
 
@@ -20,24 +21,31 @@ class Gate(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         os.environ["AI_QUOTA_DB"] = os.path.join(self.directory.name, "quota.sqlite3")
+        os.environ["AI_ACCOUNTS_DB"] = os.path.join(self.directory.name, "accounts.sqlite3")
         os.environ["AI_CLIENT_TOKENS"] = "good-token, second-token"
         os.environ["AI_DEVICE_DAILY_QUOTA"] = "3"
         access.reset_state_for_tests()
+        accounts.reset_state_for_tests()
+        self.session = accounts.register("masha", "very-long-password")["token"]
 
     def tearDown(self):
         access.reset_state_for_tests()
+        accounts.reset_state_for_tests()
         self.directory.cleanup()
-        for name in ("AI_QUOTA_DB", "AI_CLIENT_TOKENS", "AI_DEVICE_DAILY_QUOTA"):
+        for name in ("AI_QUOTA_DB", "AI_ACCOUNTS_DB", "AI_CLIENT_TOKENS", "AI_DEVICE_DAILY_QUOTA"):
             os.environ.pop(name, None)
 
-    def call(self, token="good-token", device="device-abc123"):
-        return access.require_client(f"Bearer {token}" if token else None, device)
+    DEFAULT = object()
 
-    def test_known_token_passes(self):
-        self.assertEqual(self.call(), "device-abc123")
-        self.assertEqual(self.call(token="second-token"), "device-abc123")
+    def call(self, token="good-token", session=DEFAULT):
+        return access.require_account(f"Bearer {token}" if token else None,
+                                      self.session if session is self.DEFAULT else session)
 
-    def test_unknown_token_is_rejected(self):
+    def test_known_token_and_session_pass(self):
+        self.assertEqual(self.call(), "masha")
+        self.assertEqual(self.call(token="second-token"), "masha")
+
+    def test_unknown_app_token_is_rejected(self):
         with self.assertRaises(HTTPException) as raised:
             self.call(token="guessed")
         self.assertEqual(raised.exception.status_code, 401)
@@ -50,7 +58,7 @@ class Gate(unittest.TestCase):
             self.call(token="подобранный")
         self.assertEqual(raised.exception.status_code, 401)
 
-    def test_missing_header_is_rejected(self):
+    def test_missing_app_token_is_rejected(self):
         with self.assertRaises(HTTPException) as raised:
             self.call(token=None)
         self.assertEqual(raised.exception.status_code, 401)
@@ -63,25 +71,32 @@ class Gate(unittest.TestCase):
             self.call()
         self.assertEqual(raised.exception.status_code, 503)
 
-    def test_device_identifier_is_required(self):
-        for value in ("", "  ", "короткий", "with space", "x" * 200):
+    def test_work_requires_a_signed_in_user(self):
+        for value in (None, "", "выдуманный-токен"):
             with self.assertRaises(HTTPException) as raised:
-                self.call(device=value)
-            self.assertEqual(raised.exception.status_code, 400, value)
+                self.call(session=value)
+            self.assertEqual(raised.exception.status_code, 401, value)
 
-    def test_quota_limits_the_damage_from_a_leaked_token(self):
+    def test_app_token_alone_opens_only_the_login_endpoints(self):
+        self.assertTrue(access.require_app("Bearer good-token"))
+        with self.assertRaises(HTTPException):
+            access.require_app("Bearer guessed")
+
+    def test_quota_is_counted_per_account(self):
         for _ in range(3):
-            access.charge("device-abc123")
+            access.charge("masha")
         with self.assertRaises(HTTPException) as raised:
             self.call()
         self.assertEqual(raised.exception.status_code, 429)
-        # Соседнее устройство не страдает от чужого перерасхода.
-        self.assertEqual(self.call(device="device-other1"), "device-other1")
+        # Переустановка приложения больше не обнуляет израсходованное: счёт
+        # ведётся по аккаунту, а новый аккаунт — это уже другой человек.
+        other = accounts.register("petya", "another-long-password")["token"]
+        self.assertEqual(self.call(session=other), "petya")
 
     def test_charge_accumulates_and_survives_a_restart(self):
-        access.charge("device-abc123", 2)
+        access.charge("masha", 2)
         access.reset_state_for_tests()
-        self.assertEqual(access.spent_today("device-abc123"), 2)
+        self.assertEqual(access.spent_today("masha"), 2)
 
 
 class Uploads(unittest.IsolatedAsyncioTestCase):

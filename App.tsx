@@ -11,6 +11,7 @@ import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { readStoredSession, signOut, verifySession, Session } from './src/services/auth';
 import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, useT } from './src/constants/i18n';
@@ -30,10 +31,9 @@ import { PreferencesScreen } from './src/screens/PreferencesScreen';
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
 type ProfileState = {
-  isAuthenticated: boolean;
   displayName: string;
-  contact: string;
-  authMethod: string;
+  /** Остался от входа по SMS: по нему видно, что человеку пора завести логин. */
+  authMethod?: string;
   avatarUri?: string;
   modelUri?: string;
   gender?: Gender;
@@ -225,10 +225,12 @@ function AppContent() {
   const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
   const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder'>('fitting');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
-  const [isAuthenticated, setAuthenticated] = useState(false);
+  // Вошедший пользователь — это живая сессия на сервере, а не флаг в профиле:
+  // раньше «я авторизован» хранилось локально и означало ровно ничего.
+  const [session, setSession] = useState<Session | null>(null);
+  const [wasPhoneUser, setWasPhoneUser] = useState(false);
+  const isAuthenticated = Boolean(session);
   const [displayName, setDisplayName] = useState('Гость');
-  const [contact, setContact] = useState('');
-  const [authMethod, setAuthMethod] = useState('Не выбран');
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
   const [gender, setGender] = useState<Gender>();
@@ -296,11 +298,20 @@ function AppContent() {
 
       setOnboardingVisible(onboarding.value !== 'true');
 
+      const stored = await readStoredSession();
+      if (stored) {
+        const live = await verifySession(stored);
+        if (live) {
+          setSession(live);
+          if (live.displayName) setDisplayName(live.displayName);
+        }
+      }
+
       if (profile.value) {
-        setAuthenticated(profile.value.isAuthenticated);
         setDisplayName(profile.value.displayName || 'Гость');
-        setContact(profile.value.contact || '');
-        setAuthMethod(profile.value.authMethod || 'Не выбран');
+        // Прежний вход был по SMS. Такому человеку нужно завести логин, и на
+        // экране входа это объясняется отдельно, иначе просьба выглядит сбоем.
+        setWasPhoneUser(profile.value.authMethod === 'Телефон');
         setAvatarUri(reanchorPhoto(profile.value.avatarUri));
         setModelUri(reanchorPhoto(profile.value.modelUri));
         setGender(isGender(profile.value.gender) ? profile.value.gender : undefined);
@@ -421,17 +432,14 @@ function AppContent() {
 
   useEffect(() => {
     const profile: ProfileState = {
-      isAuthenticated,
       displayName,
-      contact,
-      authMethod,
       avatarUri,
       modelUri,
       gender,
       beautyAdvice
     };
     persist(STORAGE_KEYS.profile, profile, 'профиль');
-  }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri, modelUri, gender, beautyAdvice]);
+  }, [isReady, displayName, avatarUri, modelUri, gender, beautyAdvice]);
 
   useEffect(() => {
     persist(STORAGE_KEYS.wardrobe, items, 'гардероб');
@@ -535,8 +543,8 @@ function AppContent() {
     return (
       <ProfileScreen
         displayName={displayName}
-        contact={contact}
-        authMethod={authMethod}
+        contact={session?.login || ''}
+        authMethod={'Логин и пароль'}
         avatarUri={avatarUri}
         modelUri={modelUri}
         favoritesCount={favoriteLooks.length}
@@ -558,10 +566,10 @@ function AppContent() {
         }}
         onShowGuide={() => setOnboardingVisible(true)}
         onLogout={() => {
-          setAuthenticated(false);
+          void signOut(session);
+          setSession(null);
+          setWasPhoneUser(false);
           setDisplayName('Гость');
-          setContact('');
-          setAuthMethod('Не выбран');
           setAvatarUri(undefined);
           setModelUri(undefined);
           setGender(undefined);
@@ -594,11 +602,11 @@ function AppContent() {
       <>
         <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
           <AuthScreen
-            onLogin={(name, phone, method) => {
-              setAuthenticated(true);
-              setDisplayName(name);
-              setContact(phone);
-              setAuthMethod(method);
+            returning={wasPhoneUser}
+            onAuthenticated={(next) => {
+              setSession(next);
+              if (next.displayName) setDisplayName(next.displayName);
+              setWasPhoneUser(false);
             }}
           />
         </SafeAreaView>
