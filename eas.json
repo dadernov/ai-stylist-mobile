@@ -8,21 +8,24 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io",
+        "EXPO_PUBLIC_AI_CLIENT_TOKEN": "$EXPO_PUBLIC_AI_CLIENT_TOKEN"
       },
       "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io",
+        "EXPO_PUBLIC_AI_CLIENT_TOKEN": "$EXPO_PUBLIC_AI_CLIENT_TOKEN"
       },
       "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io"
+        "EXPO_PUBLIC_AI_BASE_URL": "https://62.60.238.183.nip.io",
+        "EXPO_PUBLIC_AI_CLIENT_TOKEN": "$EXPO_PUBLIC_AI_CLIENT_TOKEN"
       },
       "channel": "production"
     }

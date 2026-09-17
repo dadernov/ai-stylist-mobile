@@ -1,5 +1,6 @@
-import { AI_BASE_URL } from '../constants/ai';
+import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { Platform } from 'react-native';
+import { getDeviceId } from './device';
 
 export type AiResult = {
   dominantColor: string | null;
@@ -58,6 +59,13 @@ export type TryOnGenerateResult = {
 export type TuckMode = 'auto' | 'tucked' | 'untucked';
 export type TryOnQualityMode = 'fast' | 'quality';
 
+// Сервер отказывает без токена приложения и идентификатора установки: платные
+// генерации больше не открыты всем подряд, а норма считается на устройство.
+const authHeaders = async (): Promise<Record<string, string>> => ({
+  ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
+  'X-Device-Id': await getDeviceId()
+});
+
 const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs = 15000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -103,6 +111,7 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/analyze', {
     method: 'POST',
+    headers: await authHeaders(),
     body: form
   }, 90000);
 
@@ -130,6 +139,7 @@ export async function analyzeTryOnModel(uri: string): Promise<TryOnModelResult> 
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/tryon-model', {
     method: 'POST',
+    headers: await authHeaders(),
     body: form
   }, 45000);
 
@@ -151,6 +161,7 @@ export async function analyzeTryOnAvatar(uri: string): Promise<TryOnModelResult>
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/tryon-avatar', {
     method: 'POST',
+    headers: await authHeaders(),
     body: form
   }, 45000);
 
@@ -178,6 +189,7 @@ export async function analyzeTryOnGenerate(personUri: string, garmentUri: string
     AI_BASE_URL + '/tryon-generate',
     {
       method: 'POST',
+      headers: await authHeaders(),
       body: form
     },
     260000
@@ -254,6 +266,7 @@ export async function analyzeTryOnGenerateLook(
     AI_BASE_URL + '/tryon-generate-look',
     {
       method: 'POST',
+      headers: await authHeaders(),
       body: form
     },
     timeoutMs

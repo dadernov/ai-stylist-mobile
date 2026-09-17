@@ -3,13 +3,28 @@ Description=Wardrobe AI server
 After=network.target
 
 [Service]
-User=root
+# Сервис ходит в интернет и принимает файлы от кого угодно — от root его
+# запускать нечем оправдать. Пользователя заводит install.sh, он же отдаёт ему
+# каталог приложения.
+User=wardrobe
+Group=wardrobe
 WorkingDirectory=__APP_DIR__
 EnvironmentFile=__ENV_FILE__
 Environment="PATH=__APP_DIR__/.venv/bin"
+# Кеши моделей — внутри каталога приложения: у системного пользователя нет
+# домашней папки, а rembg и huggingface по умолчанию пишут именно в неё.
+Environment="U2NET_HOME=__APP_DIR__/.u2net"
+Environment="HF_HOME=__APP_DIR__/.hf"
 ExecStart=__APP_DIR__/.venv/bin/uvicorn app:app --host 127.0.0.1 --port __PORT__
 Restart=always
 RestartSec=3
+
+# Ограничения на случай, если в сервис всё же кто-то попадёт.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=__APP_DIR__
 
 [Install]
 WantedBy=multi-user.target

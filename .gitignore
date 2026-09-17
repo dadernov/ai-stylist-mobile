@@ -7,3 +7,7 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 ai-server/models/
+
+# Локальные переменные сборки: в них лежит токен AI-сервера
+.env
+.env.local

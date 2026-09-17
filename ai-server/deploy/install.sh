@@ -25,9 +25,16 @@ if command -v apt-get >/dev/null; then
   apt-get install -y -qq python3 python3-venv python3-pip curl ca-certificates
 fi
 
-# 2. Код
+# 2. Пользователь сервиса и код
+# Системный пользователь без домашней папки и без оболочки: сервису нужен
+# только свой каталог.
+SERVICE_USER="${SERVICE_USER:-wardrobe}"
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+  useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
+fi
+
 mkdir -p "$APP_DIR"
-for f in app.py clothing_analysis.py tryon_composite.py download_analysis_model.py requirements.txt README.md; do
+for f in app.py access.py clothing_analysis.py tryon_composite.py download_analysis_model.py requirements.txt README.md; do
   [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP_DIR/$f"
 done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"
@@ -44,7 +51,10 @@ python3 -m venv "$APP_DIR/.venv"
 # 4. Прогрев моделей: rembg (u2net.onnx, ~170 МБ) скачивается ОДИН раз здесь,
 #    чтобы первый запрос пользователя не ждал загрузку.
 echo "==> прогрев моделей"
-U2NET_HOME="${U2NET_HOME:-$HOME/.u2net}" "$APP_DIR/.venv/bin/python" - <<'PY'
+# Тот же каталог, что и в systemd-юните: иначе прогретая модель осталась бы
+# в домашней папке root, а сервису под своим пользователем пришлось бы качать
+# её заново на первом запросе.
+U2NET_HOME="$APP_DIR/.u2net" "$APP_DIR/.venv/bin/python" - <<'PY'
 from PIL import Image
 from io import BytesIO
 from rembg import remove
@@ -52,6 +62,10 @@ buf = BytesIO(); Image.new("RGB", (64, 64), (120, 90, 60)).save(buf, format="PNG
 remove(buf.getvalue())
 print("rembg ok")
 PY
+# 4b. Права: каталог целиком отдаётся пользователю сервиса, иначе он не сможет
+# ни дочитать модели, ни вести учёт квот.
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
+
 # 5. systemd
 if [ "$INSTALL_SYSTEMD" = "1" ]; then
   [ -f "$ENV_FILE" ] || { cp "$SRC_DIR/deploy/env.example" "$ENV_FILE"; chmod 600 "$ENV_FILE"; \

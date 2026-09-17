@@ -9,12 +9,13 @@ import threading
 
 import httpx
 import numpy as np
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import Depends, FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES
 import tryon_composite
+import access
 
 try:
     import mediapipe as mp
@@ -33,12 +34,16 @@ except Exception:
 
 app = FastAPI()
 
+# Мобильный клиент не браузер и Origin не присылает, поэтому по умолчанию не
+# открываем API ни одному сайту. Нужен веб-клиент — перечисли его в
+# AI_ALLOWED_ORIGINS. Куки не используются, значит и credentials не нужны.
+_allowed_origins = [origin.strip() for origin in os.getenv("AI_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Device-Id"]
 )
 
 # Застёгнутый слой полностью скрывает то, что под ним; открытый — нет.
@@ -208,6 +213,32 @@ async def _face_locked_output_url(
     except Exception as exc:
         print(f"Inline output failed: {type(exc).__name__}: {exc}")
         return output_url
+
+
+MAX_UPLOAD_BYTES = _env_int("AI_MAX_UPLOAD_BYTES", 15 * 1024 * 1024)
+
+
+async def read_upload(upload: UploadFile | None, field: str):
+    """Читает файл, отказывая слишком большому и не картинке.
+
+    Ограничение нужно и на платных эндпоинтах, а не только в анализе: без него
+    один запрос может занять память сервера, которой на этой машине и так мало.
+    Тип проверяется по содержимому, а не по имени или заголовку — их клиент
+    выбирает сам.
+    """
+    if upload is None:
+        return None, None
+    content = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if not content:
+        raise HTTPException(422, f"Пустой файл в поле {field}.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Файл в поле {field} больше {MAX_UPLOAD_BYTES // (1024 * 1024)} МБ.")
+    try:
+        probe = Image.open(BytesIO(content))
+        probe.verify()
+    except Exception:
+        raise HTTPException(422, f"Файл в поле {field} не похож на изображение.")
+    return content, upload.content_type or "image/jpeg"
 
 
 def _prepare_image_for_analysis(content: bytes):
@@ -779,7 +810,7 @@ def _build_avatar_model(original_rgb: Image.Image, person_rgba: Image.Image, pos
 
 
 @app.post("/analyze")
-def analyze(file: UploadFile = File(...), section_hint: str = Form("")):
+def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_client)):
     if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
         raise HTTPException(422, "Неизвестная категория гардероба.")
     content = file.file.read(15 * 1024 * 1024 + 1)
@@ -834,7 +865,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form("")):
 
 
 @app.post("/tryon-model")
-async def tryon_model(file: UploadFile = File(...)):
+async def tryon_model(file: UploadFile = File(...), device: str = Depends(access.require_client)):
     content = await file.read()
     original = Image.open(BytesIO(content)).convert("RGB")
 
@@ -861,7 +892,7 @@ async def tryon_model(file: UploadFile = File(...)):
 
 
 @app.post("/tryon-avatar")
-async def tryon_avatar(file: UploadFile = File(...)):
+async def tryon_avatar(file: UploadFile = File(...), device: str = Depends(access.require_client)):
     content = await file.read()
     original = Image.open(BytesIO(content)).convert("RGB")
 
@@ -885,7 +916,8 @@ async def tryon_avatar(file: UploadFile = File(...)):
 
 
 @app.post("/tryon-generate")
-async def tryon_generate(person_file: UploadFile = File(...), garment_file: UploadFile = File(...)):
+async def tryon_generate(person_file: UploadFile = File(...), garment_file: UploadFile = File(...),
+                         device: str = Depends(access.require_client)):
     try:
         token = os.getenv("FASHN_API_KEY", "").strip()
         if not token:
@@ -899,10 +931,8 @@ async def tryon_generate(person_file: UploadFile = File(...), garment_file: Uplo
             "Preserve the exact same person. Keep face, head, hair, hairline, eyes, nose, mouth, jawline, facial expression, glasses, skin tone, body pose, camera angle, and identity unchanged. Do not create a new face. Do not beautify, retouch, age, slim, reshape, redraw, crop, or alter the face or head. Change only the clothing item being tried on."
         ).strip()
 
-        person_content = await person_file.read()
-        garment_content = await garment_file.read()
-        person_mime = person_file.content_type or "image/jpeg"
-        garment_mime = garment_file.content_type or "image/jpeg"
+        person_content, person_mime = await read_upload(person_file, "person_file")
+        garment_content, garment_mime = await read_upload(garment_file, "garment_file")
 
         max_side = _env_int("FASHN_IMAGE_MAX_SIDE", 1800)
         jpeg_quality = _env_int("FASHN_JPEG_QUALITY", 90)
@@ -922,6 +952,7 @@ async def tryon_generate(person_file: UploadFile = File(...), garment_file: Uplo
             )
             if result.get("outputUrl"):
                 result["outputUrl"] = await _face_locked_output_url(client, person_content, result["outputUrl"], ["unknown"])
+                access.charge(device)
             return result
     except Exception as exc:
         return {"error": f"tryon-generate exception: {type(exc).__name__}: {str(exc)}"}
@@ -938,7 +969,8 @@ async def tryon_generate_look(
     compare_mode: str = Form("false"),
     quality_mode: str = Form("quality"),
     top_category: str = Form(""),
-    outer_category: str = Form("")
+    outer_category: str = Form(""),
+    device: str = Depends(access.require_client)
 ):
     try:
         token = os.getenv("FASHN_API_KEY", "").strip()
@@ -986,20 +1018,11 @@ async def tryon_generate_look(
         skip_reason = _reason_to_skip_top(outer_category, look_model_name)
         top_hidden_under_outer = bool(skip_reason)
 
-        person_content = await person_file.read()
-        person_mime = person_file.content_type or "image/jpeg"
-
-        top_content = await top_file.read() if top_file is not None else None
-        top_mime = (top_file.content_type or "image/jpeg") if top_file is not None else None
-
-        bottom_content = await bottom_file.read() if bottom_file is not None else None
-        bottom_mime = (bottom_file.content_type or "image/jpeg") if bottom_file is not None else None
-
-        shoes_content = await shoes_file.read() if shoes_file is not None else None
-        shoes_mime = (shoes_file.content_type or "image/jpeg") if shoes_file is not None else None
-
-        outer_content = await outer_file.read() if outer_file is not None else None
-        outer_mime = (outer_file.content_type or "image/jpeg") if outer_file is not None else None
+        person_content, person_mime = await read_upload(person_file, "person_file")
+        top_content, top_mime = await read_upload(top_file, "top_file")
+        bottom_content, bottom_mime = await read_upload(bottom_file, "bottom_file")
+        shoes_content, shoes_mime = await read_upload(shoes_file, "shoes_file")
+        outer_content, outer_mime = await read_upload(outer_file, "outer_file")
 
         if top_content and outer_content and top_hidden_under_outer:
             top_content = None
@@ -1240,6 +1263,10 @@ async def tryon_generate_look(
         if result.get("status") == "succeeded" and result.get("outputUrl"):
             async with _TRYON_LOOK_LOCK:
                 _set_cached_tryon_look(cache_key, result)
+            # Сюда попадают только те, для кого генерация реально выполнялась:
+            # ответ из кеша вернулся выше и денег не стоил. Списываем по числу
+            # проходов — образ из четырёх вещей дороже одной футболки.
+            access.charge(device, len([step for step in result.get("steps", []) if step["result"].get("outputUrl")]) or 1)
 
         return result
     except Exception as exc:
