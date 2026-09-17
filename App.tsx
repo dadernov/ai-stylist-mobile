@@ -15,6 +15,8 @@ import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme'
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, useT } from './src/constants/i18n';
 import { WardrobeItem } from './src/data/mock';
+import { loadJson, loadRaw, saveJson } from './src/services/storage';
+import { persistPhoto, photoDirectory, reanchorPhoto, removeUnusedPhotos } from './src/services/photos';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { PrimaryButton } from './src/components/ui/PrimaryButton';
@@ -232,6 +234,10 @@ function AppContent() {
   const [gender, setGender] = useState<Gender>();
   const [beautyAdvice, setBeautyAdvice] = useState(false);
   const [items, setItems] = useState<WardrobeItem[]>([]);
+  // Ключи, которые не удалось прочитать: в них запрещено писать, иначе
+  // состояние по умолчанию затрёт данные, которые, возможно, ещё спасаемы.
+  const unreadableKeys = useRef<Set<string>>(new Set());
+  const reportedSaveFailures = useRef<Set<string>>(new Set());
   const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
   const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
   const [lastContext, setLastContext] = useState<{ style: string; event: string; weather: string }>({
@@ -263,74 +269,157 @@ function AppContent() {
 
   useEffect(() => {
     const hydrate = async () => {
-      try {
-        const [profileRaw, itemsRaw, favoritesRaw, contextRaw, looksRaw, savedRaw, onboardingSeenRaw] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.profile),
-          AsyncStorage.getItem(STORAGE_KEYS.wardrobe),
-          AsyncStorage.getItem(STORAGE_KEYS.favorites),
-          AsyncStorage.getItem(STORAGE_KEYS.lastContext),
-          AsyncStorage.getItem(STORAGE_KEYS.lastLooks),
-          AsyncStorage.getItem(STORAGE_KEYS.savedLooks),
-          AsyncStorage.getItem(STORAGE_KEYS.onboardingSeen)
-        ]);
+      // Каждый ключ читается сам по себе: испорченная запись в одном не должна
+      // ни обрывать чтение остальных, ни приводить к тому, что состояние по
+      // умолчанию запишется поверх целых данных.
+      const [profile, wardrobe, favorites, context, looks, saved, onboarding] = await Promise.all([
+        loadJson<ProfileState>(STORAGE_KEYS.profile),
+        loadJson<WardrobeItem[]>(STORAGE_KEYS.wardrobe),
+        loadJson<GeneratedLook[]>(STORAGE_KEYS.favorites),
+        loadJson<{ style: string; event: string; weather: string }>(STORAGE_KEYS.lastContext),
+        loadJson<GeneratedLook[]>(STORAGE_KEYS.lastLooks),
+        loadJson<SavedLook[]>(STORAGE_KEYS.savedLooks),
+        loadRaw(STORAGE_KEYS.onboardingSeen)
+      ]);
 
-        setOnboardingVisible(onboardingSeenRaw !== 'true');
+      const damaged: Array<[string, { failed: boolean }]> = [
+        [STORAGE_KEYS.profile, profile],
+        [STORAGE_KEYS.wardrobe, wardrobe],
+        [STORAGE_KEYS.favorites, favorites],
+        [STORAGE_KEYS.lastContext, context],
+        [STORAGE_KEYS.lastLooks, looks],
+        [STORAGE_KEYS.savedLooks, saved]
+      ];
+      damaged.forEach(([key, result]) => {
+        if (result.failed) unreadableKeys.current.add(key);
+      });
 
-        if (profileRaw) {
-          const profile: ProfileState = JSON.parse(profileRaw);
-          setAuthenticated(profile.isAuthenticated);
-          setDisplayName(profile.displayName || 'Гость');
-          setContact(profile.contact || '');
-          setAuthMethod(profile.authMethod || 'Не выбран');
-          setAvatarUri(profile.avatarUri);
-          setModelUri(profile.modelUri);
-          setGender(isGender(profile.gender) ? profile.gender : undefined);
-          setBeautyAdvice(profile.beautyAdvice === true);
-        }
+      setOnboardingVisible(onboarding.value !== 'true');
 
-        if (itemsRaw) {
-          const storedItems: WardrobeItem[] = JSON.parse(itemsRaw);
-          const cleanedItems = (Array.isArray(storedItems) ? storedItems : []).filter(
-            (item) => !isLegacyDefaultItem(item)
-          );
-          setItems(cleanedItems);
-        }
+      if (profile.value) {
+        setAuthenticated(profile.value.isAuthenticated);
+        setDisplayName(profile.value.displayName || 'Гость');
+        setContact(profile.value.contact || '');
+        setAuthMethod(profile.value.authMethod || 'Не выбран');
+        setAvatarUri(reanchorPhoto(profile.value.avatarUri));
+        setModelUri(reanchorPhoto(profile.value.modelUri));
+        setGender(isGender(profile.value.gender) ? profile.value.gender : undefined);
+        setBeautyAdvice(profile.value.beautyAdvice === true);
+      }
 
-        if (favoritesRaw) {
-          const storedFavorites: GeneratedLook[] = JSON.parse(favoritesRaw);
-          const normalizedFavorites = (Array.isArray(storedFavorites) ? storedFavorites : []).map(
-            normalizeGeneratedLook
-          );
-          setFavoriteLooks(normalizedFavorites);
-        }
+      const storedItems = Array.isArray(wardrobe.value) ? wardrobe.value : [];
+      const cleanedItems = storedItems.filter((item) => !isLegacyDefaultItem(item)).map((item) => ({
+        ...item,
+        imageUri: reanchorPhoto(item.imageUri),
+        sourceImageUri: reanchorPhoto(item.sourceImageUri)
+      }));
+      if (wardrobe.value) setItems(cleanedItems);
 
-        if (contextRaw) {
-          const storedContext: { style: string; event: string; weather: string } = JSON.parse(contextRaw);
-          setLastContext(storedContext);
-        }
+      if (favorites.value) {
+        setFavoriteLooks((Array.isArray(favorites.value) ? favorites.value : []).map(normalizeGeneratedLook));
+      }
+      if (context.value) setLastContext(context.value);
+      if (looks.value) {
+        setLastLooks((Array.isArray(looks.value) ? looks.value : []).map(normalizeGeneratedLook));
+      }
+      if (saved.value) {
+        setSavedLooks((Array.isArray(saved.value) ? saved.value : []).map(normalizeSavedLook));
+      }
 
-        if (looksRaw) {
-          const storedLooks: GeneratedLook[] = JSON.parse(looksRaw);
-          const normalized = (Array.isArray(storedLooks) ? storedLooks : []).map(normalizeGeneratedLook);
-          setLastLooks(normalized);
-        }
+      if (unreadableKeys.current.size) {
+        showToast('Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.');
+      }
+      setReady(true);
 
-        if (savedRaw) {
-          const storedSaved: SavedLook[] = JSON.parse(savedRaw);
-          setSavedLooks((Array.isArray(storedSaved) ? storedSaved : []).map(normalizeSavedLook));
-        }
-      } catch (error) {
-        console.warn('Failed to load local state', error);
-      } finally {
-        setReady(true);
+      // Файлы, на которые больше никто не ссылается, удаляются один раз при
+      // запуске — иначе уборку пришлось бы дублировать в каждом месте, откуда
+      // вещь можно удалить.
+      const referenced = [
+        ...cleanedItems.flatMap((item) => [item.imageUri, item.sourceImageUri]),
+        reanchorPhoto(profile.value?.avatarUri),
+        reanchorPhoto(profile.value?.modelUri)
+      ];
+      if (!unreadableKeys.current.has(STORAGE_KEYS.wardrobe)) {
+        removeUnusedPhotos(referenced).catch((error) => console.warn('Failed to clean photo folder', error));
+      }
+
+      // Перенос для тех, кто уже пользуется приложением: их фото лежат в
+      // AsyncStorage как base64 и занимают там всё место. Разово переписываем
+      // такие вещи файлами — иначе лимит хранилища остаётся исчерпанным.
+      if (cleanedItems.some((item) => item.imageUri?.startsWith('data:') || item.sourceImageUri?.startsWith('data:'))) {
+        void movePhotosToFiles(cleanedItems);
+      }
+      const legacyAvatar = profile.value?.avatarUri;
+      if (legacyAvatar?.startsWith('data:')) {
+        storeProfilePhoto(legacyAvatar, (stored) => setAvatarUri((current) => (current === legacyAvatar ? stored : current)));
+      }
+      const legacyModel = profile.value?.modelUri;
+      if (legacyModel?.startsWith('data:')) {
+        storeProfilePhoto(legacyModel, (stored) => setModelUri((current) => (current === legacyModel ? stored : current)));
       }
     };
 
-    hydrate();
+    hydrate().catch((error) => {
+      console.warn('Failed to load local state', error);
+      setReady(true);
+    });
   }, []);
 
+  // Молчаливая потеря записи — это потерянная вещь, о которой пользователь
+  // узнает только после перезапуска. Поэтому о неудаче сообщаем, но один раз
+  // на ключ: иначе каждое нажатие вызывало бы новый тост.
+  const persist = (key: string, value: unknown, label: string) => {
+    if (!isReady || unreadableKeys.current.has(key)) return;
+    saveJson(key, value)
+      .then(() => reportedSaveFailures.current.delete(key))
+      .catch((error) => {
+        console.warn(`Failed to save ${key}`, error);
+        if (reportedSaveFailures.current.has(key)) return;
+        reportedSaveFailures.current.add(key);
+        showToast(`Не удалось сохранить ${label}. Освободи место на устройстве.`);
+      });
+  };
+
+  // Фото приходят с экранов как data-URL (вырез от сервера) или как путь в
+  // кеше ImagePicker. И то и другое нельзя хранить: первое раздувает
+  // AsyncStorage до отказа, второе система вправе удалить в любой момент.
+  // Поэтому состояние сначала обновляется как есть — чтобы картинка появилась
+  // сразу, — а файл переезжает к нам следом, и путь подменяется.
+  const movePhotosToFiles = async (next: WardrobeItem[]) => {
+    for (const item of next) {
+      const updates: Partial<WardrobeItem> = {};
+      try {
+        if (item.imageUri && !item.imageUri.startsWith(photoDirectory)) {
+          updates.imageUri = await persistPhoto(item.imageUri);
+        }
+        if (item.sourceImageUri && !item.sourceImageUri.startsWith(photoDirectory)) {
+          updates.sourceImageUri = await persistPhoto(item.sourceImageUri);
+        }
+      } catch (error) {
+        console.warn('Failed to store item photo', error);
+        continue;
+      }
+      if (!Object.keys(updates).length) continue;
+      setItems((current) =>
+        current.map((candidate) => (candidate.id === item.id ? { ...candidate, ...updates } : candidate))
+      );
+    }
+  };
+
+  const handleItemsChange = (next: WardrobeItem[]) => {
+    setItems(next);
+    void movePhotosToFiles(next);
+  };
+
+  const storeProfilePhoto = (uri: string, apply: (stored: string) => void) => {
+    persistPhoto(uri)
+      .then((stored) => {
+        if (stored && stored !== uri) apply(stored);
+      })
+      .catch((error) => console.warn('Failed to store profile photo', error));
+  };
+
   useEffect(() => {
-    if (!isReady) return;
     const profile: ProfileState = {
       isAuthenticated,
       displayName,
@@ -341,44 +430,27 @@ function AppContent() {
       gender,
       beautyAdvice
     };
-    AsyncStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile)).catch((error) =>
-      console.warn('Failed to save profile', error)
-    );
+    persist(STORAGE_KEYS.profile, profile, 'профиль');
   }, [isReady, isAuthenticated, displayName, contact, authMethod, avatarUri, modelUri, gender, beautyAdvice]);
 
   useEffect(() => {
-    if (!isReady) return;
-    AsyncStorage.setItem(STORAGE_KEYS.wardrobe, JSON.stringify(items)).catch((error) =>
-      console.warn('Failed to save wardrobe', error)
-    );
+    persist(STORAGE_KEYS.wardrobe, items, 'гардероб');
   }, [isReady, items]);
 
   useEffect(() => {
-    if (!isReady) return;
-    AsyncStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favoriteLooks)).catch((error) =>
-      console.warn('Failed to save favorites', error)
-    );
+    persist(STORAGE_KEYS.favorites, favoriteLooks, 'избранное');
   }, [isReady, favoriteLooks]);
 
   useEffect(() => {
-    if (!isReady) return;
-    AsyncStorage.setItem(STORAGE_KEYS.lastContext, JSON.stringify(lastContext)).catch((error) =>
-      console.warn('Failed to save last context', error)
-    );
+    persist(STORAGE_KEYS.lastContext, lastContext, 'настройки подбора');
   }, [isReady, lastContext]);
 
   useEffect(() => {
-    if (!isReady) return;
-    AsyncStorage.setItem(STORAGE_KEYS.lastLooks, JSON.stringify(lastLooks)).catch((error) =>
-      console.warn('Failed to save last looks', error)
-    );
+    persist(STORAGE_KEYS.lastLooks, lastLooks, 'подобранные образы');
   }, [isReady, lastLooks]);
 
   useEffect(() => {
-    if (!isReady) return;
-    AsyncStorage.setItem(STORAGE_KEYS.savedLooks, JSON.stringify(savedLooks)).catch((error) =>
-      console.warn('Failed to save saved looks', error)
-    );
+    persist(STORAGE_KEYS.savedLooks, savedLooks, 'сохранённые образы');
   }, [isReady, savedLooks]);
 
   useEffect(() => {
@@ -411,7 +483,7 @@ function AppContent() {
     const tryOnModelUri = modelUri || avatarUri;
     const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
-      return <WardrobeScreen items={items} onItemsChange={setItems} onTryOn={item => { setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
+      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} onTryOn={item => { setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     }
     if (activeTab === 'builder')
       return (
@@ -475,8 +547,15 @@ function AppContent() {
         onAvatarChange={(uri) => {
           setAvatarUri(uri);
           setModelUri((prev) => prev || uri);
+          storeProfilePhoto(uri, (stored) => {
+            setAvatarUri((current) => (current === uri ? stored : current));
+            setModelUri((current) => (current === uri ? stored : current));
+          });
         }}
-        onModelChange={setModelUri}
+        onModelChange={(uri) => {
+          setModelUri(uri);
+          storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
+        }}
         onShowGuide={() => setOnboardingVisible(true)}
         onLogout={() => {
           setAuthenticated(false);

@@ -123,9 +123,6 @@ class Compose(unittest.TestCase):
         self.assertEqual(np.asarray(result)[10, 10][1], 200)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class FramingGuard(unittest.TestCase):
     """Zone freezing only makes sense when the whole body is in frame."""
@@ -158,3 +155,6 @@ class FramingGuard(unittest.TestCase):
         mask = np.asarray(build_keep_mask((400, 800), alpha, alpha, ["top"]))
         self.assertLess(mask[700, 200], 60)
         self.assertGreater(mask[10, 10], 200)
+
+if __name__ == "__main__":
+    unittest.main()
