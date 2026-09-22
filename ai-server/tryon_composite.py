@@ -20,6 +20,8 @@ from PIL import Image, ImageDraw, ImageFilter
 SLOT_ZONES = {
     "top": (0.0, 0.72),
     "outer": (0.0, 0.92),
+    "long_outer": (0.0, 1.0),
+    "one_piece": (0.0, 1.0),
     "bottom": (0.30, 1.0),
     "shoes": (0.72, 1.0),
 }
@@ -91,16 +93,11 @@ def _feather(mask: Image.Image, radius: float):
     return mask.filter(ImageFilter.GaussianBlur(radius=max(1.0, radius)))
 
 
-def _grow(mask: Image.Image, pixels: int):
-    if pixels <= 0:
-        return mask
-    return mask.filter(ImageFilter.MaxFilter(size=pixels * 2 + 1))
-
-
-def build_keep_mask(size, original_alpha, generated_alpha, changed_slots):
+def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protected_heads=()):
     """White where the original photo must win over the generated image."""
     width, height = size
     keep = Image.new("L", size, 0)
+    exact = Image.new("L", size, 0)
     scale = min(width, height)
 
     silhouettes = [alpha for alpha in (original_alpha, generated_alpha) if alpha is not None]
@@ -108,11 +105,11 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots):
         union = silhouettes[0]
         for alpha in silhouettes[1:]:
             union = Image.fromarray(np.maximum(np.asarray(union), np.asarray(alpha)), mode="L")
-        # A new garment has its own silhouette (a puffer is wider than a tee),
-        # so the person is padded generously before the background is restored.
-        body = _grow(union.point(lambda value: 255 if value > 128 else 0), max(2, int(scale * 0.012)))
+        # The union allows a new, wider garment without repainting distant background.
+        body = union.point(lambda value: 255 if value > 128 else 0)
         background = Image.eval(body, lambda value: 255 - value)
         keep.paste(background, (0, 0))
+        exact.paste(background, (0, 0))
 
     if original_alpha is None:
         return _feather(keep, scale * 0.004)
@@ -167,10 +164,15 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots):
         )
         keep = Image.fromarray(np.maximum(np.asarray(keep), np.asarray(frozen)), mode="L")
 
-    return _feather(keep, scale * 0.006)
+    softened = np.asarray(_feather(keep, min(3, scale * 0.003)))
+    # Blend only inside the garment boundary. Outside it, source pixels win exactly.
+    exact_draw = ImageDraw.Draw(exact)
+    for box in protected_heads:
+        exact_draw.rectangle(box, fill=255)
+    return Image.fromarray(np.maximum(softened, np.asarray(exact)), mode='L')
 
 
-def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots):
+def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=()):
     """Blend the generated garments onto the untouched original person."""
     generated = generated.convert("RGB")
     original = original.convert("RGB")
@@ -179,13 +181,15 @@ def compose(original: Image.Image, generated: Image.Image, original_cutout, gene
     # A different aspect ratio means the model recomposed the shot; pixels no
     # longer line up, and blending would smear the person instead of fixing it.
     if abs(source_ratio - target_ratio) > 0.02 * max(source_ratio, target_ratio):
-        return generated, "aspect-mismatch"
+        return original, "aspect-mismatch"
 
-    original = original.resize(generated.size, Image.Resampling.LANCZOS)
+    generated = generated.resize(original.size, Image.Resampling.LANCZOS)
     original_alpha = person_alpha(generated.size, original_cutout)
     generated_alpha = person_alpha(generated.size, generated_cutout)
-    if original_alpha is None and generated_alpha is None:
-        return generated, "no-silhouette"
+    if original_alpha is None or generated_alpha is None:
+        return original, "no-silhouette"
+    if not protected_heads:
+        return original, 'no-face-protection'
 
-    keep = build_keep_mask(generated.size, original_alpha, generated_alpha, changed_slots)
+    keep = build_keep_mask(generated.size, original_alpha, generated_alpha, changed_slots, protected_heads)
     return Image.composite(original, generated, keep), "composed"

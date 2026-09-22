@@ -61,9 +61,9 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tile: { width: '100%', gap: 10 },
-  photoStage: { width: '100%', aspectRatio: 0.82, backgroundColor: c.surface, borderRadius: 8, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
+  photoStage: { width: '100%', aspectRatio: 0.78, backgroundColor: '#F0F1F3', borderRadius: 8, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
   photoSelected: { borderColor: c.accentGold },
-  photo: { width: '100%', height: '100%', borderWidth: 14, borderColor: 'transparent' },
+  photo: { width: '100%', height: '100%', borderWidth: 8, borderColor: 'transparent' },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   missingText: { fontSize: 11, color: c.muted },
   loading: { position: 'absolute', bottom: 12, left: 12 },
@@ -72,8 +72,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   status: { position: 'absolute', left: 8, bottom: 8, right: 8, backgroundColor: c.card, padding: 6, borderRadius: 4 },
   statusText: { color: c.muted, fontSize: 10, textAlign: 'center' },
   caption: { gap: 4, paddingHorizontal: 2 },
-  category: { color: c.muted, fontSize: 10, textTransform: 'uppercase' },
-  name: { color: c.text, fontSize: 14, lineHeight: 19, fontWeight: '500', minHeight: 19 },
+  category: { color: c.muted, fontSize: 11 },
+  name: { color: c.text, fontSize: 14, lineHeight: 20, fontWeight: '600', minHeight: 20 },
   details: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 },
   detail: { color: c.muted, fontSize: 11, flexShrink: 1 },
   swatch: { width: 10, height: 10, borderRadius: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: c.muted }

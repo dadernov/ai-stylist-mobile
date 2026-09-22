@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FormScrollView } from '../components/ui/FormScrollView';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -33,6 +34,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
 
   const submit = async () => {
     if (busy) return;
+    Keyboard.dismiss();
     setError('');
     setBusy(true);
     try {
@@ -50,7 +52,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
   const fieldStyle = (field: Field) => [styles.input, focused === field && styles.inputFocused];
 
   return (
-    <View style={styles.container}>
+    <FormScrollView contentContainerStyle={styles.container}>
       <LinearGradient colors={[colors.heroTo, colors.heroFrom] as const} style={StyleSheet.absoluteFill} pointerEvents="none" />
 
       <ScreenHeader
@@ -74,6 +76,8 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
               onFocus={() => setFocused('name')}
               onBlur={() => setFocused(null)}
               accessibilityLabel={t('Имя')}
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
             />
           </>
         )}
@@ -91,6 +95,8 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           onFocus={() => setFocused('login')}
           onBlur={() => setFocused(null)}
           accessibilityLabel={t('Логин')}
+          returnKeyType="done"
+          onSubmitEditing={Keyboard.dismiss}
         />
 
         <Text style={styles.label}>{t('Пароль')}</Text>
@@ -107,6 +113,8 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           onFocus={() => setFocused('password')}
           onBlur={() => setFocused(null)}
           accessibilityLabel={t('Пароль')}
+          returnKeyType="done"
+          onSubmitEditing={submit}
         />
         {mode === 'register' && <Text style={styles.hint}>{t('Не короче 8 символов.')}</Text>}
 
@@ -131,12 +139,12 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           </Text>
         </AppPressable>
       </FadeInView>
-    </View>
+    </FormScrollView>
   );
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 18, justifyContent: 'center' },
+  container: { flexGrow: 1, padding: 24, gap: 18, justifyContent: 'center' },
   form: { gap: 10 },
   label: { ...TYPE.caption, color: c.muted, marginTop: 6 },
   input: {

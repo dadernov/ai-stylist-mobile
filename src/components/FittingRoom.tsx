@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { ArrowUpRight, Check, Layers2, Pencil, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook, TryOnHistoryItem } from '../types/looks';
@@ -12,6 +12,7 @@ import { PrimaryButton } from './ui/PrimaryButton';
 import { GarmentTile } from './GarmentTile';
 import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
+import { FormScrollView } from './ui/FormScrollView';
 
 type Props = {
   items: WardrobeItem[];
@@ -20,21 +21,22 @@ type Props = {
   onWardrobe: () => void;
   onSave: (look: SavedLook) => void;
   initialItemId?: string;
+  initialItemIds?: string[];
 };
 
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
-export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, initialItemId }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, initialItemId, initialItemIds }: Props) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
-  const [mode, setMode] = useState<'single' | 'outfit'>('single');
-  const [selectedIds, setSelectedIds] = useState<string[]>(initialItemId ? [initialItemId] : []);
+  const [mode, setMode] = useState<'single' | 'outfit'>(initialItemIds?.length ? 'outfit' : 'single');
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialItemIds || (initialItemId ? [initialItemId] : []));
   const [section, setSection] = useState('Все');
   const [search, setSearch] = useState('');
-  const [previewOpen, setPreviewOpen] = useState(Boolean(initialItemId));
+  const [previewOpen, setPreviewOpen] = useState(Boolean(initialItemId || initialItemIds?.length));
   const selection = useMemo(() => selectedIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[], [items, selectedIds]);
   const visibleItems = items.filter(item => (section === 'Все' || item.section === section)
     && `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
@@ -83,7 +85,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, in
       </View>
       <View style={styles.searchBar}>
         <Search size={17} strokeWidth={1.5} color={colors.muted} />
-        <TextInput accessibilityLabel={t('Найти вещь')} placeholder={t('Найти вещь')} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} style={styles.searchInput} />
+        <TextInput accessibilityLabel={t('Найти вещь')} placeholder={t('Найти вещь')} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} style={styles.searchInput} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
         {search.length > 0 && <AppPressable accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
@@ -104,7 +106,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, in
         </View>
       )}
       {selection.length > 0 && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
-      <ScrollView nestedScrollEnabled style={styles.catalog} contentContainerStyle={styles.grid}>
+      <View style={styles.grid}>
         {visibleItems.map(item => {
           const supported = supportedSections.includes(item.section);
           const available = supported && Boolean(item.imageUri);
@@ -116,7 +118,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, in
             </View>
           );
         })}
-      </ScrollView>
+      </View>
       {!visibleItems.length && <Text style={styles.muted}>{t(items.length ? 'Ничего не найдено' : 'Гардероб пока пуст')}</Text>}
       {!items.length && <PrimaryButton title={t('Добавить вещи')} onPress={onWardrobe} variant="ghost" />}
       {selection.length > 0 && <FittingSession key={sessionKey} items={selection} modelUri={modelUri} onSave={onSave} visible={previewOpen} onClose={() => setPreviewOpen(false)} />}
@@ -133,7 +135,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
   const latest = history[0];
   return <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
     <View style={styles.backdrop}>
-      <KeyboardAvoidingView style={styles.sheet} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.sheet}>
         <View style={styles.row}>
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={styles.heading}>{t('Примерка')}</Text>
@@ -141,13 +143,13 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
           </View>
           <IconButton icon={X} label={t('Закрыть примерку')} onPress={onClose} />
         </View>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+        <FormScrollView contentContainerStyle={styles.content}>
     <AiTryOnPreview modelUri={modelUri} items={items} history={history} showSourcePhoto resultUri={latest?.imageUri}
       updatedAt={latest?.updatedAt} warningMessage={latest?.warning} onGenerated={payload => {
       setHistory(previous => [{ ...payload, id: String(payload.updatedAt) }, ...previous].slice(0, 8));
       setSaved(false);
     }} />
-    <TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} />
+    <TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />
     <PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
       onSave({
         id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
@@ -157,8 +159,8 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
       });
       setSaved(true);
     }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScrollView>
+      </View>
     </View>
   </Modal>;
 }

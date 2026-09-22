@@ -135,12 +135,7 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 
 export async function analyzeTryOnModel(uri: string): Promise<TryOnModelResult> {
   const form = new FormData();
-  const filename = uri.split('/').pop() || 'model.jpg';
-  form.append('file', {
-    uri,
-    name: filename,
-    type: 'image/jpeg'
-  } as any);
+  await appendPhoto(form, 'file', uri);
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/tryon-model', {
     method: 'POST',
@@ -157,12 +152,7 @@ export async function analyzeTryOnModel(uri: string): Promise<TryOnModelResult> 
 
 export async function analyzeTryOnAvatar(uri: string): Promise<TryOnModelResult> {
   const form = new FormData();
-  const filename = uri.split('/').pop() || 'model.jpg';
-  form.append('file', {
-    uri,
-    name: filename,
-    type: 'image/jpeg'
-  } as any);
+  await appendPhoto(form, 'file', uri);
 
   const res = await fetchWithTimeout(AI_BASE_URL + '/tryon-avatar', {
     method: 'POST',
@@ -179,16 +169,8 @@ export async function analyzeTryOnAvatar(uri: string): Promise<TryOnModelResult>
 
 export async function analyzeTryOnGenerate(personUri: string, garmentUri: string): Promise<TryOnGenerateResult> {
   const form = new FormData();
-  form.append('person_file', {
-    uri: personUri,
-    name: personUri.split('/').pop() || 'person.jpg',
-    type: 'image/jpeg'
-  } as any);
-  form.append('garment_file', {
-    uri: garmentUri,
-    name: garmentUri.split('/').pop() || 'garment.jpg',
-    type: 'image/jpeg'
-  } as any);
+  await appendPhoto(form, 'person_file', personUri);
+  await appendPhoto(form, 'garment_file', garmentUri);
 
   const res = await fetchWithTimeout(
     AI_BASE_URL + '/tryon-generate',
@@ -221,52 +203,20 @@ export async function analyzeTryOnGenerateLook(
   outerCategory?: string
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
-  form.append('person_file', {
-    uri: personUri,
-    name: personUri.split('/').pop() || 'person.jpg',
-    type: 'image/jpeg'
-  } as any);
-
-  if (topUri) {
-    form.append('top_file', {
-      uri: topUri,
-      name: topUri.split('/').pop() || 'top.jpg',
-      type: 'image/jpeg'
-    } as any);
-  }
-  if (bottomUri) {
-    form.append('bottom_file', {
-      uri: bottomUri,
-      name: bottomUri.split('/').pop() || 'bottom.jpg',
-      type: 'image/jpeg'
-    } as any);
-  }
-  if (shoesUri) {
-    form.append('shoes_file', {
-      uri: shoesUri,
-      name: shoesUri.split('/').pop() || 'shoes.jpg',
-      type: 'image/jpeg'
-    } as any);
-  }
-  if (outerUri) {
-    form.append('outer_file', {
-      uri: outerUri,
-      name: outerUri.split('/').pop() || 'outer.jpg',
-      type: 'image/jpeg'
-    } as any);
-  }
-  // Сервер решает по категориям, видно ли верх под верхней одеждой: если нет,
-  // отдельный проход по верху не запускается — это лишняя оплаченная генерация
-  // и лишняя потеря качества на кадре.
+  await appendPhoto(form, 'person_file', personUri);
+  if (topUri) await appendPhoto(form, 'top_file', topUri);
+  if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri);
+  if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri);
+  if (outerUri) await appendPhoto(form, 'outer_file', outerUri);
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
   form.append('tuck_mode', tuckMode);
-  form.append('quality_mode', qualityMode);
+  form.append('quality_mode', 'quality');
   if (compareMode) {
     form.append('compare_mode', 'true');
   }
 
-  const timeoutMs = qualityMode === 'fast' ? 180000 : 420000;
+  const timeoutMs = 1080000;
   const res = await fetchWithTimeout(
     AI_BASE_URL + '/tryon-generate-look',
     {

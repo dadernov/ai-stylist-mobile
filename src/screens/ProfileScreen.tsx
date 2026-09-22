@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '../components/usePhotoPicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -30,19 +30,7 @@ type ProfileScreenProps = {
   onBeautyChange: (enabled: boolean) => void;
 };
 
-type CropPreset = {
-  key: string;
-  label: string;
-  allowsEditing: boolean;
-  aspect?: [number, number];
-};
 
-const profileCropPresets: CropPreset[] = [
-  { key: 'nocrop', label: 'Без обрезки (оригинал)', allowsEditing: false },
-  { key: 'fullbody', label: 'Полный рост 3:4', allowsEditing: true, aspect: [3, 4] },
-  { key: 'tight', label: 'Плотный кадр 4:5', allowsEditing: true, aspect: [4, 5] },
-  { key: 'square', label: 'Квадрат 1:1', allowsEditing: true, aspect: [1, 1] }
-];
 
 export function ProfileScreen({
   displayName,
@@ -66,34 +54,7 @@ export function ProfileScreen({
   const { lang, setLang } = useLanguage();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
-  const chooseCropPreset = () =>
-    new Promise<CropPreset | null>((resolve) => {
-      Alert.alert(t('Кадрирование фото'), t('Выбери удобный формат выделенной области.'), [
-        ...profileCropPresets.map((preset) => ({ text: t(preset.label), onPress: () => resolve(preset) })),
-        { text: t('Отмена'), style: 'cancel', onPress: () => resolve(null) }
-      ]);
-    });
-
-  const pickImageFromGallery = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('Нужен доступ'), t('Разреши доступ к фото, чтобы выбрать изображение.'));
-      return null;
-    }
-
-    const preset = await chooseCropPreset();
-    if (!preset) return null;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: preset.allowsEditing,
-      aspect: preset.aspect,
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images
-    });
-
-    if (result.canceled) return null;
-    return result.assets[0]?.uri ?? null;
-  };
+  const { pickPhoto: pickImageFromGallery, cropModal } = usePhotoPicker();
 
   const handlePickAvatar = async () => {
     const uri = await pickImageFromGallery();
@@ -148,10 +109,10 @@ export function ProfileScreen({
       <ScreenHeader
         eyebrow={t('Личный кабинет')}
         title={t('Профиль')}
-        subtitle={t('Фото для примерки, избранные образы и настройки.')}
       />
 
       {renderPreviewModal()}
+      {cropModal}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <FadeInView delay={0}>
@@ -326,7 +287,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: 0,
     color: c.text
   },
   userMeta: {

@@ -3,7 +3,6 @@ import {
   FlatList,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -14,7 +13,9 @@ import {
   useWindowDimensions
 } from 'react-native';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
+import { usePhotoPicker } from '../components/usePhotoPicker';
+import { FormScrollView } from '../components/ui/FormScrollView';
+import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
@@ -29,7 +30,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult } from '../services/ai';
-import { Camera, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine } from 'lucide-react-native';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
 
@@ -102,19 +103,7 @@ const categoryOptions = [
 const seasonOptions = ['Лето', 'Зима', 'Демисезон', 'Круглый год'];
 const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный', 'Принт'];
 
-type CropPreset = {
-  key: string;
-  label: string;
-  allowsEditing: boolean;
-  aspect?: [number, number];
-};
 
-const cropPresets: CropPreset[] = [
-  { key: 'nocrop', label: 'Без обрезки (оригинал)', allowsEditing: false },
-  { key: 'portrait', label: 'Портрет 3:4 (для человека)', allowsEditing: true, aspect: [3, 4] },
-  { key: 'garment', label: 'Вещь 4:5 (для одежды)', allowsEditing: true, aspect: [4, 5] },
-  { key: 'square', label: 'Квадрат 1:1', allowsEditing: true, aspect: [1, 1] }
-];
 
 const sectionByCategory: Record<string, string> = {
   Футболка: 'Верх',
@@ -261,6 +250,12 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
       placeholder={placeholder}
       placeholderTextColor={colors.muted}
       value={value}
+      multiline
+      scrollEnabled={false}
+      maxLength={240}
+      returnKeyType="done"
+      submitBehavior="blurAndSubmit"
+      onSubmitEditing={Keyboard.dismiss}
       onChangeText={onChangeText}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -299,7 +294,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
   const [analysisError, setAnalysisError] = useState('');
   const [draftExistingId, setDraftExistingId] = useState<string | null>(null);
   const [categoryConfirmed, setCategoryConfirmed] = useState(false);
-  const closeDraft = () => { analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); };
+  const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); };
   const manual = (field: string, setter: (value: string) => void) => (value: string) => {
     manualFields.current.add(field); setter(value);
   };
@@ -325,69 +320,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
     return items.filter((item) => item.section === activeFilter);
   }, [items, activeFilter]);
 
-  const chooseCropPreset = () =>
-    new Promise<CropPreset | null>((resolve) => {
-      Alert.alert(t('Кадрирование'), t('Выбери форму выделенной области.'), [
-        ...cropPresets.map((preset) => ({ text: t(preset.label), onPress: () => resolve(preset) })),
-        { text: t('Отмена'), style: 'cancel', onPress: () => resolve(null) }
-      ]);
-    });
-
-  const requestCamera = async (preset: CropPreset) => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('Нужен доступ к камере'), t('Разреши доступ, чтобы сфотографировать вещь.'));
-      return null;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: preset.allowsEditing,
-      aspect: preset.aspect,
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images
-    });
-
-    if (result.canceled) return null;
-    return result.assets[0]?.uri ?? null;
-  };
-
-  const requestGallery = async (preset: CropPreset) => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('Нужен доступ к галерее'), t('Разреши доступ, чтобы выбрать фото вещи.'));
-      return null;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: preset.allowsEditing,
-      aspect: preset.aspect,
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images
-    });
-
-    if (result.canceled) return null;
-    return result.assets[0]?.uri ?? null;
-  };
-
-  const choosePhotoSource = () =>
-    new Promise<'camera' | 'gallery' | null>((resolve) => {
-      Alert.alert(t('Источник фото'), t('Откуда загрузить фото вещи?'), [
-        { text: t('Камера'), onPress: () => resolve('camera') },
-        { text: t('Галерея'), onPress: () => resolve('gallery') },
-        { text: t('Отмена'), style: 'cancel', onPress: () => resolve(null) }
-      ]);
-    });
-
-  const requestPhoto = async () => {
-    if (Platform.OS === 'web') return requestGallery(cropPresets[0]);
-    const source = await choosePhotoSource();
-    if (!source) return null;
-    const preset = await chooseCropPreset();
-    if (!preset) return null;
-    if (source === 'camera') return requestCamera(preset);
-    if (source === 'gallery') return requestGallery(preset);
-    return null;
-  };
+  const { pickPhoto: requestPhoto, cropModal } = usePhotoPicker();
 
   const handleAddItem = async () => {
     const photo = await requestPhoto();
@@ -573,8 +506,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
     setEditSection(getSectionByCategory(value));
   };
 
-  const renderChips = (options: string[], selected: string, onSelect: (value: string) => void) => (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modalChipsRow}>
+  const renderChips = (options: string[], selected: string, onSelect: (value: string) => void) => options.length > 7 ? (
+    <OptionPicker options={options} value={selected} onChange={onSelect} label={options === categoryOptions ? t('Тип вещи') : t('Цвет')} swatches={options === colorOptions ? Object.fromEntries(namedColors.map(color => [color.name, color.hex])) : undefined} />
+  ) : (
+    <View style={[styles.modalChipsRow, { flexDirection: 'row', flexWrap: 'wrap' }]}>
       {options.map((option) => {
         const isActive = option === selected;
         return (
@@ -591,7 +526,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
           </AppPressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 
   const renderFieldLabel = (label: string) => (
@@ -602,6 +537,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
 
   return (
     <View style={styles.container}>
+      {!isModalVisible && cropModal}
       <View style={styles.collectionHeader}>
         <View style={{ flex: 1 }}><ScreenHeader eyebrow={t('Личная коллекция')} title={t('Гардероб')} /></View>
         <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} haptics style={styles.addButton} onPress={handleAddItem}>
@@ -611,7 +547,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
       <View style={styles.searchBar}>
         <Search size={18} color={colors.muted} strokeWidth={1.5} />
         <TextInput style={styles.searchInput} placeholder={t('Найти в гардеробе')} accessibilityLabel={t('Найти в гардеробе')}
-          placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} />
+          placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
         {search.length > 0 && <AppPressable accessibilityRole="button" accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
       </View>
 
@@ -638,6 +574,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
 
       <FlatList
         key={columns}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={Keyboard.dismiss}
         numColumns={columns}
         columnWrapperStyle={{ gap: 14 }}
         data={filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))}
@@ -689,7 +628,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                 </AppPressable>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <IconButton icon={ScanLine} label={t('Повторить анализ')} onPress={() => { setDetailId(null); reanalyzeExisting(detail); }} />
-                  <IconButton icon={Camera} label={t('Переснять')} onPress={() => { setDetailId(null); handleRetakeExisting(detail.id); }} />
+                  <IconButton icon={ImagePlus} label={t('Заменить фото')} onPress={() => { setDetailId(null); handleRetakeExisting(detail.id); }} />
                   <IconButton icon={Trash2} label={t('Удалить')} danger onPress={() => { setDetailId(null); handleDeleteItem(detail.id); }} />
                 </View>
               </View>
@@ -700,14 +639,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
       </Modal>
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={closeDraft}>
-        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHandle} />
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView
+            <View style={{ flex: 1 }}>
+              <FormScrollView
                 contentContainerStyle={styles.modalContent}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
               >
                 <Text style={styles.modalTitle}>{t(draftExistingId ? 'Анализ вещи' : 'Новая вещь')}</Text>
                 {draftPhoto ? (
@@ -721,7 +659,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                   </View>
                 ) : null}
                 <AppPressable haptics style={styles.retakePill} onPress={handleRetake}>
-                  <Text style={styles.retakePillText}>{t('Переснять фото')}</Text>
+                  <Text style={styles.retakePillText}>{t('Заменить фото')}</Text>
                 </AppPressable>
                 {renderFieldLabel(t('Название вещи'))}
                 <AtelierInput
@@ -784,10 +722,11 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                   variant="ghost"
                   style={styles.modalCancel}
                 />
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </AppPressable>
-        </AppPressable>
+              </FormScrollView>
+            </View>
+            {isModalVisible && cropModal}
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -796,14 +735,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
         visible={isEditModalVisible}
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHandle} />
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView
+            <View style={{ flex: 1 }}>
+              <FormScrollView
                 contentContainerStyle={styles.modalContent}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
               >
                 <Text style={styles.modalTitle}>{t('Редактировать параметры')}</Text>
                 {renderFieldLabel(t('Название вещи'))}
@@ -845,10 +783,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                   variant="ghost"
                   style={styles.modalCancel}
                 />
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </AppPressable>
-        </AppPressable>
+              </FormScrollView>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -929,7 +867,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 19,
     fontWeight: '700',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     color: c.text
   },
   uploadText: {
@@ -1005,7 +943,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.text,
     fontSize: 18,
     fontWeight: '700',
-    letterSpacing: -0.3
+    letterSpacing: 0
   },
   editButton: {
     backgroundColor: c.accentGoldSoft,
@@ -1105,7 +1043,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 24,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: 0,
     color: c.text,
     marginBottom: 14
   },

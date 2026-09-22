@@ -3,7 +3,6 @@ import {
   Animated,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -19,6 +18,7 @@ import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { FittingRoom } from '../components/FittingRoom';
+import { FormScrollView } from '../components/ui/FormScrollView';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -89,6 +89,7 @@ type OutfitBuilderProps = {
   onProfile: () => void;
   onWardrobe: () => void;
   initialItemId?: string;
+  initialItemIds?: string[];
   initialTab?: 'fitting' | 'builder' | 'looks';
   gender: Gender;
   beautyAdvice: boolean;
@@ -361,6 +362,7 @@ export function OutfitBuilderScreen({
   onProfile,
   onWardrobe,
   initialItemId,
+  initialItemIds,
   initialTab = 'fitting',
   gender,
   beautyAdvice
@@ -694,7 +696,7 @@ export function OutfitBuilderScreen({
         style={styles.heroWash}
         pointerEvents="none"
       />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pageContent}>
+      <FormScrollView contentContainerStyle={styles.pageContent}>
         <ScreenHeader
           eyebrow={t('Твой стиль')}
           title={t('Примерочная')}
@@ -734,7 +736,7 @@ export function OutfitBuilderScreen({
         </View>
 
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
-          <FittingRoom items={items} modelUri={modelUri} initialItemId={initialItemId} onProfile={onProfile} onWardrobe={onWardrobe}
+          <FittingRoom items={items} modelUri={modelUri} initialItemId={initialItemId} initialItemIds={initialItemIds} onProfile={onProfile} onWardrobe={onWardrobe}
             onSave={look => onSavedLooksChange([look, ...savedLooks])} />
         </View>
         {activeTab === 'builder' ? (
@@ -861,13 +863,13 @@ export function OutfitBuilderScreen({
             ))}
           </View>
         ) : null}
-      </ScrollView>
+      </FormScrollView>
 
       <Modal transparent animationType="slide" visible={isEditModalVisible} onRequestClose={() => setEditModalVisible(false)}>
-        <AppPressable feedback={false} style={styles.modalBackdrop} onPress={Keyboard.dismiss}>
-          <AppPressable feedback={false} style={styles.modalCard} onPress={() => undefined}>
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={{ flex: 1 }}>
+              <FormScrollView contentContainerStyle={styles.modalContent}>
                 <Text style={styles.modalTitle}>{t('Редактировать лук')}</Text>
                 <Text style={styles.modalLabel}>{t('Название')}</Text>
                 <TextInput
@@ -876,6 +878,11 @@ export function OutfitBuilderScreen({
                   placeholderTextColor={themeColors.muted}
                   value={editName}
                   onChangeText={setEditName}
+                  multiline
+                  scrollEnabled={false}
+                  returnKeyType="done"
+                  submitBehavior="blurAndSubmit"
+                  onSubmitEditing={Keyboard.dismiss}
                 />
                 {renderPicker('Верх', tops, editTop, setEditTop)}
                 {renderPicker('Низ', bottoms, editBottom, setEditBottom)}
@@ -889,10 +896,10 @@ export function OutfitBuilderScreen({
                   variant="ghost"
                   style={styles.modalClose}
                 />
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </AppPressable>
-        </AppPressable>
+              </FormScrollView>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1000,7 +1007,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 34,
     fontWeight: '700',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
     lineHeight: 38,
     color: c.text
   },
@@ -1356,7 +1363,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 22,
     fontWeight: '700',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     color: c.text,
     marginBottom: SPACING.lg
   },

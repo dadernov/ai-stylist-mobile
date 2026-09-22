@@ -4,6 +4,7 @@ import { Gender } from '../types/profile';
 import { pickBeauty } from '../constants/beauty';
 
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender };
+export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[] };
 
 // Одна таблица знаний о вещах вместо разрозненных списков: и подбор, и советы
 // читают отсюда, поэтому образ не может быть собран по одним правилам, а
@@ -14,7 +15,7 @@ export type OutfitContext = { style: string; event: string; temperature: number 
 type Garment = { section: string; formality: number; warmth: number; volume: number; sporty?: boolean; onePiece?: boolean };
 
 const garments: Record<string, Garment> = {
-  Футболка: { section: 'Верх', formality: 2, warmth: 1, volume: 2 },
+  Футболка: { section: 'Верх', formality: 2, warmth: 1, volume: 2, sporty: true },
   Поло: { section: 'Верх', formality: 3, warmth: 1, volume: 2 },
   Лонгслив: { section: 'Верх', formality: 2, warmth: 2, volume: 2 },
   Рубашка: { section: 'Верх', formality: 4, warmth: 2, volume: 2 },
@@ -42,7 +43,7 @@ const garments: Record<string, Garment> = {
   Юбка: { section: 'Низ', formality: 4, warmth: 1, volume: 2 },
   Джинсы: { section: 'Низ', formality: 2, warmth: 2, volume: 2 },
   Брюки: { section: 'Низ', formality: 4, warmth: 2, volume: 2 },
-  Шорты: { section: 'Низ', formality: 1, warmth: 0, volume: 2 },
+  Шорты: { section: 'Низ', formality: 1, warmth: 0, volume: 2, sporty: true },
   Леггинсы: { section: 'Низ', formality: 1, warmth: 1, volume: 1, sporty: true },
   Джоггеры: { section: 'Низ', formality: 1, warmth: 2, volume: 3, sporty: true },
   Кроссовки: { section: 'Обувь', formality: 2, warmth: 2, volume: 2, sporty: true },
@@ -124,7 +125,7 @@ function itemScore(item: WardrobeItem, context: OutfitContext) {
   if (context.style === 'Минимализм') score += item.pattern === 'Однотонный' ? 5 : -3;
   if (context.style === 'Бохо' && ['Кардиган', 'Джинсы', 'Сандалии', 'Юбка', 'Рубашка'].includes(item.category)) score += 4;
   if (context.style === 'Романтичный' && ['Блуза', 'Платье', 'Юбка', 'Балетки', 'Кардиган'].includes(item.category)) score += 4;
-  if (gender === 'male' && ['Рубашка', 'Поло', 'Брюки', 'Джинсы', 'Лоферы', 'Свитер'].includes(item.category)) score += 2;
+  // Rank the user's actual wardrobe, not assumed clothing preferences by gender.
   if (temperature !== null) {
     const comfort = warmthFor(temperature);
     score -= Math.abs(garment.warmth - comfort) * (garment.section === 'Верхняя одежда' ? 4 : 2.5);
@@ -159,7 +160,7 @@ function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], rea
   if (names.length) reasons.push(`Палитра: ${names.join(', ').toLocaleLowerCase()}.`);
 
   if (!accents.length && known.length >= 2) {
-    push(tips, 5, 'Образ полностью в нейтральных тонах: его держит фактура. Добавь один цветной акцент или вещь с заметным материалом, иначе он будет читаться плоско.');
+    push(tips, 5, 'Образ в нейтральных тонах. Для более выразительного сочетания можно добавить цветной акцент; для спокойного оставить эту палитру.');
   }
   if (accents.length === 1) {
     push(tips, 4, `Оставь ${named(accents[0].item)} единственным цветным пятном — остальное лучше держать нейтральным.`);
@@ -168,16 +169,16 @@ function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], rea
     const distance = hueDistance(accents[0].info.hue, accents[1].info.hue);
     const pair = `${named(accents[0].item)} и ${named(accents[1].item)}`;
     if (distance <= 30) reasons.push(`${pair} — соседние оттенки, они складываются в единую гамму.`);
-    else if (distance <= 70) warnings.push(`${pair} близки по тону, но не совпадают — такая пара читается как случайность. Замени одну вещь на нейтральную или возьми оттенок заметно дальше.`);
+    else if (distance <= 70) push(tips, 4, `${pair} близки по тону. Их можно оставить в одной гамме; для большего контраста попробуй нейтральную замену одной вещи.`);
     else if (distance >= 150) reasons.push(`${pair} — контрастная пара; она работает, пока одна из вещей занимает меньшую площадь.`);
-    else warnings.push(`${pair} спорят между собой по цвету. Надёжнее оставить один цвет, а второй заменить нейтральным.`);
+    else push(tips, 4, `${pair} дают выразительное сочетание. Если хочется спокойнее, попробуй нейтральную обувь или замену одного цвета.`);
   }
   if (accents.length >= 3) {
-    warnings.push(`Три и больше цветных вещей (${list(accents.map(entry => entry.item))}) конкурируют друг с другом. Оставь один акцент, остальное — нейтральное.`);
+    push(tips, 4, `В сочетании несколько цветов: ${list(accents.map(entry => entry.item))}. Для более сдержанного варианта оставь один акцент.`);
   }
   const lightness = known.map(entry => entry.info.lightness);
   if (known.length >= 3 && Math.max(...lightness) - Math.min(...lightness) < 0.14) {
-    push(tips, 6, 'Все вещи примерно одной светлоты — образ сливается в пятно. Добавь вещь заметно светлее или темнее остальных.');
+    push(tips, 6, 'Вещи близки по светлоте. Более светлая или тёмная обувь добавит контраста, а текущая палитра сохранит цельный силуэт.');
   }
 }
 
@@ -207,9 +208,9 @@ function proportionAdvice(top: WardrobeItem | undefined, bottom: WardrobeItem | 
   if (!top || !bottom) return;
   const topVolume = describe(top).volume, bottomVolume = describe(bottom).volume;
   if (topVolume === 3 && bottomVolume === 3) {
-    push(tips, 2, `${named(top)} и ${named(bottom)} обе объёмные — силуэт теряется. Оставь объём в одной вещи, вторую возьми прямого кроя.`);
+    push(tips, 2, `Если ${named(top)} и ${named(bottom)} обе объёмные, попробуй открыть линию талии или взять одну вещь прямого кроя.`);
   } else if (topVolume === 1 && bottomVolume === 1) {
-    push(tips, 2, `Оба слоя облегающие: образ получится подчёркнуто обтягивающим. Свободная верхняя одежда или прямой низ добавят воздуха.`);
+    push(tips, 2, 'Если оба слоя облегающие, свободная верхняя одежда или прямой низ добавят объёма.');
   }
 }
 
@@ -280,20 +281,33 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext) {
   return { reasons: reasons.slice(0, 3), tips: ordered.slice(0, 3), warnings, tuckMode };
 }
 
-export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false): GeneratedLook[] {
+export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false, options: RecommendationOptions = {}): GeneratedLook[] {
   const context = { style, event, temperature, gender };
-  const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values());
-  const choose = (section: string, limit: number) => wardrobe.filter(item => item.section === section)
-    .sort((a, b) => itemScore(b, context) - itemScore(a, context)).slice(0, limit);
+  const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values()).filter(item => !options.excludedIds?.includes(item.id));
+  const anchor = wardrobe.find(item => item.id === options.anchorId);
+  const eligible = (item: WardrobeItem) => {
+    if (item.id === anchor?.id) return true;
+    if (event === 'Спортзал') return Boolean(describe(item).sporty) && item.section !== 'Верхняя одежда';
+    if (temperature !== null && temperature >= 24 && (item.season === 'Зима' || ['Пуховик', 'Шуба', 'Парка'].includes(item.category))) return false;
+    if (temperature !== null && temperature < 5 && ['Шорты', 'Сандалии'].includes(item.category)) return false;
+    return true;
+  };
+  const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0);
+  const choose = (section: string, limit: number) => {
+    if (anchor?.section === section) return [anchor];
+    if (anchor && isOnePiece(anchor) && section === 'Низ') return [];
+    return wardrobe.filter(item => item.section === section && eligible(item) && !(anchor?.section === 'Низ' && isOnePiece(item)))
+      .sort((a, b) => preference(b) - preference(a)).slice(0, limit);
+  };
   const tops = choose('Верх', 6), bottoms = choose('Низ', 6), shoes = choose('Обувь', 4), outer = choose('Верхняя одежда', 4);
   const bags = choose('Сумки', 2);
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];
   for (const top of optional(tops)) for (const bottom of top && isOnePiece(top) ? [null] : optional(bottoms)) {
-    for (const shoe of optional(shoes)) for (const layer of [null, ...outer]) {
+    for (const shoe of optional(shoes)) for (const layer of anchor?.section === 'Верхняя одежда' ? outer : [null, ...outer]) {
       const selection = [top, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
       if (!selection.length) continue;
-      let score = selection.reduce((total, item) => total + itemScore(item, context), 0) + paletteScore(selection);
+      let score = selection.reduce((total, item) => total + preference(item), 0) + paletteScore(selection);
       if (top) score += 12;
       if (bottom || (top && isOnePiece(top))) score += 12;
       if (shoe) score += 8;
@@ -311,7 +325,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     }
   }
   candidates.sort((a, b) => b.score - a.score);
-  const unique = candidates.filter((candidate, index, all) => all.findIndex(other => other.signature === candidate.signature) === index);
+  const unique = [...new Map([...candidates].reverse().map(candidate => [candidate.signature, candidate])).values()].sort((a, b) => b.score - a.score);
   const selected: typeof candidates = [];
   while (unique.length && selected.length < 4) {
     unique.sort((a, b) => {
@@ -326,13 +340,34 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   const beauty = pickBeauty(event, beautyAdvice);
   return selected.map((candidate, index) => {
     const selection = [...candidate.items];
-    if (bags.length && event !== 'Спортзал' && itemScore(bags[0], context) >= 0) selection.push(bags[0]);
+    if (bags.length && (anchor?.section === 'Сумки' || (event !== 'Спортзал' && itemScore(bags[0], context) >= -4))) selection.push(bags[0]);
     const advice = getOutfitAdvice(selection, context);
     return {
-      id: `look-${Date.now()}-${index}`, title: selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.category).join(' + ') || `Образ ${index + 1}`,
+      id: `idea-${style}-${event}-${temperature}-${selection.map(item => item.id).join('-')}`, title: selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.category).join(' + ') || `Образ ${index + 1}`,
       itemIds: selection.map(item => item.id), weather, style, event, temperature,
       fitReasons: advice.reasons, stylingTips: advice.tips, warnings: advice.warnings,
       tuckMode: advice.tuckMode, makeup: beauty.makeup, hair: beauty.hair
     };
   });
+}
+
+export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem[], context: OutfitContext, anchorId?: string) {
+  const current = new Set(selection.map(item => item.id));
+  const swaps: { from: WardrobeItem; to: WardrobeItem; reason: string; gain: number }[] = [];
+  for (const from of selection) {
+    if (from.id === anchorId) continue;
+    for (const to of wardrobe) {
+      if (current.has(to.id) || to.section !== from.section || isOnePiece(from) !== isOnePiece(to)) continue;
+      if (context.event === 'Спортзал' && !describe(to).sporty) continue;
+      const replaced = selection.map(item => item.id === from.id ? to : item);
+      const gain = itemScore(to, context) - itemScore(from, context) + paletteScore(replaced) - paletteScore(selection);
+      if (gain < 4) continue;
+      const reason = context.temperature !== null && Math.abs(describe(to).warmth - warmthFor(context.temperature)) < Math.abs(describe(from).warmth - warmthFor(context.temperature))
+        ? `Ближе к погоде ${context.temperature}°C`
+        : Math.abs(describe(to).formality - targetFormality(context)) < Math.abs(describe(from).formality - targetFormality(context)) ? 'Ближе к выбранному событию' : 'Более спокойная палитра';
+      swaps.push({ from, to, reason, gain });
+    }
+  }
+  const sorted = swaps.sort((a, b) => b.gain - a.gain);
+  return sorted.filter((swap, index) => sorted.findIndex(other => other.from.id === swap.from.id) === index).slice(0, 2);
 }

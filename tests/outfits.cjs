@@ -45,7 +45,8 @@ assert.ok(office.reasons.some(x => x.includes('формальности')), 'о�
 // «Почти совпало» по цвету — худший случай, он разбирается отдельно от контраста.
 // Красный (357°) и жёлтый (47°) расходятся на 50° — это и есть «почти совпало».
 const near = advise([item('t1', 'Футболка', 'Верх', { color: '#b9383e' }), item('b1', 'Брюки', 'Низ', { color: '#e2c455' }), shoes], {});
-assert.ok(near.warnings.some(x => x.includes('близки по тону')), 'ожидалось замечание о близких оттенках');
+assert.ok(near.tips.some(x => x.includes('близки по тону')), 'ожидался вариант стилизации близких оттенков');
+assert.ok(!near.warnings.some(x => x.includes('по тону')), 'близкие оттенки сами по себе не ошибка');
 const far = advise([item('t2', 'Футболка', 'Верх', { color: '#b9383e' }), item('b2', 'Брюки', 'Низ', { color: '#44825a' }), shoes], {});
 assert.ok(!far.warnings.some(x => x.includes('близки по тону')));
 
@@ -71,3 +72,20 @@ const tuck = advise([shirt, jeans, shoes], { style: 'Офисный', event: 'С
 assert.equal(tuck.tips[0].includes('Заправь'), true, 'совет про заправку должен идти первым');
 
 console.log('PASS: строгость, цветовые пары, пропорции, спортзал, погода по утеплению, порядок советов');
+
+const manyTops = Array.from({ length: 10 }, (_, i) => item(`top-${i}`, 'Футболка', 'Верх'));
+const anchored = buildLooks([...manyTops, jeans, shoes], 'Кэжуал', 'Прогулка', '', null, 'male', false, { anchorId: 'top-9' });
+assert.ok(anchored.length && anchored.every(look => look.itemIds.includes('top-9')), 'anchor beyond ranking limit must stay');
+const coatAnchor = buildLooks([shirt, jeans, shoes, outer], 'Кэжуал', 'Прогулка', '', 27, 'male', false, { anchorId: outer.id });
+assert.ok(coatAnchor.every(look => look.itemIds.includes(outer.id)), 'explicit anchor remains, with weather warning');
+assert.ok(coatAnchor[0].warnings.some(warning => warning.includes('тёплой')));
+const gymLooks = buildLooks([shirt, jeans, sneakers, item('tee-gym', 'Футболка', 'Верх'), item('gym-pants', 'Джоггеры', 'Низ')], 'Спорт-шик', 'Спортзал', '', null);
+assert.ok(gymLooks.every(look => !look.itemIds.includes(shirt.id) && !look.itemIds.includes(jeans.id)), 'gym excludes formal garments');
+const excluded = buildLooks([shirt, jeans, shoes], 'Кэжуал', 'Прогулка', '', null, 'male', false, { excludedIds: [shirt.id] });
+assert.ok(excluded.every(look => !look.itemIds.includes(shirt.id)));
+const { getOutfitSwaps } = require('../src/domain/outfits.ts');
+const warmShoes = item('boots', 'Ботинки', 'Обувь');
+const swapChoices = getOutfitSwaps([shirt, jeans, item('sandals', 'Сандалии', 'Обувь')], [warmShoes], { style: 'Кэжуал', event: 'Прогулка', temperature: 0 });
+assert.ok(swapChoices.some(swap => swap.to.id === warmShoes.id));
+assert.equal(getOutfitSwaps([item('sandals', 'Сандалии', 'Обувь')], [warmShoes], { style: 'Кэжуал', event: 'Прогулка', temperature: 0 }, 'sandals').length, 0);
+console.log('PASS: anchor preserved, sport eligibility, explicit weather conflict, excluded garments, concrete swaps');

@@ -223,6 +223,7 @@ function AppContent() {
   const t = useT();
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
+  const [tryOnItemIds, setTryOnItemIds] = useState<string[] | undefined>();
   const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder'>('fitting');
   const [isOnboardingVisible, setOnboardingVisible] = useState(true);
   // Вошедший пользователь — это живая сессия на сервере, а не флаг в профиле:
@@ -491,7 +492,7 @@ function AppContent() {
     const tryOnModelUri = modelUri || avatarUri;
     const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
-      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} onTryOn={item => { setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
+      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     }
     if (activeTab === 'builder')
       return (
@@ -499,6 +500,7 @@ function AppContent() {
           items={items}
           modelUri={tryOnModelUri}
           initialItemId={tryOnItemId}
+          initialItemIds={tryOnItemIds}
           initialTab={builderEntry}
           gender={gender || 'unspecified'}
           beautyAdvice={beautyAdvice}
@@ -529,7 +531,9 @@ function AppContent() {
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen looks={lastLooks} context={lastContext} items={items} beautyAdvice={beautyAdvice} onGoToBuilder={() => { setBuilderEntry('builder'); setActiveTab('builder'); }} />;
+      return <RecommendationsScreen items={items} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+        onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}
+        onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     if (activeTab === 'favorites')
       return (
         <FavoritesScreen
@@ -655,7 +659,7 @@ function AppContent() {
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.label)}
                   accessibilityState={{ selected: isActive }}
-                  onPress={() => { setTryOnItemId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
+                  onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
                   <TabIcon size={21} strokeWidth={isActive ? 1.9 : 1.5} color={isActive ? colors.accentGold : colors.muted} />
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>

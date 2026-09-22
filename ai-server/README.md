@@ -145,61 +145,31 @@ Response:
 
 `POST /tryon-generate` (multipart form: `person_file`, `garment_file`) - генеративная примерка через FASHN API.
 
-`POST /tryon-generate-look` (multipart form: `person_file`, `top_file?`, `bottom_file?`, `shoes_file?`) -
-генерирует полный образ в одной итоговой картинке (слои применяются последовательно: верх -> низ -> обувь).
+### Quality-only примерка
 
-Нужны переменные окружения:
+`POST /tryon-generate-look`: multipart `person_file`, любой из `top_file`, `bottom_file`, `shoes_file`, `outer_file`; категории `top_category` / `outer_category` и `tuck_mode`.
+Одна вещь не требует полного комплекта. Параметры `quality_mode=fast` и `compare_mode` принимаются для старых клиентов, но не меняют политику: всегда `tryon-max`, `generation_mode=quality`, без дополнительных повторных проходов.
 
 ```bash
 export FASHN_API_KEY=...
-export FASHN_MODEL_NAME=tryon-v1.6
-# для tryon-v1.6:
-export FASHN_MODE=balanced
-export FASHN_CATEGORY=auto
-export FASHN_GARMENT_PHOTO_TYPE=auto
-export FASHN_SEGMENTATION_FREE=false
-export FASHN_NUM_SAMPLES=1
-export FASHN_CATEGORY_TOP_CANDIDATES=tops,auto
-export FASHN_CATEGORY_BOTTOM_CANDIDATES=bottoms,auto
-export FASHN_CATEGORY_SHOES_CANDIDATES=auto
-# для полного лука (tryon-generate-look) рекомендуем:
-export FASHN_LOOK_MODEL_NAME=tryon-max
-export FASHN_LOOK_MODE=quality
-# если используешь tryon-max:
-# export FASHN_LOOK_GENERATION_MODE=balanced
-# для tryon-max (опционально):
-# export FASHN_MODEL_NAME=tryon-max
-# export FASHN_GENERATION_MODE=balanced
-# export FASHN_RESOLUTION=1k
+export FASHN_QUALITY_RESOLUTION=2k
+export FASHN_QUALITY_MAX_WAIT_SECONDS=240
+export FASHN_IMAGE_MAX_SIDE=2048
+python download_face_model.py
 ```
 
-Рекомендуемые настройки для мобильного preview:
+Верхняя одежда применяется последней. Плащ, тренч и пальто получают отдельные инструкции о полной длине и маску до низа силуэта. Входной референс вещи берётся из исходного фото, а не из автоматически выделенного фрагмента. Это снижает риск потери подола, но не гарантирует физически точную посадку генеративной модели.
+
+Защита лица обязательна. Локальный YuNet проверяет единственное видимое лицо до платного запроса и положение лица после генерации. Если лицо не распознано, силуэт ненадёжен или кадр изменён, сервер возвращает ошибку, а не непроверенную картинку. Модель YuNet распространяется под MIT: [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet). Загрузчик проверяет SHA-256.
+
+Итог собирается в исходном размере: лицо и фон вне объединённой маски человека берутся из исходного изображения. PNG исключает повторное JPEG-сжатие защищённых пикселей. Область новой одежды может закрывать часть исходного фона. Точность её границы зависит от сегментации.
+
+Кеш и объединение одинаковых активных запросов экономят повторные вызовы. Кеш ограничен 64 МБ (`FASHN_LOOK_CACHE_MAX_BYTES`), так как PNG крупнее JPEG. Смена версии маски инвалидирует старые результаты. Nginx и мобильный клиент допускают до 18 минут на четыре последовательных прохода, не снижая качество при долгом ответе.
+
+Успешный ответ содержит `status=succeeded`, `outputUrl=data:image/png;base64,...`, `qualityModeUsed=quality`, `modelUsed=tryon-max`. Непроверенный результат не используется как запасной вариант.
+
+Проверки без платного API:
 
 ```bash
-# быстрый режим: целимся примерно в 15 секунд для верха+низа
-export FASHN_FAST_LOOK_MODEL_NAME=tryon-v1.6
-export FASHN_FAST_MODE=performance
-export FASHN_FAST_MAX_WAIT_SECONDS=30
-export FASHN_FAST_POLL_INTERVAL_SECONDS=0.75
-export FASHN_FAST_IMAGE_MAX_SIDE=1280
-export FASHN_FAST_JPEG_QUALITY=86
-
-# режим качества: медленнее, но лучше детализация
-export FASHN_LOOK_MODEL_NAME=tryon-max
-export FASHN_LOOK_GENERATION_MODE=balanced
-export FASHN_RESOLUTION=1k
-
-# защита лица: backend накладывает голову/лицо из исходного фото поверх результата
-export FASHN_FACE_LOCK=true
-export FASHN_FACE_LOCK_JPEG_QUALITY=92
-```
-
-Response:
-```json
-{
-  "status": "succeeded",
-  "predictionId": "....",
-  "outputUrl": "https://...",
-  "webUrl": "https://..."
-}
+python -m unittest discover -v
 ```

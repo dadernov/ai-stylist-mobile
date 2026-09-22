@@ -5,66 +5,66 @@
 import { Platform, TextStyle, ViewStyle } from 'react-native';
 
 export const lightColors = {
-  background: '#FAFBFA',
+  background: '#F7F8FA',
   card: '#FFFFFF',
-  surface: '#F0F3F1',
-  chip: '#EEF1EF',
-  accent: '#C8DCD3',
-  border: '#E2E8E4',
-  text: '#202A26',
-  muted: '#717E77',
+  surface: '#ECEEF2',
+  chip: '#ECEEF2',
+  accent: '#DDEA9C',
+  border: '#DFE2E7',
+  text: '#191B20',
+  muted: '#686D78',
   success: '#3E7A58',
-  tabActiveBg: '#E3EEE8',
-  tabBarBorder: '#E2E8E4',
-  toastBg: '#202A26',
+  tabActiveBg: '#E8F0CA',
+  tabBarBorder: '#DFE2E7',
+  toastBg: '#191B20',
   toastText: '#FFFFFF',
-  buttonPrimaryBg: '#254F40',
+  buttonPrimaryBg: '#202329',
   buttonPrimaryText: '#FFFFFF',
   overlay: 'rgba(0,0,0,0.35)',
   // Legacy token names keep existing screens on the shared accent palette.
-  accentGold: '#315E4C',
-  accentGoldSoft: '#E4EEE8',
-  goldHairline: 'rgba(49,94,76,0.20)',
-  goldTransparent: 'rgba(49,94,76,0)',
-  goldFrom: '#315E4C',
-  goldTo: '#315E4C',
+  accentGold: '#506A20',
+  accentGoldSoft: '#E8F0CA',
+  goldHairline: 'rgba(80,106,32,0.20)',
+  goldTransparent: 'rgba(80,106,32,0)',
+  goldFrom: '#506A20',
+  goldTo: '#506A20',
   textOnGold: '#FFFFFF',
   danger: '#A63D2F',
   dangerSoft: '#F6E3DE',
-  heroFrom: '#FAFBFA',
-  heroTo: '#FAFBFA',
-  skeleton: '#E4EAE6'
+  heroFrom: '#F7F8FA',
+  heroTo: '#F7F8FA',
+  skeleton: '#E4E7EB'
 };
 
 export const darkColors: typeof lightColors = {
-  background: '#141917',
-  card: '#1D2420',
-  surface: '#242D28',
-  chip: '#28312C',
-  accent: '#B5D0C1',
-  border: '#35423A',
-  text: '#F0F5F1',
-  muted: '#ABB8AF',
+  background: '#121316',
+  card: '#1C1E23',
+  surface: '#26292F',
+  chip: '#292C33',
+  accent: '#DDEA9C',
+  border: '#353942',
+  text: '#F5F6F8',
+  muted: '#A5AAB5',
   success: '#5FAE83',
-  tabActiveBg: '#2C4034',
-  tabBarBorder: '#35423A',
+  tabActiveBg: '#343D25',
+  tabBarBorder: '#353942',
   toastBg: '#EDF4EF',
   toastText: '#18251D',
-  buttonPrimaryBg: '#B8D7C5',
-  buttonPrimaryText: '#18251D',
+  buttonPrimaryBg: '#DDEA9C',
+  buttonPrimaryText: '#1B2113',
   overlay: 'rgba(0,0,0,0.6)',
-  accentGold: '#B8D7C5',
-  accentGoldSoft: '#2C4034',
-  goldHairline: 'rgba(184,215,197,0.25)',
-  goldTransparent: 'rgba(184,215,197,0)',
-  goldFrom: '#B8D7C5',
-  goldTo: '#B8D7C5',
+  accentGold: '#DDEA9C',
+  accentGoldSoft: '#343D25',
+  goldHairline: 'rgba(221,234,156,0.25)',
+  goldTransparent: 'rgba(221,234,156,0)',
+  goldFrom: '#DDEA9C',
+  goldTo: '#DDEA9C',
   textOnGold: '#18251D',
   danger: '#E08A6D',
   dangerSoft: '#3B241D',
-  heroFrom: '#141917',
-  heroTo: '#141917',
-  skeleton: '#2D3831'
+  heroFrom: '#121316',
+  heroTo: '#121316',
+  skeleton: '#30343B'
 };
 
 export type ThemeColors = typeof lightColors;
@@ -74,8 +74,8 @@ export const COLORS = lightColors;
 
 // --- Дизайн-константы «Ателье» ---
 
-// Серифная гарнитура для display-заголовков (editorial-стиль).
-export const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' });
+// Legacy name, shared system sans-serif for all headings.
+export const SERIF = Platform.select({ ios: 'System', android: 'sans-serif', default: 'system-ui' });
 
 // Скругления: sm — мелкие элементы, md — поля/плашки, lg/xl — карточки.
 export const RADII = { sm: 6, md: 8, lg: 8, xl: 8 } as const;
@@ -84,7 +84,6 @@ export const RADII = { sm: 6, md: 8, lg: 8, xl: 8 } as const;
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 // Пресеты теней. card — карточки, floating — CTA-кнопки/плавающие элементы.
-// Тёплый коричневый shadowColor даёт мягкую «бумажную» тень вместо серой.
 export const SHADOWS: Record<'card' | 'floating', ViewStyle> = {
   card: {
     shadowColor: '#152B20',
@@ -104,13 +103,13 @@ export const SHADOWS: Record<'card' | 'floating', ViewStyle> = {
 
 // Типографика. Цвет задаётся на месте использования из токенов темы.
 export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', TextStyle> = {
-  // Крупный серифный заголовок экрана.
+  // Заголовок экрана.
   display: {
     fontFamily: SERIF,
-    fontSize: 34,
-    fontWeight: '400',
+    fontSize: 30,
+    fontWeight: '700',
     letterSpacing: 0,
-    lineHeight: 42
+    lineHeight: 38
   },
   // Заголовок карточки/секции.
   title: {

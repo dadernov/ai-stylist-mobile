@@ -97,7 +97,7 @@ class Compose(unittest.TestCase):
         original = Image.new("RGB", (400, 800), (30, 30, 30))
         original.paste((200, 30, 30), (0, 0, 400, 800), cutout.getchannel("A"))
         generated = Image.new("RGB", (400, 800), (0, 200, 0))
-        result, status = compose(original, generated, cutout, cutout, ["top"])
+        result, status = compose(original, generated, cutout, cutout, ["top"], [(170, int(y0), 230, int(shoulders))])
         self.assertEqual(status, "composed")
         pixels = np.asarray(result)
         # Background and legs keep the original, the torso takes the new garment.
@@ -107,20 +107,45 @@ class Compose(unittest.TestCase):
         self.assertGreater(pixels[torso_y, 200][1], 150)
         self.assertGreater(pixels[int(y0 + (y1 - y0) * 0.95), 200][0], 120)
 
-    def test_reframed_output_is_left_alone(self):
+    def test_reframed_output_is_rejected(self):
         cutout, _ = person()
         original = Image.new("RGB", (400, 800), (30, 30, 30))
         generated = Image.new("RGB", (400, 400), (0, 200, 0))
         result, status = compose(original, generated, cutout, None, ["top"])
         self.assertEqual(status, "aspect-mismatch")
-        self.assertEqual(result.size, (400, 400))
+        self.assertEqual(result.size, original.size)
+        np.testing.assert_array_equal(result, original)
 
-    def test_missing_silhouettes_fall_back_to_the_generated_image(self):
+    def test_missing_silhouettes_preserve_original(self):
         original = Image.new("RGB", (400, 800), (30, 30, 30))
         generated = Image.new("RGB", (400, 800), (0, 200, 0))
         result, status = compose(original, generated, None, None, ["top"])
         self.assertEqual(status, "no-silhouette")
-        self.assertEqual(np.asarray(result)[10, 10][1], 200)
+        np.testing.assert_array_equal(result, original)
+
+    def test_missing_face_protection_is_rejected(self):
+        cutout, _ = person()
+        source = Image.new('RGB', (400, 800), 'red')
+        result, status = compose(source, Image.new('RGB', (400, 800), 'green'), cutout, cutout, ['top'])
+        self.assertEqual(status, 'no-face-protection')
+        np.testing.assert_array_equal(result, source)
+
+    def test_face_and_distant_background_are_pixel_exact(self):
+        cutout, (y0, shoulders, _) = person()
+        rng = np.random.default_rng(7)
+        source = Image.fromarray(rng.integers(0, 255, (800, 400, 3), dtype=np.uint8))
+        generated = Image.new('RGB', (800, 1600), 'green')
+        box = (150, int(y0), 250, int(shoulders))
+        result, status = compose(source, generated, cutout, cutout, ['long_outer'], [box])
+        self.assertEqual(status, 'composed')
+        self.assertEqual(result.size, source.size)
+        np.testing.assert_array_equal(np.asarray(result)[box[1]:box[3], box[0]:box[2]], np.asarray(source)[box[1]:box[3], box[0]:box[2]])
+        np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
+
+    def test_long_coat_hem_is_not_frozen(self):
+        cutout, (y0, _, y1) = person()
+        mask = np.asarray(build_keep_mask(cutout.size, cutout.getchannel('A'), cutout.getchannel('A'), ['long_outer']))
+        self.assertLess(mask[int(y0 + .97 * (y1 - y0)), 200], 30)
 
 
 

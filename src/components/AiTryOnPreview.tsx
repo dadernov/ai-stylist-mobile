@@ -129,7 +129,6 @@ export function AiTryOnPreview({
   warningMessage,
   updatedAt: controlledUpdatedAt,
   tuckMode,
-  qualityMode,
   history = [],
   showSourcePhoto = false,
   onGenerated
@@ -148,12 +147,10 @@ export function AiTryOnPreview({
   const [resultImageLoading, setResultImageLoading] = useState(false);
   const [resultImageError, setResultImageError] = useState<string | null>(null);
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
-  // Рекомендация конструктора (tuckMode/qualityMode props) применяется по умолчанию;
-  // пользователь может переопределить выбор вручную через пилюли ниже.
+  // Fit is adjustable; every generation uses the same quality policy.
   const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
-  const [qualityOverride, setQualityOverride] = useState<TryOnQualityMode | null>(null);
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
-  const effectiveQualityMode: TryOnQualityMode = qualityOverride ?? qualityMode ?? 'fast';
+  const effectiveQualityMode: TryOnQualityMode = 'quality';
   const cachedRemoteUris = useRef<Record<string, boolean>>({});
   const mounted = useRef(true);
   useEffect(() => {
@@ -235,13 +232,13 @@ export function AiTryOnPreview({
   const runGenerate = async () => {
     const generated = await analyzeTryOnGenerateLook(
       modelUri!,
-      topGarment?.imageUri,
-      bottomGarment?.imageUri,
-      shoesGarment?.imageUri,
+      topGarment?.sourceImageUri || topGarment?.imageUri,
+      bottomGarment?.sourceImageUri || bottomGarment?.imageUri,
+      shoesGarment?.sourceImageUri || shoesGarment?.imageUri,
       effectiveTuckMode,
       false,
       effectiveQualityMode,
-      outerGarment?.imageUri,
+      outerGarment?.sourceImageUri || outerGarment?.imageUri,
       topGarment?.category,
       outerGarment?.category
     );
@@ -324,11 +321,11 @@ export function AiTryOnPreview({
       {!resultUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
-      <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
+      {topGarment?.imageUri && !['Платье', 'Сарафан', 'Комбинезон'].includes(topGarment.category) && <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
         <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
         <Text style={styles.settingsLabel}>{t('Настройки примерки')}</Text>
         {settingsOpen ? <ChevronUp size={16} color={colors.muted} /> : <ChevronDown size={16} color={colors.muted} />}
-      </AppPressable>
+      </AppPressable>}
       {settingsOpen && <View style={styles.settingsContent}>
       {topGarment?.imageUri ? (
         <View style={styles.qualityCard}>
@@ -351,25 +348,6 @@ export function AiTryOnPreview({
           </View>
         </View>
       ) : null}
-      <View style={styles.qualityCard}>
-        <Text style={styles.qualityTitle}>{t('Качество примерки')}</Text>
-        <View style={styles.optionsRow}>
-          {(['fast', 'quality'] as TryOnQualityMode[]).map((mode) => {
-            const active = effectiveQualityMode === mode;
-            const label = mode === 'fast' ? 'Быстро' : 'Качество';
-            return (
-              <AppPressable
-                key={mode}
-                haptics
-                style={[styles.optionPill, active && styles.optionPillActive]}
-                onPress={() => setQualityOverride(mode)}
-              >
-                <Text style={[styles.optionPillText, active && styles.optionPillTextActive]}>{t(label)}</Text>
-              </AppPressable>
-            );
-          })}
-        </View>
-      </View>
       </View>}
       {readinessWarnings.length > 0 && <View style={styles.qualityCard}>
         {readinessWarnings.map((item) => (
