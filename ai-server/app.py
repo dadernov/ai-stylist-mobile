@@ -18,6 +18,7 @@ from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES
 import tryon_composite
 import face_guard
+import footwear_guard
 import tryon_policy
 import access
 import accounts
@@ -194,6 +195,7 @@ def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, 
         _silhouette(aligned),
         changed_slots,
         [face_guard.protected_head(face, original.size) for face in faces],
+        footwear_keep=footwear_guard.protect(original, aligned, changed_slots),
     )
 
 

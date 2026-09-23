@@ -90,6 +90,12 @@ class KeepMask(unittest.TestCase):
         person_height = self.y1 - self.y0
         self.assertLess(mask[int(self.y0 + person_height * 0.95), 200], 60)
 
+    def test_frozen_zone_also_protects_shifted_shoe_rims_on_the_floor(self):
+        generated = self.alpha.copy()
+        ImageDraw.Draw(generated).rectangle((260, 690, 290, 740), fill=255)
+        mask = np.asarray(build_keep_mask((400, 800), self.alpha, generated, ['top']))
+        self.assertEqual(mask[710, 280], 255)
+
 
 class Compose(unittest.TestCase):
     def test_only_the_changed_zone_takes_generated_pixels(self):

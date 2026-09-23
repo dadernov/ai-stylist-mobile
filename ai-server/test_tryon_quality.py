@@ -19,6 +19,11 @@ def upload():
 
 
 class QualityPolicy(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.object(app.footwear_guard, 'protect', return_value=None)
+        self.footwear = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_shifted_coat_is_composed_with_exact_source_face_and_background(self):
         cutout, _ = person()
         source = Image.new('RGB', cutout.size, (180, 80, 60))
@@ -32,6 +37,21 @@ class QualityPolicy(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(result)[box[1]:box[3], box[0]:box[2]], np.asarray(source)[box[1]:box[3], box[0]:box[2]])
         np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
         self.assertEqual(result.getpixel((200, 710)), generated.getpixel((200, 710)))
+        self.assertEqual(self.footwear.call_args.args[2], ['long_outer'])
+        self.assertEqual(self.footwear.call_args.args[1].size, source.size)
+
+    def test_footwear_mask_is_used_after_alignment(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size, 'red')
+        generated = Image.new('RGB', cutout.size, 'green')
+        keep = Image.new('L', source.size)
+        ImageDraw.Draw(keep).rectangle((180, 690, 220, 735), fill=255)
+        self.footwear.return_value = keep
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]), patch.object(app, '_silhouette', return_value=cutout):
+            result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], (source, cutout, [face()]))
+        self.assertEqual(status, 'composed')
+        self.assertEqual(result.getpixel((200, 710)), source.getpixel((200, 710)))
+        self.assertEqual(result.getpixel((200, 600)), generated.getpixel((200, 600)))
 
     def test_generated_margins_are_removed_without_stretching(self):
         cutout, _ = person()
@@ -86,6 +106,11 @@ class QualityPolicy(unittest.TestCase):
     def test_dress_does_not_freeze_lower_body(self):
         self.assertEqual(tryon_policy.composite_slot('top', 'Платье'), 'one_piece')
         self.assertIn('full skirt', tryon_policy.garment_prompt('top', 'Платье'))
+
+    def test_only_non_shoe_prompts_preserve_existing_footwear(self):
+        for slot in ['top', 'bottom', 'outer']:
+            self.assertIn('Preserve the existing shoes', tryon_policy.garment_prompt(slot))
+        self.assertNotIn('Preserve the existing shoes', tryon_policy.garment_prompt('shoes'))
 
 
 class ApiFlow(unittest.IsolatedAsyncioTestCase):

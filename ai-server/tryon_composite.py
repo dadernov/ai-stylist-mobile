@@ -159,9 +159,8 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
             draw.rectangle((0, 0, width, y0 + person_height * top), fill=255)
         if bottom < 0.98:
             draw.rectangle((0, y0 + person_height * bottom, width, height), fill=255)
-        frozen = Image.fromarray(
-            np.minimum(np.asarray(frozen), np.asarray(person_mask)), mode="L"
-        )
+        # Freeze the entire unchanged zone, not just the old silhouette. A
+        # shifted generated shoe can otherwise leave a second rim on the floor.
         keep = Image.fromarray(np.maximum(np.asarray(keep), np.asarray(frozen)), mode="L")
 
     softened = np.asarray(_feather(keep, min(3, scale * 0.003)))
@@ -172,7 +171,7 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
     return Image.fromarray(np.maximum(softened, np.asarray(exact)), mode='L')
 
 
-def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=()):
+def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=(), footwear_keep=None):
     """Blend the generated garments onto the untouched original person."""
     generated = generated.convert("RGB")
     original = original.convert("RGB")
@@ -192,4 +191,6 @@ def compose(original: Image.Image, generated: Image.Image, original_cutout, gene
         return original, 'no-face-protection'
 
     keep = build_keep_mask(generated.size, original_alpha, generated_alpha, changed_slots, protected_heads)
+    if footwear_keep is not None:
+        keep = Image.fromarray(np.maximum(np.asarray(keep), np.asarray(footwear_keep)))
     return Image.composite(original, generated, keep), "composed"
