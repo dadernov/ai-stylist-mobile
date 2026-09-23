@@ -29,6 +29,7 @@ const files = {
 let submit, poll;
 const stubs = {
   '@react-native-async-storage/async-storage': { default: storage },
+  'react-native': { Platform: { OS: 'ios' } },
   'expo-file-system/legacy': files,
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'sha256' }, randomUUID: crypto.randomUUID,
     digestStringAsync: async (algorithm, value) => crypto.createHash(algorithm).update(value).digest('hex') }
@@ -164,6 +165,69 @@ async function run() {
     await store.activate(alice);
     for (let i = 0; i < 10 && store.getSnapshot().jobs[0].status !== 'succeeded'; i++) await settle();
     assert.equal(store.getSnapshot().jobs[0].status, 'succeeded');
+    store.deactivate();
+  });
+  await test('reload recovers a repaired failed job with one GET, preserving its ID and garments', async () => {
+    const job = { id: crypto.randomUUID(), context: 'ctx', itemIds: ['coat'], garments: [{ id: 'coat', name: 'Original coat' }],
+      name: 'Coat', createdAt: Date.now(), status: 'failed', error: 'Rejected result', tuckMode: 'untucked' };
+    await saveJson(accountKey('alice', 'tryOnJobs'), [job]);
+    submit = () => assert.fail('must not submit paid work');
+    const requests = [];
+    global.fetch = async (url, options) => {
+      requests.push({ url, method: options.method || 'GET' });
+      assert.equal(options.headers['X-Session-Token'], alice.token);
+      return new Response(JSON.stringify({ ...response, status: 'succeeded', jobId: job.id }));
+    };
+    poll = service('ai').getTryOnJob;
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    await settle();
+    const recovered = store.getSnapshot().jobs[0];
+    assert.equal(recovered.status, 'succeeded');
+    assert.equal(recovered.id, job.id);
+    assert.equal(recovered.result.id, job.id);
+    assert.equal(recovered.result.tuckMode, 'untucked');
+    assert.equal(recovered.error, undefined);
+    assert.deepEqual(recovered.garments, job.garments);
+    assert.deepEqual(recovered.itemIds, job.itemIds);
+    assert.equal(recovered.createdAt, job.createdAt);
+    assert.deepEqual(requests.map(request => request.method), ['GET']);
+    assert.ok(requests[0].url.endsWith('/tryon-jobs/' + job.id));
+    assert.equal(JSON.parse(values.get(accountKey('alice', 'tryOnJobs')))[0].status, 'succeeded');
+    store.deactivate();
+  });
+  await test('failed reconciliation leaves actual failures, expired jobs and network errors unchanged', async () => {
+    const jobs = ['rejected', 'expired', 'offline'].map(id => ({ id, context: 'ctx', itemIds: ['coat'], name: 'Coat',
+      createdAt: Date.now(), status: 'failed', error: `Original ${id}`, tuckMode: 'auto' }));
+    await saveJson(accountKey('alice', 'tryOnJobs'), jobs);
+    submit = () => assert.fail('must not submit paid work');
+    const calls = [];
+    poll = async id => { calls.push(id); throw id === 'offline' ? new Error('Offline') : new ApiError('Still failed', id === 'expired' ? 404 : 200); };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    await settle();
+    assert.equal(calls.length, 3);
+    assert.deepEqual(store.getSnapshot().jobs, jobs);
+    assert.deepEqual(JSON.parse(values.get(accountKey('alice', 'tryOnJobs'))), jobs);
+    store.deactivate();
+    await store.activate(alice);
+    await settle();
+    assert.equal(calls.length, 3, 'a failed check is not an automatic retry loop');
+    store.deactivate();
+  });
+  await test('failed reconciliation checks only the latest three jobs within 24 hours', async () => {
+    const now = Date.now();
+    const jobs = [now - 5000, now - 4000, now - 3000, now - 2000, now - 1000, now - 25 * 60 * 60 * 1000, now + 60000]
+      .map((createdAt, index) => ({ id: `failed-${index}`, context: 'ctx', itemIds: [], name: 'Look', createdAt, status: 'failed', tuckMode: 'auto' }));
+    await saveJson(accountKey('alice', 'tryOnJobs'), jobs);
+    submit = () => assert.fail('must not submit paid work');
+    const calls = [];
+    poll = async id => { calls.push(id); return { status: 'pending' }; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    await settle();
+    assert.deepEqual(calls, ['failed-4', 'failed-3', 'failed-2']);
+    assert.deepEqual(store.getSnapshot().jobs, jobs, 'an unfinished server repair does not start normal polling');
     store.deactivate();
   });
   await test('regenerate gets a new ID; a rejected protected result is not displayed', async () => {

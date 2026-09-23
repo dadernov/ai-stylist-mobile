@@ -21,6 +21,21 @@ def labels():
 
 
 class FootwearProtection(unittest.TestCase):
+    def test_shifted_footprint_does_not_restore_pieces_of_old_trousers(self):
+        source = labels()
+        generated = source.copy()
+        generated[335:350, 75:95] = 9
+        mask = np.asarray(footwear_guard.keep_mask(source, generated, ['bottom', 'long_outer']))
+        self.assertEqual(source[340, 80], 6)
+        self.assertEqual(mask[340, 80], 0, 'old trousers must never be pasted around a shifted shoe')
+
+    def test_pants_misclassification_cannot_erase_original_toe_and_sole(self):
+        source = labels()
+        generated = source.copy()
+        generated[350:380, 65:98] = 6
+        mask = np.asarray(footwear_guard.keep_mask(source, generated, ['bottom', 'long_outer']))
+        self.assertTrue((mask[362:380, 65:98] == 255).all())
+
     def test_shoes_and_both_shifted_footprints_are_exact(self):
         source = labels()
         generated = source.copy()

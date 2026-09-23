@@ -1,18 +1,12 @@
-"""Keep everything except the replaced garments from the original photo.
+"""Compose the protected source head/scenery with a coherent generated body.
 
-FASHN redraws the whole frame on every pass, so a look with several garments
-drifts: the background warps, the face changes, and body parts nobody asked to
-restyle get repainted. Try-on is only trustworthy when the person stays the
-person, so the final image is assembled here instead of being taken as-is —
-generated pixels are kept where a garment was actually replaced, and every
-other pixel comes back from the original photo.
-
-The geometry is derived from the person silhouette (rembg alpha), not from the
-frame: a photo where the model stands off-centre or fills half the crop must
-work exactly like a centred full-height shot.
+The supplied matte is authoritative: reapplying source skin or footwear masks
+would splice a second pose into the result. Legacy silhouette-only callers use
+the fallback mask builder below. The source image is never spatially warped.
 """
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from image_color import SRGB_BYTES
 
 # Zones a slot is allowed to repaint, as a fraction of the person's height
 # measured from the top of the silhouette. Generous on purpose: a coat reaches
@@ -179,7 +173,7 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
     return Image.fromarray(np.maximum.reduce([softened, np.asarray(exact), np.asarray(background_keep)]), mode='L')
 
 
-def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=(), footwear_keep=None):
+def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=(), footwear_keep=None, original_full=None, garment_keep=None, hand_keep=None):
     """Blend the generated garments onto the untouched original person."""
     generated = generated.convert("RGB")
     original = original.convert("RGB")
@@ -199,6 +193,32 @@ def compose(original: Image.Image, generated: Image.Image, original_cutout, gene
         return original, 'no-face-protection'
 
     keep = build_keep_mask(generated.size, original_alpha, generated_alpha, changed_slots, protected_heads)
+    if garment_keep is not None:
+        # The image-guided matte already contains unchanged anatomy and scenery.
+        # Intersecting it with a coarse silhouette reintroduced old cuffs/pants.
+        keep = garment_keep
+        for head in protected_heads:
+            if isinstance(head, Image.Image):
+                keep = ImageChops.lighter(keep, head)
+            else:
+                exact = Image.new('L', keep.size)
+                ImageDraw.Draw(exact).rectangle(head, fill=255)
+                keep = ImageChops.lighter(keep, exact)
     if footwear_keep is not None:
         keep = Image.fromarray(np.maximum(np.asarray(keep), np.asarray(footwear_keep)))
-    return Image.composite(original, generated, keep), "composed"
+    if hand_keep is not None:
+        keep = ImageChops.lighter(keep, hand_keep)
+    if original_full is not None:
+        # Only masks and the generated garment are enlarged. Protected source
+        # pixels come from the original resolution, never from a thumbnail.
+        original = original_full.convert('RGB')
+        generated = generated.resize(original.size, Image.Resampling.LANCZOS)
+        keep = keep.resize(original.size, Image.Resampling.BILINEAR)
+        for head in protected_heads:
+            if isinstance(head, Image.Image):
+                keep = ImageChops.lighter(keep, head.resize(original.size, Image.Resampling.NEAREST))
+        if hand_keep is not None:
+            keep = ImageChops.lighter(keep, hand_keep.resize(original.size, Image.Resampling.NEAREST))
+    result = Image.composite(original, generated, keep)
+    result.info['icc_profile'] = SRGB_BYTES
+    return result, "composed"

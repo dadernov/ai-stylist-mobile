@@ -3,13 +3,14 @@ from io import BytesIO
 import unittest
 import tempfile
 from unittest.mock import AsyncMock, patch
-from PIL import Image, ImageDraw
+from PIL import Image, ImageCms, ImageDraw
 import numpy as np
 from fastapi import UploadFile
 
 import app
 import face_guard
 import tryon_policy
+import image_color
 from test_face_guard import face
 from test_tryon_composite import person
 
@@ -19,39 +20,53 @@ def upload():
     return UploadFile(file=data, filename='photo.png')
 
 
+def photo_bytes(image):
+    data = BytesIO()
+    image.save(data, format='PNG')
+    return data.getvalue()
+
+
 class QualityPolicy(unittest.TestCase):
     def setUp(self):
-        patcher = patch.object(app.footwear_guard, 'protect', return_value=None)
-        self.footwear = patcher.start()
+        self.labels = (np.asarray(person()[0].getchannel('A')) > 0).astype(np.uint8) * 4
+        self.labels[32:114, 162:239] = 11
+        parsing = patch.object(app.footwear_guard, 'parse', return_value=self.labels)
+        parsing.start()
+        self.addCleanup(parsing.stop)
+        lighting = patch.object(app.image_color, 'match_source_lighting', side_effect=lambda source, generated, *args: generated)
+        lighting.start()
+        self.addCleanup(lighting.stop)
+        patcher = patch.object(app.tryon_matte, 'prepare', wraps=app.tryon_matte.prepare)
+        self.matte = patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_shifted_coat_is_composed_with_exact_source_face_and_background(self):
         cutout, _ = person()
         source = Image.new('RGB', cutout.size, (180, 80, 60))
         generated = Image.new('RGB', cutout.size, (20, 140, 30))
-        prepared = (source, cutout, [face()])
+        prepared = (source, cutout, [face()], self.labels)
         with patch.object(face_guard, 'detect_faces', return_value=[face(offset=(10, 8))]), \
              patch.object(app, '_silhouette', return_value=cutout):
-            result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], prepared)
+            result, status = app._apply_identity_lock(photo_bytes(source), generated, ['long_outer'], prepared)
         self.assertEqual(status, 'composed')
-        protected = np.asarray(face_guard.protected_head_mask(face(), source.size)) == 255
+        protected = np.asarray(face_guard.protected_head_mask(face(), source.size, self.labels, self.labels)) == 255
         np.testing.assert_array_equal(np.asarray(result)[protected], np.asarray(source)[protected])
         x, y, w, h = map(int, face().box)
         np.testing.assert_array_equal(np.asarray(result)[y:y+h, x:x+w], np.asarray(source)[y:y+h, x:x+w])
         np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
         self.assertEqual(result.getpixel((200, 710)), generated.getpixel((200, 710)))
-        self.assertEqual(self.footwear.call_args.args[2], ['long_outer'])
-        self.assertEqual(self.footwear.call_args.args[1].size, source.size)
+        self.assertEqual(self.matte.call_args.args[5], ['long_outer'])
+        self.assertEqual(self.matte.call_args.args[3].shape, self.labels.shape)
 
-    def test_footwear_mask_is_used_after_alignment(self):
+    def test_refined_matte_is_used_after_alignment(self):
         cutout, _ = person()
         source = Image.new('RGB', cutout.size, 'red')
         generated = Image.new('RGB', cutout.size, 'green')
         keep = Image.new('L', source.size)
         ImageDraw.Draw(keep).rectangle((180, 690, 220, 735), fill=255)
-        self.footwear.return_value = keep
+        self.matte.return_value = (generated, keep, self.labels)
         with patch.object(face_guard, 'detect_faces', return_value=[face()]), patch.object(app, '_silhouette', return_value=cutout):
-            result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], (source, cutout, [face()]))
+            result, status = app._apply_identity_lock(photo_bytes(source), generated, ['long_outer'], (source, cutout, [face()], self.labels))
         self.assertEqual(status, 'composed')
         self.assertEqual(result.getpixel((200, 710)), source.getpixel((200, 710)))
         self.assertEqual(result.getpixel((200, 600)), generated.getpixel((200, 600)))
@@ -67,7 +82,7 @@ class QualityPolicy(unittest.TestCase):
                 generated.paste(narrow, origin)
                 with patch.object(face_guard, 'detect_faces', return_value=[face()]) as detect, \
                      patch.object(app, '_silhouette', return_value=cutout):
-                    result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], (source, cutout, [face()]))
+                    result, status = app._apply_identity_lock(photo_bytes(source), generated, ['long_outer'], (source, cutout, [face()], self.labels))
                 self.assertEqual(status, 'composed')
                 np.testing.assert_array_equal(detect.call_args.args[0], narrow)
                 self.assertEqual(result.getpixel((200, 680)), (40, 40, 200))
@@ -80,7 +95,7 @@ class QualityPolicy(unittest.TestCase):
         source = Image.new('RGB', cutout.size)
         with patch.object(face_guard, 'detect_faces', return_value=[face(offset=(90, 0))]), \
              patch.object(app, '_silhouette') as segment, self.assertRaisesRegex(ValueError, 'совместить'):
-            app._apply_identity_lock(b'photo', Image.new('RGB', (600, 800)), ['long_outer'], (source, cutout, [face()]))
+            app._apply_identity_lock(b'photo', Image.new('RGB', (600, 800)), ['long_outer'], (source, cutout, [face()], self.labels))
         segment.assert_not_called()
 
     def test_png_cache_has_a_byte_limit(self):
@@ -93,11 +108,95 @@ class QualityPolicy(unittest.TestCase):
         self.assertIsNotNone(app._get_cached_tryon_look('second'))
         app._TRYON_LOOK_CACHE.clear()
 
+    def test_full_resolution_head_detail_is_not_replaced_by_thumbnail(self):
+        cutout, _ = person()
+        rng = np.random.default_rng(7)
+        source = Image.fromarray(rng.integers(0, 256, (2400, 1200, 3), dtype=np.uint8))
+        working = source.resize(cutout.size)
+        generated = Image.new('RGB', cutout.size, 'green')
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]), patch.object(app, '_silhouette', return_value=cutout):
+            result, status = app._apply_identity_lock(photo_bytes(source), generated, ['top'], (working, cutout, [face()], self.labels))
+        self.assertEqual(status, 'composed')
+        self.assertEqual(result.size, source.size)
+        mask = face_guard.protected_head_mask(face(), working.size, self.labels, self.labels).resize(source.size, Image.Resampling.NEAREST)
+        protected = np.asarray(mask) == 255
+        np.testing.assert_array_equal(np.asarray(result)[protected], np.asarray(source)[protected])
+        self.assertEqual(result.getpixel((600, 750)), (0, 128, 0))
+        self.assertEqual(result.info['icc_profile'], image_color.SRGB_BYTES)
+
+
+class ColorHandling(unittest.TestCase):
+    def test_original_resolution_respects_camera_orientation(self):
+        source = Image.new('RGB', (2600, 1200), (180, 100, 65))
+        exif = source.getexif()
+        exif[274] = 6
+        data = BytesIO()
+        source.save(data, 'JPEG', exif=exif)
+        full = app._working_image(data.getvalue(), max_side=None)
+        working = app._working_image(data.getvalue())
+        self.assertEqual(full.size, (1200, 2600))
+        self.assertEqual(max(working.size), 2048)
+        self.assertNotIn(274, full.getexif())
+
+    def test_tagged_inputs_and_provider_jpeg_keep_srgb_profile(self):
+        source = Image.new('RGB', (80, 160), (180, 100, 65))
+        source.info['icc_profile'] = image_color.SRGB_BYTES
+        data = photo_bytes(source)
+        working = app._working_image(data)
+        prepared = app._prepare_tryon_image_data_url(data, 'image/png', 2048, 97)
+        encoded, _ = app._data_url_to_bytes(prepared)
+        provider_input = Image.open(BytesIO(encoded))
+        self.assertEqual(working.info['icc_profile'], image_color.SRGB_BYTES)
+        self.assertEqual(provider_input.info['icc_profile'], image_color.SRGB_BYTES)
+        np.testing.assert_array_equal(working, source)
+
+    def test_profile_is_converted_not_just_relabelled(self):
+        lab = ImageCms.ImageCmsProfile(ImageCms.createProfile('LAB'))
+        source = Image.new('LAB', (4, 4), (160, 155, 110))
+        source.info['icc_profile'] = lab.tobytes()
+        expected = ImageCms.profileToProfile(source, lab, image_color.SRGB, outputMode='RGB')
+        actual = image_color.to_srgb(source)
+        np.testing.assert_array_equal(actual, expected)
+        self.assertNotEqual(actual.getpixel((0, 0)), source.getpixel((0, 0)))
+
+    def test_transparency_survives_color_conversion(self):
+        source = Image.new('RGBA', (4, 4), (150, 60, 30, 71))
+        source.info['icc_profile'] = image_color.SRGB_BYTES
+        actual = image_color.to_srgb(source)
+        self.assertEqual(actual.getpixel((0, 0)), (150, 60, 30, 71))
+
+    def test_invalid_profile_is_not_silently_stripped(self):
+        source = Image.new('RGB', (4, 4))
+        source.info['icc_profile'] = b'broken profile'
+        with self.assertRaisesRegex(ValueError, 'цветовой профиль'):
+            app._prepare_tryon_image_data_url(photo_bytes(source), 'image/png', 2048, 97)
+
+    def test_legacy_disabled_resize_cannot_bypass_color_normalization(self):
+        source = Image.new('RGB', (4, 4), 'red')
+        url = app._prepare_tryon_image_data_url(photo_bytes(source), 'image/png', 0, 97)
+        content, _ = app._data_url_to_bytes(url)
+        self.assertEqual(Image.open(BytesIO(content)).info['icc_profile'], image_color.SRGB_BYTES)
+
+
+class ProviderPolicy(unittest.TestCase):
+    def test_selected_inner_top_keeps_outerwear_open(self):
+        prompt = tryon_policy.garment_prompt('outer', 'Плащ', keep_outer_open=True)
+        self.assertIn('fully open and unfastened', prompt)
+        self.assertIn('selected inner top and its print clearly visible', prompt)
+        self.assertIn('Do not close, button up, zip up', prompt)
+        self.assertIn('Preserve every visible hand and finger', prompt)
+
+    def test_single_outerwear_uses_reference_fastening_state(self):
+        prompt = tryon_policy.garment_prompt('outer', 'Плащ')
+        self.assertIn('Match the open or closed state of the product photo', prompt)
+        self.assertNotIn('fully open and unfastened', prompt)
+
     def test_provider_inputs_force_quality_even_with_legacy_env(self):
         with patch.dict(os.environ, {'FASHN_GENERATION_MODE': 'fast', 'FASHN_RESOLUTION': '1k'}):
             inputs = app._build_fashn_inputs('tryon-max', 'person', 'garment', generation_mode_override='fast')
         self.assertEqual(inputs['generation_mode'], 'quality')
         self.assertEqual(inputs['resolution'], '2k')
+        self.assertEqual(inputs['output_format'], 'png')
 
     def test_long_coat_has_full_length_prompt_and_composite_zone(self):
         for category in ['Плащ', 'Тренч', 'Пальто']:
@@ -117,8 +216,11 @@ class QualityPolicy(unittest.TestCase):
 
     def test_only_non_shoe_prompts_preserve_existing_footwear(self):
         for slot in ['top', 'bottom', 'outer']:
-            self.assertIn('Preserve the existing shoes', tryon_policy.garment_prompt(slot))
-        self.assertNotIn('Preserve the existing shoes', tryon_policy.garment_prompt('shoes'))
+            prompt = tryon_policy.garment_prompt(slot)
+            self.assertIn(tryon_policy.FOOTWEAR, prompt)
+            self.assertIn('Keep bare feet bare.', prompt)
+            self.assertIn('Shoes or slippers lying on the floor are background', prompt)
+        self.assertNotIn(tryon_policy.FOOTWEAR, tryon_policy.garment_prompt('shoes'))
 
 
 class ApiFlow(unittest.IsolatedAsyncioTestCase):
@@ -133,10 +235,10 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
         self.env.stop()
         self.temp.cleanup()
 
-    async def test_fit_instruction_reaches_actual_provider_inputs_on_every_pass(self):
-        for mode, order, instruction in [
-            ('tucked', ['top', 'bottom', 'shoes', 'outer'], 'Fully tuck the top'),
-            ('untucked', ['bottom', 'top', 'shoes', 'outer'], 'completely untucked'),
+    async def test_fit_instruction_reaches_one_provider_call_for_entire_outfit(self):
+        for mode, instruction in [
+            ('tucked', 'Fully tuck the top'),
+            ('untucked', 'completely untucked'),
         ]:
             with self.subTest(mode=mode):
                 provider = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
@@ -149,15 +251,17 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
                         top_category='Футболка', outer_category='Куртка', device='test')
                 self.assertEqual(result.get('status'), 'succeeded', result)
                 self.assertEqual(result['tuckModeUsed'], mode)
-                self.assertEqual([step['step'] for step in result['steps']], order)
-                self.assertEqual(provider.await_count, 4)
+                self.assertGreaterEqual(result['timings']['totalSeconds'], result['timings']['compositeSeconds'])
+                self.assertTrue(all(step['durationSeconds'] >= 0 for step in result['steps']))
+                self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
+                self.assertEqual(provider.await_count, 1)
                 for call in provider.call_args_list:
                     self.assertIn(instruction, call.args[3]['prompt'])
                     self.assertEqual(call.args[3]['generation_mode'], 'quality')
-                top_call = provider.call_args_list[order.index('top')]
-                self.assertIn('Remove the old collar', top_call.args[3]['prompt'])
+                self.assertIn('Remove the old collar', provider.call_args.args[3]['prompt'])
+                self.assertIn('fully open and unfastened', provider.call_args.args[3]['prompt'])
 
-    async def test_legacy_fast_request_uses_quality_and_coat_is_last(self):
+    async def test_legacy_fast_request_uses_one_quality_pass_for_all_selected_slots(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
         generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
         with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), patch.object(app, '_prepare_identity_source', return_value='prepared'), \
@@ -167,8 +271,8 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
                 tuck_mode='auto', compare_mode='false', quality_mode='fast', top_category='Рубашка', outer_category='Плащ', device='test')
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(result['qualityModeUsed'], 'quality')
-        self.assertEqual([step['step'] for step in result['steps']], ['top', 'shoes', 'outer'])
-        self.assertEqual(generate.await_count, 3)
+        self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
+        self.assertEqual(generate.await_count, 1)
         for call in generate.call_args_list:
             self.assertEqual(call.args[2], 'tryon-max')
             self.assertEqual(call.kwargs['generation_mode_override'], 'quality')
@@ -179,6 +283,18 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
              patch.object(app, '_apply_identity_lock', side_effect=ValueError('unsafe')):
             with self.assertRaises(ValueError):
                 await app._face_locked_output_url(None, b'photo', 'https://example.test/result.png', ['top'])
+
+    async def test_export_keeps_full_size_pixels_and_explicit_srgb(self):
+        image = Image.new('RGB', (1200, 2400), (180, 100, 65))
+        with patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (600, 1200)))), \
+             patch.object(app, '_apply_identity_lock', return_value=(image, 'composed')):
+            url = await app._face_locked_output_url(None, b'photo', 'data:image/png;base64,mocked', ['top'])
+        content, mime = app._data_url_to_bytes(url)
+        result = Image.open(BytesIO(content))
+        self.assertEqual(mime, 'image/png')
+        self.assertEqual(result.size, image.size)
+        self.assertEqual(result.info['icc_profile'], image_color.SRGB_BYTES)
+        np.testing.assert_array_equal(result, image)
 
     async def test_mask_failure_is_reported_separately_and_logged_without_photos(self):
         image = Image.new('RGB', (400, 800))

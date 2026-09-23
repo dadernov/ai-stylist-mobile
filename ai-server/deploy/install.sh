@@ -34,7 +34,7 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
 fi
 
 mkdir -p "$APP_DIR"
-for f in app.py access.py accounts.py jobs.py request_guard.py clothing_analysis.py tryon_composite.py face_guard.py footwear_guard.py tryon_policy.py download_face_model.py download_parsing_model.py download_analysis_model.py requirements.txt README.md; do
+for f in app.py access.py accounts.py jobs.py request_guard.py clothing_analysis.py tryon_composite.py face_guard.py footwear_guard.py tryon_policy.py image_color.py garment_guard.py tryon_matte.py tryon_reference.py tryon_debug.py download_face_model.py download_parsing_model.py download_analysis_model.py requirements.txt README.md; do
   [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP_DIR/$f"
 done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"

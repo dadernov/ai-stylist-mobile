@@ -23,6 +23,11 @@ import tryon_composite
 import face_guard
 import footwear_guard
 import tryon_policy
+import image_color
+import garment_guard
+import tryon_matte
+import tryon_reference
+import tryon_debug
 import access
 import accounts
 import jobs
@@ -135,13 +140,12 @@ def _data_url_to_bytes(data_url: str):
 
 
 def _prepare_tryon_image_data_url(content: bytes, mime_type: str, max_side: int, jpeg_quality: int):
-    if max_side <= 0:
-        return _bytes_to_data_url(content, mime_type)
+    max_side = min(max_side, 2048) if max_side > 0 else 2048
     try:
         source = Image.open(BytesIO(content))
         _check_image_size(source)
         source.draft('RGB', (min(max_side, 2048), min(max_side, 2048)))
-        image = ImageOps.exif_transpose(source)
+        image = image_color.to_srgb(ImageOps.exif_transpose(source))
         max_side = min(max_side, 2048)
         if max(image.size) > max_side:
             image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
@@ -154,8 +158,10 @@ def _prepare_tryon_image_data_url(content: bytes, mime_type: str, max_side: int,
             canvas = image.convert("RGB")
 
         buff = BytesIO()
-        canvas.save(buff, format="JPEG", quality=jpeg_quality, optimize=True)
+        canvas.save(buff, format="JPEG", quality=jpeg_quality, optimize=True, icc_profile=image_color.SRGB_BYTES)
         return _bytes_to_data_url(buff.getvalue(), "image/jpeg")
+    except ValueError:
+        raise
     except Exception:
         return _bytes_to_data_url(content, mime_type)
 
@@ -195,31 +201,43 @@ def _prepare_identity_source(original_content: bytes):
     faces = face_guard.detect_faces(original)
     if len(faces) != 1:
         raise ValueError('Для защищённой примерки нужно фото одного человека с хорошо видимым лицом.')
-    cutout = _silhouette(original)
+    try:
+        labels = footwear_guard.parse(original)
+    except Exception as exc:
+        raise ValueError('Не удалось подготовить защиту лица и обуви. Попробуй примерку позже.') from exc
+    cutout = garment_guard.silhouette(original, labels)
     if tryon_composite.person_alpha(original.size, cutout) is None:
         raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
-    return original, cutout, faces
+    return original, cutout, faces, labels
 
 
 def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots, prepared=None):
-    original, cutout, faces = prepared or _prepare_identity_source(original_content)
+    original, cutout, faces, source_labels = prepared or _prepare_identity_source(original_content)
     # A provider can add margins around a narrow source without moving the person.
     # Remove those margins uniformly, never squeeze the generated body to fit.
     # Landmark validation still rejects a zoomed/cropped or repositioned person.
     framed = ImageOps.fit(generated_image, original.size, method=Image.Resampling.LANCZOS)
     try:
-        aligned = face_guard.align_to_source(original, framed, faces[0])
+        aligned, coverage = face_guard.align_to_source(
+            original, framed, faces[0], source_labels=source_labels, return_coverage=True
+        )
     except face_guard.AlignmentError as exc:
         print(f'Try-on alignment rejected: {exc}; source={original.size}; generated={generated_image.size}', flush=True)
         raise ValueError('Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.') from exc
+    generated_labels = footwear_guard.parse(aligned)
+    aligned, garment_keep, generated_labels = tryon_matte.prepare(
+        original, aligned, source_labels, generated_labels, faces, changed_slots
+    )
+    garment_keep = tryon_matte.require_coverage(coverage, garment_keep)
     return tryon_composite.compose(
         original,
         aligned,
         cutout,
-        _silhouette(aligned),
+        garment_guard.silhouette(aligned, generated_labels),
         changed_slots,
-        [face_guard.protected_head_mask(face, original.size) for face in faces],
-        footwear_keep=footwear_guard.protect(original, aligned, changed_slots),
+        [face_guard.protected_head_mask(face, original.size, source_labels, generated_labels) for face in faces],
+        original_full=_working_image(original_content, max_side=None),
+        garment_keep=garment_keep,
     )
 
 
@@ -229,12 +247,16 @@ async def _face_locked_output_url(
     output_url: str,
     changed_slots=(),
     prepared=None,
+    debug_context=None,
 ):
     # Never expose an unchecked provider image as the final result. PNG preserves
     # source pixels exactly; JPEG would modify the protected face and background.
     generated_image = await _load_image_from_url_or_data_url(client, output_url)
     if generated_image is None:
         raise ValueError('Не удалось проверить результат примерки. Попробуй ещё раз.')
+
+    if debug_context is not None:
+        await asyncio.to_thread(tryon_debug.capture, *debug_context, original_content, generated_image)
 
     final_image, status = await asyncio.to_thread(
         _apply_identity_lock, original_content, generated_image, changed_slots, prepared
@@ -245,7 +267,7 @@ async def _face_locked_output_url(
             raise ValueError('Не удалось отделить одежду от фона на результате примерки. Исходное фото сохранено.')
         raise ValueError('Не удалось совместить результат с исходным фото. Исходное фото сохранено.')
     buff = BytesIO()
-    final_image.save(buff, format='PNG', compress_level=3)
+    final_image.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
     return _bytes_to_data_url(buff.getvalue(), 'image/png')
 
 
@@ -259,12 +281,14 @@ def _check_image_size(image):
         raise HTTPException(413, 'Фото слишком большое. Выбери изображение до 25 мегапикселей.')
 
 
-def _working_image(content):
+def _working_image(content, max_side=2048):
     with Image.open(BytesIO(content)) as source:
         _check_image_size(source)
-        source.draft('RGB', (2048, 2048))
-        image = ImageOps.exif_transpose(source)
-        image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+        if max_side:
+            source.draft('RGB', (max_side, max_side))
+        image = image_color.to_srgb(ImageOps.exif_transpose(source))
+        if max_side:
+            image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
         return image.convert('RGB')
 
 
@@ -345,7 +369,7 @@ def _build_fashn_inputs(
         inputs = {
             "model_image": model_image,
             "product_image": garment_image,
-            "output_format": os.getenv("FASHN_OUTPUT_FORMAT", "jpeg"),
+            "output_format": "png",
             "return_base64": os.getenv("FASHN_RETURN_BASE64", "false").lower() == "true"
         }
         if prompt:
@@ -1076,149 +1100,58 @@ async def tryon_generate_look(
         job_id = request_id or f'legacy-{int(time.time() // 21600)}-{cache_key[:32]}'
         task_key = f'{device}:{job_id}'
         seed = int(hashlib.sha256(job_id.encode()).hexdigest()[:8], 16) % 2147483647
-        cost = sum(bool(content) for content in [top_content, bottom_content, shoes_content, outer_content])
+        cost = 1
 
         async def _generate_look():
+            started = time.monotonic()
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
             current_model = _prepare_tryon_image_data_url(person_content, person_mime, tryon_max_side, tryon_jpeg_quality)
-            top_image = _prepare_tryon_image_data_url(top_content, top_mime, tryon_max_side, tryon_jpeg_quality) if top_content and top_mime else None
-            bottom_image = _prepare_tryon_image_data_url(bottom_content, bottom_mime, tryon_max_side, tryon_jpeg_quality) if bottom_content and bottom_mime else None
-            shoes_image = _prepare_tryon_image_data_url(shoes_content, shoes_mime, tryon_max_side, tryon_jpeg_quality) if shoes_content and shoes_mime else None
-            outer_image = _prepare_tryon_image_data_url(outer_content, outer_mime, tryon_max_side, tryon_jpeg_quality) if outer_content and outer_mime else None
+            garments = {slot: (content, mime) for slot, content, mime in [
+                ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
+                ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
+            ] if content}
+            if len(garments) == 1:
+                step_name, (content, mime) = next(iter(garments.items()))
+                reference = _prepare_tryon_image_data_url(content, mime, tryon_max_side, tryon_jpeg_quality)
+                prompt = tryon_policy.garment_prompt(step_name, outer_category if step_name == 'outer' else top_category, tuck_mode_normalized)
+            else:
+                step_name = 'outfit'
+                def prepare_reference():
+                    images = {slot: tryon_reference.decode(content) for slot, (content, _) in garments.items()}
+                    return tryon_reference.build(images)
+                board, positions = await asyncio.to_thread(prepare_reference)
+                reference = _image_to_data_url(board)
+                prompt = tryon_reference.prompt(positions, top_category.strip(), outer_category.strip(), tuck_mode_normalized)
+            timings = {'prepareSeconds': round(time.monotonic() - started, 2)}
 
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-                steps = []
+                step_started = time.monotonic()
+                jobs.attempt(device, job_id)
+                result = await _run_fashn_tryon_with_category_fallback(
+                    client, token, look_model_name, current_model, reference, ['auto'],
+                    mode_override=look_mode, generation_mode_override=look_generation_mode,
+                    prompt_override=prompt, max_wait_seconds=step_max_wait_seconds,
+                    poll_interval_seconds=poll_interval_seconds, seed_override=seed
+                )
+                elapsed = round(time.monotonic()-step_started, 2)
+                steps = [{'step': step_name, 'result': result, 'durationSeconds': elapsed}]
+                print(f'Try-on timing: stage={step_name}; seconds={elapsed}', flush=True)
+                if result.get('error') or not result.get('outputUrl'):
+                    return {'error': 'Не удалось сгенерировать примерку.', 'steps': steps}
+                current_model = result['outputUrl']
 
-                async def _run_bottom_step(step_name: str):
-                    nonlocal current_model
-                    bottom_prompt = tryon_policy.garment_prompt('bottom', tuck=tuck_mode_normalized)
-                    bottom_categories = _category_candidates("bottom", ["bottoms"])
-                    jobs.attempt(device, job_id)
-                    bottom_result = await _run_fashn_tryon_with_category_fallback(
-                        client,
-                        token,
-                        look_model_name,
-                        current_model,
-                        bottom_image,
-                        bottom_categories,
-                        mode_override=look_mode,
-                        generation_mode_override=look_generation_mode,
-                        prompt_override=bottom_prompt,
-                        max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
-                    )
-                    steps.append({"step": step_name, "result": bottom_result})
-                    if not bottom_result.get("error"):
-                        current_model = bottom_result.get("outputUrl")
-                    return bottom_result
+            changed_slots = sorted(tryon_policy.composite_slot(slot, outer_category if slot == 'outer' else top_category)
+                                   for slot in garments)
 
-                async def _run_top_step(step_name: str):
-                    nonlocal current_model
-                    top_prompt = tryon_policy.garment_prompt('top', top_category.strip(), tuck_mode_normalized)
-                    top_categories = _category_candidates(
-                        "top", ["one-pieces", "auto"] if top_category.strip() in ONE_PIECE_GARMENTS else ["tops"]
-                    )
-                    jobs.attempt(device, job_id)
-                    top_result = await _run_fashn_tryon_with_category_fallback(
-                        client,
-                        token,
-                        look_model_name,
-                        current_model,
-                        top_image,
-                        top_categories,
-                        mode_override=look_mode,
-                        generation_mode_override=look_generation_mode,
-                        prompt_override=top_prompt,
-                        max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
-                    )
-                    steps.append({"step": step_name, "result": top_result})
-                    if not top_result.get("error"):
-                        current_model = top_result.get("outputUrl")
-                    return top_result
-
-                async def _run_outer_step(step_name: str):
-                    nonlocal current_model
-                    outer_prompt = tryon_policy.garment_prompt('outer', outer_category.strip(), tuck_mode_normalized)
-                    outer_categories = ['auto']
-                    jobs.attempt(device, job_id)
-                    outer_result = await _run_fashn_tryon_with_category_fallback(
-                        client,
-                        token,
-                        look_model_name,
-                        current_model,
-                        outer_image,
-                        outer_categories,
-                        mode_override=look_mode,
-                        generation_mode_override=look_generation_mode,
-                        prompt_override=outer_prompt,
-                        max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
-                    )
-                    steps.append({"step": step_name, "result": outer_result})
-                    if not outer_result.get("error"):
-                        current_model = outer_result.get("outputUrl")
-                    return outer_result
-
-                preferred_order = "top-first" if tuck_mode_normalized == "tucked" else "bottom-first"
-
-                if preferred_order == "top-first":
-                    if top_image is not None:
-                        top_result = await _run_top_step("top")
-                        if top_result.get("error"):
-                            return {"error": "Top garment generation failed", "top": top_result, "steps": steps}
-
-                    if bottom_image is not None:
-                        bottom_result = await _run_bottom_step("bottom")
-                        if bottom_result.get("error"):
-                            return {"error": "Bottom garment generation failed", "bottom": bottom_result, "steps": steps}
-                else:
-                    if bottom_image is not None:
-                        bottom_result = await _run_bottom_step("bottom")
-                        if bottom_result.get("error"):
-                            return {"error": "Bottom garment generation failed", "bottom": bottom_result, "steps": steps}
-
-                    if top_image is not None:
-                        top_result = await _run_top_step("top")
-                        if top_result.get("error"):
-                            return {"error": "Top garment generation failed", "top": top_result, "steps": steps}
-
-                if shoes_image is not None:
-                    jobs.attempt(device, job_id)
-                    shoes_result = await _run_fashn_tryon_with_category_fallback(
-                        client, token, look_model_name, current_model, shoes_image, ['auto'],
-                        mode_override=look_mode,
-                        generation_mode_override=look_generation_mode,
-                        prompt_override=tryon_policy.garment_prompt('shoes', tuck=tuck_mode_normalized),
-                        max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
-                    )
-                    steps.append({"step": "shoes", "result": shoes_result})
-                    if shoes_result.get("error"):
-                        return {"error": "Не удалось примерить обувь.", "steps": steps}
-                    current_model = shoes_result.get("outputUrl")
-
-                # Long outerwear is last so a subsequent footwear pass cannot trim its hem.
-                if outer_image is not None:
-                    outer_result = await _run_outer_step('outer')
-                    if outer_result.get('error'):
-                        return {'error': 'Не удалось примерить верхнюю одежду.', 'steps': steps}
-
-            if not steps:
-                return {"error": "No garments provided (top_file, bottom_file, shoes_file, or outer_file required)"}
-
-            # Only the slots that actually ran may repaint the body; every other
-            # zone (and the background and head) comes back from the source photo.
-            changed_slots = sorted({
-                tryon_policy.composite_slot(step['step'].split('_')[0], outer_category if step['step'] == 'outer' else top_category)
-                for step in steps
-                if not step["result"].get("error") and step["result"].get("status") != "skipped"
-            })
-
+            composite_started = time.monotonic()
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
                 locked_output_url = await _face_locked_output_url(
-                    output_client, person_content, current_model, changed_slots, prepared_identity
+                    output_client, person_content, current_model, changed_slots, prepared_identity,
+                    debug_context=(device, job_id),
                 )
+            timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
+            timings['totalSeconds'] = round(time.monotonic() - started, 2)
+            print(f'Try-on timing: prepare={timings["prepareSeconds"]}; composite={timings["compositeSeconds"]}; total={timings["totalSeconds"]}', flush=True)
             response = {
                 "status": "succeeded",
                 "outputUrl": locked_output_url,
@@ -1226,6 +1159,7 @@ async def tryon_generate_look(
                 "tuckModeUsed": tuck_mode_normalized,
                 "qualityModeUsed": quality_mode_normalized,
                 "modelUsed": look_model_name,
+                "timings": timings,
             }
             return response
 
@@ -1241,7 +1175,7 @@ async def tryon_generate_look(
             if result.get('error'):
                 result = {'status': 'failed', 'error': result['error']}
             elif result.get('steps'):
-                result['steps'] = [{'step': step['step'], 'result': {'status': step['result'].get('status')}} for step in result['steps']]
+                result['steps'] = [{'step': step['step'], 'durationSeconds': step.get('durationSeconds'), 'result': {'status': step['result'].get('status')}} for step in result['steps']]
             result.update(jobId=job_id, updatedAt=int(time.time() * 1000))
             await asyncio.to_thread(jobs.finish, device, job_id, result)
             _TRYON_LOOK_INFLIGHT.pop(task_key, None)

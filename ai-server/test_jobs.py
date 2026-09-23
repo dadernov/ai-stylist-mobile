@@ -97,7 +97,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.env.start(); access.reset_state_for_tests()
         app._TRYON_LOOK_INFLIGHT.clear()
         self.prepare = patch.object(app, '_prepare_identity_source', return_value='prepared'); self.prepare.start()
-        self.protect = patch.object(app, '_face_locked_output_url', AsyncMock(return_value='protected')); self.protect.start()
+        self.protect = patch.object(app, '_face_locked_output_url', AsyncMock(return_value='protected')); self.protect_mock = self.protect.start()
         async def provider(*args, **kwargs):
             await asyncio.sleep(.03)
             return {'status': 'succeeded', 'outputUrl': 'https://test/private-unprotected'}
@@ -133,6 +133,22 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=ValueError('rejected'))):
             result = await self.generate()
         self.assertEqual(result['error'], 'rejected')
+        self.assertEqual(access.spent_today('a'), 1)
+
+    async def test_four_garments_reserve_and_charge_only_one_operation(self):
+        result = await self.generate(bottom_file=upload(), outer_file=upload(), shoes_file=upload())
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(self.provider.await_count, 1)
+        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(self.protect_mock.call_args.args[3], ['bottom', 'outer', 'shoes', 'top'])
+
+    async def test_failed_outfit_never_retries_paid_calls(self):
+        self.provider.side_effect = None
+        self.provider.return_value = {'error': 'provider failed'}
+        result = await self.generate(bottom_file=upload(), outer_file=upload())
+        self.assertEqual(result['status'], 'failed')
+        self.assertNotIn('outputUrl', result)
+        self.assertEqual(self.provider.await_count, 1)
         self.assertEqual(access.spent_today('a'), 1)
 
     async def test_async_job_is_retrievable_by_owner_only(self):

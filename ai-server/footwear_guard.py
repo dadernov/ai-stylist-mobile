@@ -6,7 +6,7 @@ import threading
 import cv2
 import numpy as np
 import onnxruntime as ort
-from PIL import Image, ImageFilter
+from PIL import Image
 
 # ATR labels from mattmdjaga/segformer_b0_clothes. A coat is upper clothing;
 # dresses and jumpsuits can occlude the shoes without changing footwear.
@@ -61,7 +61,8 @@ def keep_mask(source_labels, generated_labels, changed_slots):
     if source_labels.shape != generated_labels.shape:
         raise ValueError('Parsing maps must be aligned')
     height, width = source_labels.shape
-    shoes = np.isin(source_labels, [9, 10]) | np.isin(generated_labels, [9, 10])
+    original_shoes = np.isin(source_labels, [9, 10])
+    shoes = original_shoes | np.isin(generated_labels, [9, 10])
     count, components, stats, _ = cv2.connectedComponentsWithStats(shoes.astype(np.uint8), connectivity=8)
     valid = [label for label in range(1, count) if stats[label, cv2.CC_STAT_AREA] >= max(4, width * height * .00004)]
     shoes = np.isin(components, valid)
@@ -75,16 +76,38 @@ def keep_mask(source_labels, generated_labels, changed_slots):
     floor[:shoe_top] = False
     labels = set().union(*(GARMENT_LABELS[slot] for slot in changed_slots))
     garments = np.isin(generated_labels, list(labels))
-    # Allow hems to overlap shoes, including ankle/floor-length coats. The small
-    # margin covers parsing uncertainty along the fabric edge.
-    garments = _dilate(garments, max(1, round(height * .002)))
-    protected = (footprint | floor) & ~garments
+    # Only actual fabric can occlude a shoe. Dilating the garment here used to
+    # expose strips of generated footwear along every trouser/coat hem.
+    # A shifted generated foot can lie over the OLD trouser leg. Copying its
+    # whole footprint from the source used to paste brown trouser scraps into
+    # new jeans. Only source shoes and actual source floor may be restored.
+    original_shoes &= shoes
+    protected = (original_shoes | ((footprint | floor) & (source_labels == 0))) & ~garments
+
+    # Trouser cuffs may cover a shoe's upper edge, but cannot delete its sole
+    # and toe just because the parser calls a damaged generated foot "pants".
+    count, components, stats, _ = cv2.connectedComponentsWithStats(original_shoes.astype(np.uint8))
+    full_length = set()
+    for slot in changed_slots:
+        if slot in ('long_outer', 'one_piece'):
+            full_length.update(GARMENT_LABELS[slot])
+    long_fabric = np.isin(generated_labels, list(full_length))
+    for component in range(1, count):
+        left, top, shoe_width, shoe_height, area = stats[component]
+        shoe = components == component
+        if area < max(4, width * height * .00004):
+            continue
+        # A genuine floor-length garment may hide the whole shoe. It must
+        # cover most of it and extend continuously well above the ankle.
+        above = long_fabric[max(0, top - shoe_height*2):top, left:left+shoe_width]
+        fully_occluded = np.count_nonzero(long_fabric & shoe) >= area*.8 and above.size and above.mean() > .6
+        if not fully_occluded:
+            core = shoe & (np.arange(height)[:, None] >= top + max(1, round(shoe_height*.3)))
+            protected[core] = True
     mask = Image.fromarray(protected.astype(np.uint8) * 255)
-    soft = np.asarray(mask.filter(ImageFilter.GaussianBlur(radius=max(1, height * .002))))
-    # Original shoe/sole pixels stay exact; feather only outside their envelope.
-    result = np.maximum(np.asarray(mask), soft)
-    result[garments] = 0
-    return Image.fromarray(result)
+    # Do not blend two different shoes in a soft halo around the footprint.
+    # The main garment boundary supplies the transition on the fabric side.
+    return mask
 
 
 def protect(original, generated, changed_slots):

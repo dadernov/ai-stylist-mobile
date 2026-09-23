@@ -22,6 +22,7 @@ export class TryOnJobStore {
   private working = new Set<string>();
   private active = false;
   private writable = true;
+  private checkedFailed = false;
   private initialized?: Promise<void>;
   constructor(private session: Session) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -45,6 +46,12 @@ export class TryOnJobStore {
     if (!this.initialized) this.initialized = this.load();
     await this.initialized;
     for (const job of this.snapshot.jobs) if (['pending', 'retry'].includes(job.status)) void this.poll(job);
+    if (!this.active || !this.writable || this.checkedFailed) return;
+    this.checkedFailed = true;
+    const now = Date.now();
+    const recentFailed = this.snapshot.jobs.filter(job => job.status === 'failed' && job.createdAt <= now
+      && job.createdAt >= now - 24 * 60 * 60 * 1000).sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+    for (const job of recentFailed) void this.reconcileFailed(job);
   }
   deactivate() { this.active = false; }
   private async load() {
@@ -94,6 +101,19 @@ export class TryOnJobStore {
     await this.update(job.id, { status: 'succeeded', error: undefined, result: { id: job.id, imageUri: stored.imageUri,
       updatedAt: response.updatedAt || Date.now(), warning: response.warning, tuckMode: job.tuckMode, qualityMode: 'quality' } });
     return true;
+  }
+  private async reconcileFailed(job: TryOnJob) {
+    if (!this.active || this.working.has(job.id)) return;
+    this.working.add(job.id);
+    const session = this.session;
+    try {
+      // A server-side repair can make a previously rejected job available again.
+      const response = await getTryOnJob(job.id, session);
+      if (this.active && this.session.login === session.login && this.snapshot.jobs.find(current => current.id === job.id)?.status === 'failed') {
+        await this.complete(job, response);
+      }
+    } catch { /* A single read never changes a failed job into pending/retry or submits paid work. */ }
+    finally { this.working.delete(job.id); }
   }
   async start(input: Inputs) {
     if (!this.snapshot.ready || !this.writable) throw new Error(this.snapshot.error || 'История ещё загружается.');

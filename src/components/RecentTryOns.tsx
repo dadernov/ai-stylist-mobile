@@ -9,7 +9,7 @@ import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { IconButton } from './ui/IconButton';
 import { PrimaryButton } from './ui/PrimaryButton';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLook) => void; onOpenHistory: () => void }) {
   const { jobs, store, error } = useTryOnJobs();
@@ -35,7 +35,8 @@ export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLo
         {job.error && <Text style={{ color: c.danger, fontSize: 11, lineHeight: 16 }}>{t(job.error)}</Text>}
       </View>)}
     </ScrollView>
-    <Modal visible={Boolean(selected)} animationType="slide" onRequestClose={() => setSelected(undefined)}>
+    <Modal visible={Boolean(selected)} presentationStyle="fullScreen" animationType="slide" onRequestClose={() => setSelected(undefined)}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: c.background }}>
       {selected?.result && <SafeAreaView style={{ flex: 1, backgroundColor: c.background, paddingHorizontal: 20, gap: 16 }}>
         <View style={styles.row}><Text numberOfLines={2} style={{ flex: 1, color: c.text, fontSize: 16, fontWeight: '600' }}>{selected.name}</Text>
           <IconButton icon={X} label={t('Закрыть примерку')} onPress={() => setSelected(undefined)} /></View>
@@ -49,6 +50,7 @@ export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLo
             setSaved(previous => [...previous, selected.id]);
           }} style={{ marginBottom: 16 }} />
       </SafeAreaView>}
+      </SafeAreaProvider>
     </Modal>
   </View>;
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, StyleSheet, Text, View } from 'react-native';
 import { ArrowUpRight, Check, ChevronRight, Clock3, History, RefreshCw, Save, Shirt, X } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook } from '../types/looks';
 import { TryOnJob } from '../services/tryOnJobs';
@@ -85,7 +85,8 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
         <Text style={styles.date}>{date(job)}</Text>
         <Text style={[styles.status, job.status === 'failed' && { color: c.danger }]}>{status(job)}</Text>
       </AppPressable>} />
-    {selected && <Modal animationType="slide" onRequestClose={close}>
+    {selected && <Modal presentationStyle="fullScreen" animationType="slide" onRequestClose={close}>
+      <SafeAreaProvider style={styles.modal}>
       <SafeAreaView style={styles.modal}>
         <View style={styles.toolbar}><View style={{ flex: 1, gap: 4 }}>
           <Text numberOfLines={2} style={styles.heading}>{selected.name}</Text><Text style={styles.muted}>{date(selected)}</Text>
@@ -128,6 +129,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
             onPress={() => { close(); onTryOn(selected.itemIds); }} />}
         </FormScrollView>}
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>}
   </>;
 }
