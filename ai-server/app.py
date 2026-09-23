@@ -178,14 +178,22 @@ def _prepare_identity_source(original_content: bytes):
 
 def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots, prepared=None):
     original, cutout, faces = prepared or _prepare_identity_source(original_content)
-    aligned = generated_image.resize(original.size, Image.Resampling.LANCZOS)
-    if not face_guard.faces_aligned(faces, face_guard.detect_faces(aligned), original.size):
-        raise ValueError('Результат изменил положение человека. Примерка отклонена, исходное фото сохранено.')
+    source_ratio = original.width / original.height
+    generated_ratio = generated_image.width / generated_image.height
+    if abs(source_ratio - generated_ratio) > .02 * max(source_ratio, generated_ratio):
+        return original, 'aspect-mismatch'
+    try:
+        aligned = face_guard.align_to_source(
+            original, generated_image.resize(original.size, Image.Resampling.LANCZOS), faces[0]
+        )
+    except face_guard.AlignmentError as exc:
+        print(f'Try-on alignment rejected: {exc}', flush=True)
+        raise ValueError('Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.') from exc
     return tryon_composite.compose(
         original,
-        generated_image,
+        aligned,
         cutout,
-        _silhouette(generated_image),
+        _silhouette(aligned),
         changed_slots,
         [face_guard.protected_head(face, original.size) for face in faces],
     )

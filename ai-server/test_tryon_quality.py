@@ -3,11 +3,14 @@ from io import BytesIO
 import unittest
 from unittest.mock import AsyncMock, patch
 from PIL import Image
+import numpy as np
 from fastapi import UploadFile
 
 import app
 import face_guard
 import tryon_policy
+from test_face_guard import face
+from test_tryon_composite import person
 
 
 def upload():
@@ -16,6 +19,28 @@ def upload():
 
 
 class QualityPolicy(unittest.TestCase):
+    def test_shifted_coat_is_composed_with_exact_source_face_and_background(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size, (180, 80, 60))
+        generated = Image.new('RGB', cutout.size, (20, 140, 30))
+        prepared = (source, cutout, [face()])
+        with patch.object(face_guard, 'detect_faces', return_value=[face(offset=(10, 8))]), \
+             patch.object(app, '_silhouette', return_value=cutout):
+            result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], prepared)
+        self.assertEqual(status, 'composed')
+        box = face_guard.protected_head(face(), source.size)
+        np.testing.assert_array_equal(np.asarray(result)[box[1]:box[3], box[0]:box[2]], np.asarray(source)[box[1]:box[3], box[0]:box[2]])
+        np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
+        self.assertEqual(result.getpixel((200, 710)), generated.getpixel((200, 710)))
+
+    def test_aspect_change_is_rejected_before_alignment(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size)
+        with patch.object(face_guard, 'align_to_source') as align:
+            _, status = app._apply_identity_lock(b'photo', Image.new('RGB', (800, 400)), ['long_outer'], (source, cutout, [face()]))
+        self.assertEqual(status, 'aspect-mismatch')
+        align.assert_not_called()
+
     def test_png_cache_has_a_byte_limit(self):
         app._TRYON_LOOK_CACHE.clear()
         result = {'outputUrl': 'x' * 200, 'status': 'succeeded'}
@@ -42,11 +67,6 @@ class QualityPolicy(unittest.TestCase):
     def test_dress_does_not_freeze_lower_body(self):
         self.assertEqual(tryon_policy.composite_slot('top', 'Платье'), 'one_piece')
         self.assertIn('full skirt', tryon_policy.garment_prompt('top', 'Платье'))
-
-    def test_face_position_and_scale_must_match(self):
-        self.assertTrue(face_guard.faces_aligned([(100, 100, 40, 50)], [(101, 101, 40, 50)], (400, 800)))
-        self.assertFalse(face_guard.faces_aligned([(100, 100, 40, 50)], [(130, 100, 40, 50)], (400, 800)))
-        self.assertFalse(face_guard.faces_aligned([(100, 100, 40, 50)], [], (400, 800)))
 
 
 class ApiFlow(unittest.IsolatedAsyncioTestCase):

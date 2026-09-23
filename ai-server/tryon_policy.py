@@ -1,7 +1,7 @@
 """One quality path and garment-specific instructions, shared by API callers."""
 MODEL = 'tryon-max'
 MODE = 'quality'
-CACHE_VERSION = 'v6-quality-long-garment-strict-identity'
+CACHE_VERSION = 'v7-quality-landmark-alignment'
 LONG_OUTER = {'Плащ', 'Тренч', 'Пальто', 'Шуба', 'Парка'}
 ONE_PIECE = {'Платье', 'Сарафан', 'Комбинезон'}
 IDENTITY = ('Keep the exact source framing, camera, lighting, pose, face, hair, skin and background. '
