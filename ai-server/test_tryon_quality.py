@@ -34,8 +34,10 @@ class QualityPolicy(unittest.TestCase):
              patch.object(app, '_silhouette', return_value=cutout):
             result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], prepared)
         self.assertEqual(status, 'composed')
-        box = face_guard.protected_head(face(), source.size)
-        np.testing.assert_array_equal(np.asarray(result)[box[1]:box[3], box[0]:box[2]], np.asarray(source)[box[1]:box[3], box[0]:box[2]])
+        protected = np.asarray(face_guard.protected_head_mask(face(), source.size)) == 255
+        np.testing.assert_array_equal(np.asarray(result)[protected], np.asarray(source)[protected])
+        x, y, w, h = map(int, face().box)
+        np.testing.assert_array_equal(np.asarray(result)[y:y+h, x:x+w], np.asarray(source)[y:y+h, x:x+w])
         np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
         self.assertEqual(result.getpixel((200, 710)), generated.getpixel((200, 710)))
         self.assertEqual(self.footwear.call_args.args[2], ['long_outer'])
@@ -108,6 +110,11 @@ class QualityPolicy(unittest.TestCase):
         self.assertEqual(tryon_policy.composite_slot('top', 'Платье'), 'one_piece')
         self.assertIn('full skirt', tryon_policy.garment_prompt('top', 'Платье'))
 
+    def test_tucked_inner_top_must_not_tuck_the_coat(self):
+        prompt = tryon_policy.garment_prompt('outer', 'Плащ', 'tucked')
+        self.assertIn('For the inner top only, never the outerwear', prompt)
+        self.assertIn('Do not tuck the outer garment', prompt)
+
     def test_only_non_shoe_prompts_preserve_existing_footwear(self):
         for slot in ['top', 'bottom', 'outer']:
             self.assertIn('Preserve the existing shoes', tryon_policy.garment_prompt(slot))
@@ -125,6 +132,30 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
         app.access.reset_state_for_tests()
         self.env.stop()
         self.temp.cleanup()
+
+    async def test_fit_instruction_reaches_actual_provider_inputs_on_every_pass(self):
+        for mode, order, instruction in [
+            ('tucked', ['top', 'bottom', 'shoes', 'outer'], 'Fully tuck the top'),
+            ('untucked', ['bottom', 'top', 'shoes', 'outer'], 'completely untucked'),
+        ]:
+            with self.subTest(mode=mode):
+                provider = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
+                with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), \
+                     patch.object(app, '_prepare_identity_source', return_value='prepared'), \
+                     patch.object(app, '_run_fashn_tryon', provider), \
+                     patch.object(app, '_face_locked_output_url', AsyncMock(return_value='data:image/png;base64,protected')):
+                    result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=upload(),
+                        shoes_file=upload(), outer_file=upload(), tuck_mode=mode, compare_mode='false', quality_mode='quality',
+                        top_category='Футболка', outer_category='Куртка', device='test')
+                self.assertEqual(result.get('status'), 'succeeded', result)
+                self.assertEqual(result['tuckModeUsed'], mode)
+                self.assertEqual([step['step'] for step in result['steps']], order)
+                self.assertEqual(provider.await_count, 4)
+                for call in provider.call_args_list:
+                    self.assertIn(instruction, call.args[3]['prompt'])
+                    self.assertEqual(call.args[3]['generation_mode'], 'quality')
+                top_call = provider.call_args_list[order.index('top')]
+                self.assertIn('Remove the old collar', top_call.args[3]['prompt'])
 
     async def test_legacy_fast_request_uses_quality_and_coat_is_last(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()

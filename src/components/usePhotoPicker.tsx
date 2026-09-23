@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform } from 'react-native';
 import { useAppDialog } from './AppDialog';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { CropPhoto, PhotoCropper } from './PhotoCropper';
 
 export function usePhotoPicker() {
@@ -28,11 +29,22 @@ export function usePhotoPicker() {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) { Alert.alert('Нет доступа к камере', 'Разреши доступ в настройках устройства.'); stopPicking(); return null; }
       }
-      const options: ImagePicker.ImagePickerOptions = { allowsEditing: false, quality: 1, mediaTypes: ['images'] };
+      const options: ImagePicker.ImagePickerOptions = { allowsEditing: false, quality: 1, mediaTypes: ['images'],
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible };
       const result = source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
       if (result.canceled || !result.assets[0]) { stopPicking(); return null; }
       const asset = result.assets[0];
-      return await new Promise<string | null>(done => { resolve.current = done; setPhoto({ uri: asset.uri, width: asset.width, height: asset.height }); setVisible(true); });
+      let cropPhoto = { uri: asset.uri, width: asset.width, height: asset.height };
+      if (Platform.OS !== 'web') {
+        // Resolve HEIC/orientation; bound very large camera photos before previewing.
+        const context = ImageManipulator.manipulate(asset.uri);
+        if (Math.max(asset.width, asset.height) > 4096) context.resize(asset.width >= asset.height ? { width: 4096 } : { height: 4096 });
+        const rendered = await context.renderAsync();
+        const normalized = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 1 });
+        cropPhoto = { uri: normalized.uri, width: normalized.width, height: normalized.height };
+      }
+      if (cropPhoto.width <= 0 || cropPhoto.height <= 0) throw new Error('Invalid photo dimensions');
+      return await new Promise<string | null>(done => { resolve.current = done; setPhoto(cropPhoto); setVisible(true); });
     } catch { stopPicking(); Alert.alert('Не удалось открыть фото', 'Попробуй выбрать изображение ещё раз.'); return null; }
   };
   return { pickPhoto, isPicking, cropModal: photo ? <PhotoCropper key={photo.uri} photo={photo} visible={visible} onDismiss={() => { if (Platform.OS === 'ios') complete(); }} onClose={() => finish(null)} onDone={finish} /> : null };

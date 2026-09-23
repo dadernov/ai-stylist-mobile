@@ -218,7 +218,7 @@ def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, 
         cutout,
         _silhouette(aligned),
         changed_slots,
-        [face_guard.protected_head(face, original.size) for face in faces],
+        [face_guard.protected_head_mask(face, original.size) for face in faces],
         footwear_keep=footwear_guard.protect(original, aligned, changed_slots),
     )
 
@@ -1091,7 +1091,7 @@ async def tryon_generate_look(
 
                 async def _run_bottom_step(step_name: str):
                     nonlocal current_model
-                    bottom_prompt = tryon_policy.garment_prompt('bottom')
+                    bottom_prompt = tryon_policy.garment_prompt('bottom', tuck=tuck_mode_normalized)
                     bottom_categories = _category_candidates("bottom", ["bottoms"])
                     jobs.attempt(device, job_id)
                     bottom_result = await _run_fashn_tryon_with_category_fallback(
@@ -1139,7 +1139,7 @@ async def tryon_generate_look(
 
                 async def _run_outer_step(step_name: str):
                     nonlocal current_model
-                    outer_prompt = tryon_policy.garment_prompt('outer', outer_category.strip())
+                    outer_prompt = tryon_policy.garment_prompt('outer', outer_category.strip(), tuck_mode_normalized)
                     outer_categories = ['auto']
                     jobs.attempt(device, job_id)
                     outer_result = await _run_fashn_tryon_with_category_fallback(
@@ -1189,7 +1189,7 @@ async def tryon_generate_look(
                         client, token, look_model_name, current_model, shoes_image, ['auto'],
                         mode_override=look_mode,
                         generation_mode_override=look_generation_mode,
-                        prompt_override=tryon_policy.garment_prompt('shoes'),
+                        prompt_override=tryon_policy.garment_prompt('shoes', tuck=tuck_mode_normalized),
                         max_wait_seconds=step_max_wait_seconds,
                         poll_interval_seconds=poll_interval_seconds, seed_override=seed
                     )

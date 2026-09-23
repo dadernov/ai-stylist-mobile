@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from tryon_composite import build_keep_mask, compose, head_box, person_alpha, silhouette_bbox
+import face_guard
+from test_face_guard import face
 
 
 def person(size=(400, 800), top=0.08, height=0.84, centre=0.5, head=0.055, body=0.16):
@@ -98,6 +100,30 @@ class KeepMask(unittest.TestCase):
 
 
 class Compose(unittest.TestCase):
+    def test_old_collar_does_not_override_reference_neckline(self):
+        cutout, _ = person()
+        ImageDraw.Draw(cutout).rectangle((170, 100, 235, 130), fill=(255, 255, 255, 255))
+        source = Image.new('RGB', cutout.size, 'white')
+        generated = Image.new('RGB', cutout.size, 'black')
+        protection = face_guard.protected_head_mask(face(), source.size)
+        result, status = compose(source, generated, cutout, cutout, ['top'], [protection])
+        self.assertEqual(status, 'composed')
+        self.assertEqual(result.getpixel((200, 120)), (0, 0, 0))
+        self.assertEqual(result.getpixel((230, 108)), (0, 0, 0))
+        self.assertEqual(result.getpixel((200, 90)), (255, 255, 255))
+
+    def test_low_alpha_old_garment_fringe_is_replaced_without_white_halo(self):
+        cutout, _ = person()
+        alpha = cutout.getchannel('A')
+        ImageDraw.Draw(alpha).rectangle((132, 200, 135, 500), fill=80)
+        cutout.putalpha(alpha)
+        source = Image.new('RGB', cutout.size, 'white')
+        generated = Image.new('RGB', cutout.size, 'black')
+        result, status = compose(source, generated, cutout, cutout, ['top'], [face_guard.protected_head_mask(face(), source.size)])
+        self.assertEqual(status, 'composed')
+        self.assertEqual(result.getpixel((134, 400)), (0, 0, 0))
+        self.assertEqual(result.getpixel((20, 400)), (255, 255, 255))
+
     def test_only_the_changed_zone_takes_generated_pixels(self):
         cutout, (y0, shoulders, y1) = person()
         original = Image.new("RGB", (400, 800), (30, 30, 30))

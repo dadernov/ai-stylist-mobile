@@ -6,7 +6,7 @@ from typing import NamedTuple
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 _lock = threading.Lock()
 _detector = None
@@ -51,6 +51,19 @@ def protected_head(face, size):
     x, y, w, h = face.box
     return (max(0, int(x - .45 * w)), max(0, int(y - .65 * h)),
             min(size[0], int(x + 1.45 * w)), min(size[1], int(y + 1.18 * h)))
+
+
+def protected_head_mask(face, size):
+    """Protect the head, tapering at the jaw instead of pasting back a collar."""
+    x, y, w, h = face.box
+    mask = Image.new('L', size, 0)
+    ImageDraw.Draw(mask).polygon([
+        (x - .45 * w, y - .65 * h), (x + 1.45 * w, y - .65 * h),
+        (x + 1.45 * w, y + .45 * h), (x + 1.02 * w, y + .82 * h),
+        (x + w, y + h), (x, y + h),
+        (x - .02 * w, y + .82 * h), (x - .45 * w, y + .45 * h),
+    ], fill=255)
+    return mask
 
 
 def alignment_transform(source_face: Face, generated_face: Face, size):

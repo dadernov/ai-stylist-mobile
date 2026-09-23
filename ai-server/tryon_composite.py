@@ -90,7 +90,7 @@ def head_box(alpha: Image.Image):
 
 
 def _feather(mask: Image.Image, radius: float):
-    return mask.filter(ImageFilter.GaussianBlur(radius=max(1.0, radius)))
+    return mask.filter(ImageFilter.GaussianBlur(radius=max(0.5, radius)))
 
 
 def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protected_heads=()):
@@ -98,6 +98,7 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
     width, height = size
     keep = Image.new("L", size, 0)
     exact = Image.new("L", size, 0)
+    background_keep = Image.new("L", size, 0)
     scale = min(width, height)
 
     silhouettes = [alpha for alpha in (original_alpha, generated_alpha) if alpha is not None]
@@ -106,19 +107,21 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
         for alpha in silhouettes[1:]:
             union = Image.fromarray(np.maximum(np.asarray(union), np.asarray(alpha)), mode="L")
         # The union allows a new, wider garment without repainting distant background.
-        body = union.point(lambda value: 255 if value > 128 else 0)
-        background = Image.eval(body, lambda value: 255 - value)
-        keep.paste(background, (0, 0))
-        exact.paste(background, (0, 0))
+        # Include low-alpha fringes of BOTH silhouettes, so the old garment's
+        # antialiased outline is replaced, not pasted back as a pale rim.
+        support = union.point(lambda value: 255 if value > 8 else 0)
+        interior = union.point(lambda value: 255 if value > 32 else 0)
+        edit = np.maximum(np.asarray(interior), np.asarray(_feather(support, min(1.2, scale * .0015))))
+        background_keep = Image.fromarray(255 - edit, mode='L')
 
     if original_alpha is None:
-        return _feather(keep, scale * 0.004)
+        return background_keep
 
     bbox = silhouette_bbox(original_alpha)
     person_mask = original_alpha.point(lambda value: 255 if value > 128 else 0)
 
     head = head_box(original_alpha)
-    if head is not None:
+    if head is not None and not protected_heads:
         hx0, hy0, hx1, hy1 = head
         pad_x = (hx1 - hx0) * 0.12
         pad_y = (hy1 - hy0) * 0.06
@@ -164,11 +167,16 @@ def build_keep_mask(size, original_alpha, generated_alpha, changed_slots, protec
         keep = Image.fromarray(np.maximum(np.asarray(keep), np.asarray(frozen)), mode="L")
 
     softened = np.asarray(_feather(keep, min(3, scale * 0.003)))
-    # Blend only inside the garment boundary. Outside it, source pixels win exactly.
+    # Head geometry must come from the detected face, not the shoulder step:
+    # a high collar otherwise enlarges the head and survives the garment swap.
     exact_draw = ImageDraw.Draw(exact)
     for box in protected_heads:
-        exact_draw.rectangle(box, fill=255)
-    return Image.fromarray(np.maximum(softened, np.asarray(exact)), mode='L')
+        if isinstance(box, Image.Image):
+            exact = Image.fromarray(np.maximum(np.asarray(exact), np.asarray(box.convert('L'))), mode='L')
+            exact_draw = ImageDraw.Draw(exact)
+        else:
+            exact_draw.rectangle(box, fill=255)
+    return Image.fromarray(np.maximum.reduce([softened, np.asarray(exact), np.asarray(background_keep)]), mode='L')
 
 
 def compose(original: Image.Image, generated: Image.Image, original_cutout, generated_cutout, changed_slots, protected_heads=(), footwear_keep=None):

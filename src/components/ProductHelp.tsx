@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, BookOpen, Camera, ChevronRight, Footprints, Heart, Images, LucideIcon, ScanLine, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Wrench, X } from 'lucide-react-native';
 import { helpTopics, HELP_INTRO, HelpTopic } from '../data/help';
 import { helpTopicsZh, HELP_INTRO_ZH } from '../data/help.zh';
@@ -23,48 +23,51 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
   const { lang } = useLanguage();
   const topics = lang === 'zh' ? helpTopicsZh : helpTopics;
 
-  return <Modal visible animationType="slide" onRequestClose={() => topic ? setTopic(null) : onClose()}>
-    <SafeAreaView style={styles.screen} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={styles.content}>
-        <View style={styles.toolbar}>
-          {topic ? <IconButton icon={ArrowLeft} label={t('К разделам справки')} onPress={() => setTopic(null)} variant="quiet" />
-            : <BookOpen size={23} color={colors.accentGold} strokeWidth={1.6} />}
-          <Text accessibilityRole="header" style={styles.toolbarTitle}>{t('Справка')}</Text>
-          <IconButton icon={X} label={t('Закрыть справку')} onPress={onClose} variant="quiet" />
+  return <Modal visible presentationStyle="fullScreen" animationType="slide" onRequestClose={() => topic ? setTopic(null) : onClose()}>
+    {/* Native modals need a provider in their own window to measure system insets. */}
+    <SafeAreaProvider style={styles.screen}>
+      <SafeAreaView style={styles.screen} edges={['top', 'bottom', 'left', 'right']}>
+        <View style={styles.content}>
+          <View style={styles.toolbar}>
+            {topic ? <IconButton icon={ArrowLeft} label={t('К разделам справки')} onPress={() => setTopic(null)} variant="quiet" />
+              : <BookOpen size={23} color={colors.accentGold} strokeWidth={1.6} />}
+            <Text accessibilityRole="header" style={styles.toolbarTitle}>{t('Справка')}</Text>
+            <IconButton icon={X} label={t('Закрыть справку')} onPress={onClose} variant="quiet" />
+          </View>
+          <ScrollView key={topic?.id || 'contents'} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+            {topic ? <>
+              <Text accessibilityRole="header" style={styles.title}>{t(topic.title)}</Text>
+              <Text style={styles.summary}>{t(topic.summary)}</Text>
+              {topic.sections.map(section => <View key={section.title} style={styles.section}>
+                <Text accessibilityRole="header" style={styles.sectionTitle}>{t(section.title)}</Text>
+                {section.paragraphs.map(paragraph => <Text key={paragraph} selectable style={styles.paragraph}>{t(paragraph)}</Text>)}
+              </View>)}
+              <AppPressable accessibilityRole="button" onPress={() => setTopic(null)} style={styles.backLink}>
+                <ArrowLeft size={18} color={colors.accentGold} />
+                <Text style={styles.backText}>{t('Все разделы справки')}</Text>
+              </AppPressable>
+            </> : <>
+              <Text accessibilityRole="header" style={styles.title}>{t('AI Стилист')}</Text>
+              <Text style={styles.intro}>{lang === 'zh' ? HELP_INTRO_ZH : HELP_INTRO}</Text>
+              <View style={styles.topics}>
+                {topics.map(item => {
+                  const Icon = icons[item.id] || BookOpen;
+                  return <AppPressable key={item.id} accessibilityRole="button" accessibilityLabel={t(item.title)}
+                    onPress={() => setTopic(item)} style={styles.topic}>
+                    <Icon size={22} color={colors.accentGold} strokeWidth={1.5} />
+                    <View style={styles.topicText}>
+                      <Text style={styles.topicTitle}>{t(item.title)}</Text>
+                      <Text style={styles.topicSummary}>{t(item.summary)}</Text>
+                    </View>
+                    <ChevronRight size={18} color={colors.muted} />
+                  </AppPressable>;
+                })}
+              </View>
+            </>}
+          </ScrollView>
         </View>
-        <ScrollView key={topic?.id || 'contents'} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-          {topic ? <>
-            <Text accessibilityRole="header" style={styles.title}>{t(topic.title)}</Text>
-            <Text style={styles.summary}>{t(topic.summary)}</Text>
-            {topic.sections.map(section => <View key={section.title} style={styles.section}>
-              <Text accessibilityRole="header" style={styles.sectionTitle}>{t(section.title)}</Text>
-              {section.paragraphs.map(paragraph => <Text key={paragraph} selectable style={styles.paragraph}>{t(paragraph)}</Text>)}
-            </View>)}
-            <AppPressable accessibilityRole="button" onPress={() => setTopic(null)} style={styles.backLink}>
-              <ArrowLeft size={18} color={colors.accentGold} />
-              <Text style={styles.backText}>{t('Все разделы справки')}</Text>
-            </AppPressable>
-          </> : <>
-            <Text accessibilityRole="header" style={styles.title}>{t('AI Стилист')}</Text>
-            <Text style={styles.intro}>{lang === 'zh' ? HELP_INTRO_ZH : HELP_INTRO}</Text>
-            <View style={styles.topics}>
-              {topics.map(item => {
-                const Icon = icons[item.id] || BookOpen;
-                return <AppPressable key={item.id} accessibilityRole="button" accessibilityLabel={t(item.title)}
-                  onPress={() => setTopic(item)} style={styles.topic}>
-                  <Icon size={22} color={colors.accentGold} strokeWidth={1.5} />
-                  <View style={styles.topicText}>
-                    <Text style={styles.topicTitle}>{t(item.title)}</Text>
-                    <Text style={styles.topicSummary}>{t(item.summary)}</Text>
-                  </View>
-                  <ChevronRight size={18} color={colors.muted} />
-                </AppPressable>;
-              })}
-            </View>
-          </>}
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   </Modal>;
 }
 

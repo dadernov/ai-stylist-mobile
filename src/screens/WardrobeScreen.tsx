@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { usePhotoPicker } from '../components/usePhotoPicker';
+import { PhotoSourcePicker, PhotoSource } from '../components/PhotoSourcePicker';
 import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { OptionPicker } from '../components/ui/OptionPicker';
@@ -330,10 +331,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
   }, [items, activeFilter]);
 
   const { pickPhoto: requestPhoto, cropModal, isPicking } = usePhotoPicker();
-  const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !searchFocused && !Alert.visible;
+  const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
+  const openPhotoSources = () => { if (!isPicking) { Keyboard.dismiss(); setPhotoSourceOpen(true); } };
+  const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !photoSourceOpen && !searchFocused && !Alert.visible;
 
-  const handleAddItem = async () => {
-    const photo = await requestPhoto();
+  const handleAddItem = async (source: PhotoSource) => {
+    const photo = await requestPhoto(source);
     if (!photo) return;
     setDraftPhoto(photo);
     setSourcePhoto(photo);
@@ -548,12 +551,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
   return (
     <View style={styles.container}>
       {!isModalVisible && cropModal}
+      <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} />
       <View style={styles.collectionHeader}>
         <View style={{ flex: 1 }}><ScreenHeader eyebrow={t('Личная коллекция')} title={t('Гардероб')} /></View>
         <View style={styles.helpSlot}>
           {showHelp && <IconButton icon={CircleHelp} label={t('Открыть справку')} variant="quiet" onPress={() => { Keyboard.dismiss(); setHelpOpen(true); }} />}
         </View>
-        <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} haptics style={styles.addButton} onPress={handleAddItem}>
+        <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} disabled={isPicking || photoSourceOpen} haptics style={styles.addButton} onPress={openPhotoSources}>
           <Plus size={23} strokeWidth={1.6} color={colors.buttonPrimaryText} />
         </AppPressable>
       </View>
@@ -617,7 +621,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                 : t('В этом разделе пока ничего нет. Попробуй другой фильтр.')
             }
             actionLabel={items.length === 0 ? t('Добавить вещь') : undefined}
-            onAction={items.length === 0 ? handleAddItem : undefined}
+            onAction={items.length === 0 ? openPhotoSources : undefined}
           />
         }
       />

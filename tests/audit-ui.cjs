@@ -245,15 +245,126 @@ async function login(page, name) {
     }
     console.log('PASS UI: history filter, legacy import, zoom and repeat selection at 320/390/1440px in light/dark themes');
 
+    page = await newPage(); await seed(page); await mocks(page);
+    const analyzedPhotos = [];
+    await page.route('**/analyze', async route => {
+      const form = await new Response(route.request().postDataBuffer(), { headers: { 'Content-Type': route.request().headers()['content-type'] } }).formData();
+      const file = form.get('file');
+      const photo = 'data:image/jpeg;base64,' + Buffer.from(await file.arrayBuffer()).toString('base64');
+      const size = await page.evaluate(async uri => {
+        const bitmap = await createImageBitmap(await (await fetch(uri)).blob());
+        const size = { width: bitmap.width, height: bitmap.height }; bitmap.close(); return size;
+      }, photo);
+      analyzedPhotos.push(size);
+      await route.fulfill({ json: { category: 'Плащ', season: 'Демисезон', pattern: 'Однотонный', needsReview: false } });
+    });
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    const originalSize = await page.evaluate(async uri => {
+      const bitmap = await createImageBitmap(await (await fetch(uri)).blob());
+      const size = { width: bitmap.width, height: bitmap.height }; bitmap.close(); return size;
+    }, images[2]);
+    await page.getByRole('button', { name: 'Добавить вещь', exact: true }).click();
+    await page.getByRole('button', { name: 'Закрыть выбор фото', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Открыть справку', exact: true }).count(), 1);
+    for (const source of ['Из галереи', 'Снять фото']) {
+      await page.getByRole('button', { name: 'Добавить вещь', exact: true }).click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: '/tmp/photo-source-picker.png' });
+      const chooserPromise = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: source, exact: true }).click();
+      const chooser = await chooserPromise;
+      assert.equal(await chooser.element().getAttribute('capture'), source === 'Снять фото' ? 'camera' : null);
+      await chooser.setFiles(path.join(imageDir, 'photo-1551028719-00167b16eac5.jpg'));
+      await page.getByRole('button', { name: 'Отменить обрезку', exact: true }).waitFor();
+      await page.waitForTimeout(500);
+      assert.equal(await page.getByRole('button', { name: 'Готово', exact: true }).isEnabled(), true);
+      const renderedPhoto = await page.getByTestId('crop-image').evaluate(node => {
+        const img = node.tagName === 'IMG' ? node : node.querySelector('img');
+        const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32;
+        const context = canvas.getContext('2d'); context.drawImage(img, 0, 0, 32, 32);
+        const data = context.getImageData(0, 0, 32, 32).data;
+        const shades = new Set(); for (let i = 0; i < data.length; i += 4) shades.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+        return { width: img.naturalWidth, height: img.naturalHeight, shades: shades.size };
+      });
+      assert.deepEqual([renderedPhoto.width, renderedPhoto.height], [originalSize.width, originalSize.height]);
+      assert.ok(renderedPhoto.shades > 100, 'crop preview contains image detail, not a tiny stretched placeholder');
+      const handle = await page.getByTestId('crop-se').boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + handle.width / 2 - 60, handle.y + handle.height / 2 - 60, { steps: 8 });
+      await page.mouse.up();
+      await page.screenshot({ path: '/tmp/photo-camera-crop.png' });
+      const previous = analyzedPhotos.length;
+      await page.getByRole('button', { name: 'Готово', exact: true }).click();
+      await eventually(async () => assert.equal(analyzedPhotos.length, previous + 1));
+      assert.ok(analyzedPhotos.at(-1).width < originalSize.width && analyzedPhotos.at(-1).height < originalSize.height, 'analysis receives cropped pixels');
+      await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+    }
+    await page.getByRole('button', { name: 'Добавить вещь', exact: true }).click();
+    const cancelChooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Снять фото', exact: true }).click();
+    await (await cancelChooserPromise).setFiles(path.join(imageDir, 'photo-1551028719-00167b16eac5.jpg'));
+    await page.getByRole('button', { name: 'Отменить обрезку', exact: true }).click();
+    await page.getByRole('button', { name: 'Добавить вещь', exact: true }).click();
+    await page.getByRole('button', { name: 'Из галереи', exact: true }).waitFor();
+    assert.equal(analyzedPhotos.length, 2, 'canceling crop does not analyze or add a garment');
+    assert.equal((await read(page, 'account:alice:wardrobeItems')).length, 1);
+    await page.close();
+    console.log('PASS UI: plus offers gallery/camera; both crop before analysis; cancellation and reopening work');
+
+    page = await newPage(); await seed(page); await mocks(page);
+    await page.addInitScript(({ item }) => {
+      localStorage.setItem('account:alice:wardrobeItems', JSON.stringify([{ ...item, section: 'Верх', category: 'Футболка' }]));
+    }, { item });
+    const fitRequests = [];
+    await page.route('**/tryon-generate-look', async route => {
+      const form = await new Response(route.request().postDataBuffer(), { headers: { 'Content-Type': route.request().headers()['content-type'] } }).formData();
+      fitRequests.push(form.get('tuck_mode'));
+      await route.fulfill({ json: { status: 'succeeded', outputUrl: images[fitRequests.length % images.length], updatedAt: Date.now() } });
+    });
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+    await page.getByRole('checkbox', { name: item.name, exact: true }).click();
+    await page.getByRole('button', { name: 'К примерке', exact: true }).click();
+    await page.getByRole('button', { name: 'Настройки примерки', exact: true }).click();
+    for (const [label, mode] of [['Заправить', 'tucked'], ['Навыпуск', 'untucked']]) {
+      await page.getByRole('radio', { name: label, exact: true }).click();
+      assert.equal(await page.getByRole('radio', { name: label, exact: true }).getAttribute('aria-checked'), 'true');
+      await page.getByRole('button', { name: fitRequests.length ? 'Перегенерировать' : 'Примерить', exact: true }).click();
+      await eventually(async () => {
+        const jobs = await read(page, 'account:alice:tryOnJobs');
+        assert.equal(jobs[0].status, 'succeeded'); assert.equal(jobs[0].result.tuckMode, mode);
+      });
+    }
+    assert.deepEqual(fitRequests, ['tucked', 'untucked']);
+    await page.close();
+    console.log('PASS UI: tucked/untucked selection reaches API and persists with each generated variant');
+
     for (const width of [320, 390, 1440]) {
       page = await newPage(width, width === 320 ? 740 : 900);
       await seed(page, { lang: 'zh', dark: width === 390 }); await mocks(page);
       await page.goto(BASE, { waitUntil: 'networkidle' });
+      // Simulate OS insets at the web provider's CSS measurement boundary.
+      const safeTop = width === 1440 ? 0 : width === 390 ? 59 : 20;
+      await page.addStyleTag({ content: `div[style*="safe-area-inset-top"] { padding-top: ${safeTop}px !important; padding-bottom: ${safeTop ? 34 : 0}px !important; }` });
       await page.getByRole('button', { name: '打开帮助', exact: true }).click();
+      const checkHelpToolbar = async () => {
+        await eventually(async () => {
+          assert.equal(await page.locator('div[style*="safe-area-inset-top"]').count(), 2, 'the modal owns its safe-area provider');
+          const box = await page.getByRole('button', { name: '关闭帮助', exact: true }).boundingBox();
+          assert.ok(box && box.y >= safeTop && box.y < safeTop + 68, 'toolbar clears system inset exactly once');
+        });
+      };
+      await checkHelpToolbar();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `/tmp/help-safe-area-${width}.png` });
       await page.getByRole('button', { name: '如何拍摄鞋子', exact: true }).click();
+      await checkHelpToolbar();
       assert.ok((await page.locator('body').innerText()).includes('鞋带'));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.screenshot({ path: `/tmp/fixed-help-${width}.png` });
+      await page.getByRole('button', { name: '返回帮助目录', exact: true }).click();
+      await checkHelpToolbar();
       await page.getByRole('button', { name: '关闭帮助', exact: true }).click();
       await page.getByRole('tab', { name: '灵感', exact: true }).click();
       await page.getByText('今天穿什么', { exact: true }).waitFor();
@@ -266,7 +377,7 @@ async function login(page, name) {
       assert.equal(/[А-Яа-яЁё]/.test(await page.locator('body').innerText()), false, 'history fully translated');
       await page.close();
     }
-    console.log('PASS UI: Chinese help and recommendations, 320/390/1440px, contextual help visibility');
+    console.log('PASS UI: Chinese help and recommendations, 320/390/1440px, modal safe-area insets 0/20/59px, contextual help visibility');
     assert.deepEqual(errors, [], 'no uncaught browser errors');
   } catch (error) {
     if (page && !page.isClosed()) {

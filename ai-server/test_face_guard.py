@@ -14,6 +14,15 @@ def face(box=(180., 64., 40., 50.), offset=(0, 0)):
 
 
 class LandmarkAlignment(unittest.TestCase):
+    def test_head_mask_preserves_face_but_excludes_old_collar(self):
+        mask = np.asarray(face_guard.protected_head_mask(face(), (400, 800)))
+        self.assertTrue((mask[64:114, 180:220] == 255).all())
+        for x, y in face().landmarks:
+            self.assertEqual(mask[int(y), int(x)], 255)
+        self.assertEqual(mask[120, 200], 0, 'neckline is not part of the protected face')
+        self.assertEqual(mask[108, 230], 0, 'collar points beside the jaw must not be pasted back')
+        self.assertEqual(mask[50, 200], 255, 'hair above forehead remains protected')
+
     def test_box_noise_does_not_reject_a_stationary_face(self):
         source = face()
         # The old width/height and centre checks rejected this unchanged head.

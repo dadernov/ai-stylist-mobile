@@ -259,6 +259,11 @@ export function AiTryOnPreview({
                 <AppPressable
                   key={mode}
                   haptics
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: active, disabled: isBusy }}
+                  aria-checked={active}
+                  accessibilityLabel={t(label)}
+                  disabled={isBusy}
                   style={[styles.optionPill, active && styles.optionPillActive]}
                   onPress={() => setTuckOverride(mode)}
                 >
