@@ -122,6 +122,13 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(access.spent_today('a'), 1)
         self.assertNotIn('private-unprotected', str(results))
 
+    async def test_each_garment_stage_reserves_and_attempts_one_operation(self):
+        result = await self.generate(bottom_file=upload(), outer_file=upload(), outer_category='Плащ')
+        self.assertEqual(result['outputUrl'], 'protected')
+        self.assertEqual([step['step'] for step in result['steps']], ['bottom', 'top', 'outer'])
+        self.assertEqual(self.provider.await_count, 3)
+        self.assertEqual(access.spent_today('a'), 3)
+
     async def test_new_id_generates_new_seed_but_retry_reuses_result(self):
         await self.generate(); cached = await self.generate()
         await self.generate('request_000000002')
@@ -135,12 +142,25 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['error'], 'rejected')
         self.assertEqual(access.spent_today('a'), 1)
 
-    async def test_four_garments_reserve_and_charge_only_one_operation(self):
+    async def test_four_garments_reserve_and_charge_one_operation_each(self):
         result = await self.generate(bottom_file=upload(), outer_file=upload(), shoes_file=upload())
         self.assertEqual(result['status'], 'succeeded')
-        self.assertEqual(self.provider.await_count, 1)
-        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(self.provider.await_count, 4)
+        self.assertEqual(access.spent_today('a'), 4)
         self.assertEqual(self.protect_mock.call_args.args[3], ['bottom', 'outer', 'shoes', 'top'])
+
+    async def test_stage_failure_releases_unused_reservations(self):
+        calls = []
+        async def provider(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                return {'error': 'provider down'}
+            return {'status': 'succeeded', 'outputUrl': 'https://test/private-unprotected'}
+        self.provider.side_effect = provider
+        result = await self.generate(bottom_file=upload(), outer_file=upload())
+        self.assertIn('error', result)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(access.spent_today('a'), 2, 'two attempted stages stay charged, the third is released')
 
     async def test_failed_outfit_never_retries_paid_calls(self):
         self.provider.side_effect = None

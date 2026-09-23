@@ -1,7 +1,12 @@
 """One quality path and garment-specific instructions, shared by API callers."""
 MODEL = 'tryon-max'
 MODE = 'quality'
-CACHE_VERSION = 'v18-scene-anchored-body'
+CACHE_VERSION = 'v19-sequential-provider-frame'
+# One provider call per selected garment, innermost first: the product image of
+# tryon-max is one product. A board of several garments produced extra limbs,
+# exposed leg strips and missing feet; single garments keep the anatomy intact.
+STRATEGY = 'sequential'
+STAGE_ORDER = ('bottom', 'shoes', 'top', 'outer')
 LONG_OUTER = {'Плащ', 'Тренч', 'Пальто', 'Шуба', 'Парка'}
 ONE_PIECE = {'Платье', 'Сарафан', 'Комбинезон'}
 IDENTITY = ('Keep the exact source framing, camera, lighting, pose, face, hair, skin and background. '

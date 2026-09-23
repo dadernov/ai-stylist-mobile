@@ -121,12 +121,49 @@ def alignment_transform(source_face: Face, generated_face: Face, size):
         raise AlignmentError('no-transform')
     scale = np.hypot(matrix[0, 0], matrix[1, 0])
     angle = abs(np.degrees(np.arctan2(matrix[1, 0], matrix[0, 0])))
-    if not .9 <= scale <= 1.1 or angle > 5:
+    # On a regenerated face the detector places nose and mouth a few percent
+    # of the face width away from where it found them in the photo, while the
+    # eyes stay put. Fitted to five points that bias reads as a 5-6 degree
+    # roll and a small zoom. Those are not a moved head; 8 degrees and 12% are.
+    if not .88 <= scale <= 1.14 or angle > 8:
         raise AlignmentError('large-scale-or-rotation')
     mapped = generated @ matrix[:, :2].T + matrix[:, 2]
     if np.linalg.norm(mapped - source, axis=1).max() > max(2, width * .1):
         raise AlignmentError('inconsistent-landmarks')
     return matrix
+
+
+def head_agreement(source_face: Face, mapped_landmarks, size):
+    """Confirm the scene-registered head is the same head in the same place.
+
+    The scene transform already fixes scale and rotation from many background
+    anchors. Here only the head itself is judged, with the two eyes as the
+    stable ruler: a head that moved, grew or turned is rejected; detector
+    jitter on a repainted nose and mouth is not.
+    """
+    source = np.asarray(source_face.landmarks, dtype=np.float64)
+    mapped = np.asarray(mapped_landmarks, dtype=np.float64)
+    if source.shape != (5, 2) or mapped.shape != (5, 2) or not np.isfinite([source, mapped]).all():
+        raise AlignmentError('invalid-landmarks')
+    _, _, width, height = source_face.box
+    if min(width, height) <= 0 or min(np.ptp(source, axis=0)) < 2 or min(np.ptp(mapped, axis=0)) < 2:
+        raise AlignmentError('degenerate-landmarks')
+    delta = mapped - source
+    displacement = np.abs(delta.mean(axis=0))
+    limits = np.minimum(np.array(size) * .04, np.maximum(4, np.array([width, height]) * .5))
+    if np.any(displacement > limits):
+        raise AlignmentError('large-displacement')
+    source_eyes, mapped_eyes = source[1] - source[0], mapped[1] - mapped[0]
+    source_span, mapped_span = np.linalg.norm(source_eyes), np.linalg.norm(mapped_eyes)
+    if source_span < 2 or mapped_span < 2:
+        raise AlignmentError('degenerate-landmarks')
+    ratio = mapped_span / source_span
+    roll = abs(np.degrees(np.arctan2(mapped_eyes[1], mapped_eyes[0]) - np.arctan2(source_eyes[1], source_eyes[0])))
+    roll = min(roll, 360 - roll)
+    if (np.linalg.norm(delta.mean(axis=0)) > max(4., width * .1)
+            or np.linalg.norm(delta, axis=1).max() > max(6., width * .15)
+            or not .85 <= ratio <= 1.18 or roll > 8):
+        raise AlignmentError('face-scene-disagreement')
 
 
 def scene_alignment(source_points, generated_points, size):
@@ -214,13 +251,18 @@ def fallback_alignment(source_face, generated_face, size):
     # Face-only evidence can establish a small translation, not a camera zoom.
     # Validate landmark geometry without applying its scale/rotation globally.
     alignment_transform(source_face, generated_face, size)
-    delta = np.asarray(source_face.landmarks) - np.asarray(generated_face.landmarks)
+    source = np.asarray(source_face.landmarks, dtype=np.float64)
+    generated = np.asarray(generated_face.landmarks, dtype=np.float64)
+    delta = source - generated
     identity = np.array([[1., 0., 0.], [0., 1., 0.]])
     tolerance = max(1.5, min(3., source_face.box[2] * .04))
     if np.linalg.norm(delta, axis=1).max() <= tolerance:
         return identity
+    # Without background anchors the eye distance is the only size evidence;
+    # a translation may absorb detector jitter on the nose and mouth, never a zoom.
+    ratio = np.linalg.norm(generated[1] - generated[0]) / max(1e-6, np.linalg.norm(source[1] - source[0]))
     translation = delta.mean(axis=0)
-    if np.linalg.norm(delta-translation, axis=1).max() > max(2., tolerance):
+    if not .92 <= ratio <= 1.08 or np.linalg.norm(delta-translation, axis=1).max() > max(3., source_face.box[2] * .08):
         raise AlignmentError('uncertain-scene-registration')
     identity[:, 2] = translation
     return identity
@@ -245,11 +287,7 @@ def align_to_source(original: Image.Image, generated: Image.Image, source_face: 
         # Landmarks validate compatibility only. Scaling an already aligned
         # room to fit noisy face detections also shrinks hands, legs and feet.
         mapped = faces[0].landmarks @ matrix[:, :2].T + matrix[:, 2]
-        alignment_transform(source_face, Face(faces[0].box, mapped), original.size)
-        delta = mapped - source_face.landmarks
-        if (np.linalg.norm(delta.mean(axis=0)) > max(2., source_face.box[2] * .06)
-                or np.linalg.norm(delta, axis=1).max() > max(3., source_face.box[2] * .1)):
-            raise AlignmentError('face-scene-disagreement')
+        head_agreement(source_face, mapped, original.size)
     corners = np.array([[0, 0], [original.width, 0], [0, original.height], original.size])
     if np.max(np.linalg.norm(corners @ matrix[:, :2].T + matrix[:, 2] - corners, axis=1)) <= 1.:
         return (generated, Image.new('L', original.size, 255)) if return_coverage else generated

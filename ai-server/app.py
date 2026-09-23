@@ -27,6 +27,7 @@ import image_color
 import garment_guard
 import tryon_matte
 import tryon_reference
+import tryon_frame
 import tryon_debug
 import access
 import accounts
@@ -188,6 +189,42 @@ async def _load_image_from_url_or_data_url(client: httpx.AsyncClient, source: st
     return None
 
 
+ALIGNMENT_MESSAGE = 'Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.'
+UNLOCKED_WARNING = ('Лицо и фон не удалось защитить пиксель в пиксель, поэтому показан кадр генератора целиком. '
+                    'Если лицо или фон изменились, перегенерируй.')
+
+
+class AlignmentRejected(ValueError):
+    """The provider frame could not be locked to the photo.
+
+    `frame` is that frame already in the photo's coordinates, so a caller may
+    still show it with an explicit warning instead of discarding paid work.
+    """
+
+    def __init__(self, message, frame=None):
+        super().__init__(message)
+        self.frame = frame
+
+
+def _prepare_provider_frame(content: bytes, max_side: int, jpeg_quality: int):
+    """The photo on the provider's own canvas, so its result maps back 1:1."""
+    padded, _ = tryon_frame.pad(_working_image(content, max_side=min(max_side, 2048) if max_side > 0 else 2048))
+    buff = BytesIO()
+    padded.convert('RGB').save(buff, format='JPEG', quality=jpeg_quality, optimize=True, icc_profile=image_color.SRGB_BYTES)
+    return _bytes_to_data_url(buff.getvalue(), 'image/jpeg')
+
+
+def _unlocked_output_url(original_content: bytes, frame: Image.Image):
+    """After a rejected lock: the provider's own frame as PNG, never a provider URL."""
+    full = _working_image(original_content, max_side=None)
+    image = frame.convert('RGB')
+    if image.size != full.size:
+        image = image.resize(full.size, Image.Resampling.LANCZOS)
+    buff = BytesIO()
+    image.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
+    return _bytes_to_data_url(buff.getvalue(), 'image/png')
+
+
 def _silhouette(image: Image.Image):
     """Cut the person out so the composite can tell body from background."""
     buffer = BytesIO()
@@ -213,17 +250,19 @@ def _prepare_identity_source(original_content: bytes):
 
 def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots, prepared=None):
     original, cutout, faces, source_labels = prepared or _prepare_identity_source(original_content)
-    # A provider can add margins around a narrow source without moving the person.
-    # Remove those margins uniformly, never squeeze the generated body to fit.
-    # Landmark validation still rejects a zoomed/cropped or repositioned person.
-    framed = ImageOps.fit(generated_image, original.size, method=Image.Resampling.LANCZOS)
+    # The provider was sent the photo on its own canvas (tryon_frame.pad): a
+    # result with that aspect is a plain resize and the photo a known crop of
+    # it. Any other aspect is fitted uniformly, never stretched. Landmark
+    # validation still rejects a zoomed, cropped or repositioned person.
+    padded, box = tryon_frame.pad(original)
+    framed = tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
     try:
         aligned, coverage = face_guard.align_to_source(
             original, framed, faces[0], source_labels=source_labels, return_coverage=True
         )
     except face_guard.AlignmentError as exc:
         print(f'Try-on alignment rejected: {exc}; source={original.size}; generated={generated_image.size}', flush=True)
-        raise ValueError('Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.') from exc
+        raise AlignmentRejected(ALIGNMENT_MESSAGE, framed) from exc
     generated_labels = footwear_guard.parse(aligned)
     aligned, garment_keep, generated_labels = tryon_matte.prepare(
         original, aligned, source_labels, generated_labels, faces, changed_slots
@@ -528,6 +567,31 @@ def _reason_to_skip_top(outer_category: str, look_model_name: str):
     if "max" not in look_model_name:
         return "в быстром режиме виден только верхний слой"
     return ""
+
+
+def _look_strategy():
+    return os.getenv('FASHN_LOOK_STRATEGY', tryon_policy.STRATEGY).strip().lower()
+
+
+def _plan_stages(garments, top_category, outer_category, tuck, max_side, jpeg_quality):
+    """One provider call per garment, innermost first (tryon_policy.STAGE_ORDER).
+
+    Each stage's product image is a single garment, which is what tryon-max is
+    built for. The legacy "collage" strategy puts every garment on one board.
+    """
+    if len(garments) > 1 and _look_strategy() == 'collage':
+        images = {slot: tryon_reference.decode(content) for slot, (content, _) in garments.items()}
+        board, positions = tryon_reference.build(images)
+        return [('outfit', _image_to_data_url(board), tryon_reference.prompt(positions, top_category, outer_category, tuck))]
+    stages = []
+    for slot in tryon_policy.STAGE_ORDER:
+        if slot not in garments:
+            continue
+        content, mime = garments[slot]
+        category = outer_category if slot == 'outer' else top_category if slot == 'top' else ''
+        prompt = tryon_policy.garment_prompt(slot, category, tuck, keep_outer_open=(slot == 'outer' and 'top' in garments))
+        stages.append((slot, _prepare_tryon_image_data_url(content, mime, max_side, jpeg_quality), prompt))
+    return stages
 
 
 def _cache_key_for_tryon_look(
@@ -1100,55 +1164,64 @@ async def tryon_generate_look(
         job_id = request_id or f'legacy-{int(time.time() // 21600)}-{cache_key[:32]}'
         task_key = f'{device}:{job_id}'
         seed = int(hashlib.sha256(job_id.encode()).hexdigest()[:8], 16) % 2147483647
-        cost = 1
+        # One reserved provider operation per garment stage (see _plan_stages).
+        selected_count = sum(1 for content in (top_content, bottom_content, shoes_content, outer_content) if content)
+        cost = 1 if _look_strategy() == 'collage' else selected_count
 
         async def _generate_look():
             started = time.monotonic()
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
-            current_model = _prepare_tryon_image_data_url(person_content, person_mime, tryon_max_side, tryon_jpeg_quality)
+            current_model = await asyncio.to_thread(_prepare_provider_frame, person_content, tryon_max_side, tryon_jpeg_quality)
             garments = {slot: (content, mime) for slot, content, mime in [
                 ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
                 ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
             ] if content}
-            if len(garments) == 1:
-                step_name, (content, mime) = next(iter(garments.items()))
-                reference = _prepare_tryon_image_data_url(content, mime, tryon_max_side, tryon_jpeg_quality)
-                prompt = tryon_policy.garment_prompt(step_name, outer_category if step_name == 'outer' else top_category, tuck_mode_normalized)
-            else:
-                step_name = 'outfit'
-                def prepare_reference():
-                    images = {slot: tryon_reference.decode(content) for slot, (content, _) in garments.items()}
-                    return tryon_reference.build(images)
-                board, positions = await asyncio.to_thread(prepare_reference)
-                reference = _image_to_data_url(board)
-                prompt = tryon_reference.prompt(positions, top_category.strip(), outer_category.strip(), tuck_mode_normalized)
+            stages = await asyncio.to_thread(
+                _plan_stages, garments, top_category.strip(), outer_category.strip(), tuck_mode_normalized,
+                tryon_max_side, tryon_jpeg_quality
+            )
             timings = {'prepareSeconds': round(time.monotonic() - started, 2)}
+            steps = []
 
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-                step_started = time.monotonic()
-                jobs.attempt(device, job_id)
-                result = await _run_fashn_tryon_with_category_fallback(
-                    client, token, look_model_name, current_model, reference, ['auto'],
-                    mode_override=look_mode, generation_mode_override=look_generation_mode,
-                    prompt_override=prompt, max_wait_seconds=step_max_wait_seconds,
-                    poll_interval_seconds=poll_interval_seconds, seed_override=seed
-                )
-                elapsed = round(time.monotonic()-step_started, 2)
-                steps = [{'step': step_name, 'result': result, 'durationSeconds': elapsed}]
-                print(f'Try-on timing: stage={step_name}; seconds={elapsed}', flush=True)
-                if result.get('error') or not result.get('outputUrl'):
-                    return {'error': 'Не удалось сгенерировать примерку.', 'steps': steps}
-                current_model = result['outputUrl']
+                for step_name, reference, prompt in stages:
+                    step_started = time.monotonic()
+                    jobs.attempt(device, job_id)
+                    result = await _run_fashn_tryon_with_category_fallback(
+                        client, token, look_model_name, current_model, reference, ['auto'],
+                        mode_override=look_mode, generation_mode_override=look_generation_mode,
+                        prompt_override=prompt, max_wait_seconds=step_max_wait_seconds,
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
+                    )
+                    elapsed = round(time.monotonic()-step_started, 2)
+                    steps.append({'step': step_name, 'result': result, 'durationSeconds': elapsed})
+                    print(f'Try-on timing: stage={step_name}; seconds={elapsed}', flush=True)
+                    if result.get('error') or not result.get('outputUrl'):
+                        return {'error': 'Не удалось сгенерировать примерку.', 'steps': steps}
+                    # The provider's frame is the model for the next garment. It is
+                    # already on the provider's canvas, so nothing is refitted.
+                    current_model = result['outputUrl']
 
             changed_slots = sorted(tryon_policy.composite_slot(slot, outer_category if slot == 'outer' else top_category)
                                    for slot in garments)
 
             composite_started = time.monotonic()
+            warning = None
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
-                locked_output_url = await _face_locked_output_url(
-                    output_client, person_content, current_model, changed_slots, prepared_identity,
-                    debug_context=(device, job_id),
-                )
+                try:
+                    locked_output_url = await _face_locked_output_url(
+                        output_client, person_content, current_model, changed_slots, prepared_identity,
+                        debug_context=(device, job_id),
+                    )
+                except AlignmentRejected as exc:
+                    if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
+                        raise
+                    # The credits are spent and every stage kept the person; show
+                    # the provider's frame with an explicit note rather than an
+                    # error, and let the user decide whether to regenerate.
+                    locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
+                    warning = UNLOCKED_WARNING
+                    print('Try-on composite: unlocked-fallback', flush=True)
             timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
             timings['totalSeconds'] = round(time.monotonic() - started, 2)
             print(f'Try-on timing: prepare={timings["prepareSeconds"]}; composite={timings["compositeSeconds"]}; total={timings["totalSeconds"]}', flush=True)
@@ -1160,7 +1233,10 @@ async def tryon_generate_look(
                 "qualityModeUsed": quality_mode_normalized,
                 "modelUsed": look_model_name,
                 "timings": timings,
+                "identityLocked": warning is None,
             }
+            if warning:
+                response["warning"] = warning
             return response
 
         async def execute():

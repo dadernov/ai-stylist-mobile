@@ -303,3 +303,49 @@ class BackgroundAlignment(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RepaintedFaceTolerance(unittest.TestCase):
+    """Measured on real provider frames: eyes stay, nose and mouth drift a few % of the face width."""
+
+    def jittered(self, source, fraction=.06):
+        points = source.landmarks.copy()
+        points[2:] += [-fraction * source.box[2], -.015 * source.box[2]]
+        return face_guard.Face(source.box, points)
+
+    def test_scene_registered_head_accepts_nose_and_mouth_jitter(self):
+        source = face(box=(160., 55., 150., 190.))
+        source = face_guard.Face(source.box, (source.landmarks - [200, 90]) * 3.75 + [235, 150])
+        identity = np.array([[1., 0., 0.], [0., 1., 0.]])
+        original = Image.new('RGB', (1143, 2048))
+        with patch.object(face_guard, 'detect_faces', return_value=[self.jittered(source)]), \
+                patch.object(face_guard, 'background_transform', return_value=identity):
+            result, coverage = face_guard.align_to_source(original, original, source, return_coverage=True)
+        self.assertTrue((np.asarray(coverage) == 255).all())
+
+    def test_five_point_fit_no_longer_rejects_the_apparent_roll_of_that_jitter(self):
+        source = face(box=(160., 55., 150., 190.))
+        source = face_guard.Face(source.box, (source.landmarks - [200, 90]) * 3.75 + [235, 150])
+        matrix = face_guard.alignment_transform(source, self.jittered(source), (1143, 2048))
+        self.assertLess(abs(np.degrees(np.arctan2(matrix[1, 0], matrix[0, 0]))), 8)
+
+    def test_moved_or_resized_head_is_still_rejected_against_a_stationary_scene(self):
+        source = face()
+        for landmarks, reason in [
+            (source.landmarks + [10, 8], 'face-scene-disagreement'),
+            ((source.landmarks - [200, 90]) * 1.25 + [200, 90], 'face-scene-disagreement'),
+            (source.landmarks @ cv2.getRotationMatrix2D((200, 90), 12, 1)[:, :2].T + cv2.getRotationMatrix2D((200, 90), 12, 1)[:, 2], 'face-scene-disagreement'),
+            (source.landmarks + [45, 0], 'large-displacement'),
+        ]:
+            with self.subTest(reason=reason), self.assertRaisesRegex(face_guard.AlignmentError, reason):
+                face_guard.head_agreement(source, landmarks, (400, 800))
+
+    def test_face_only_fallback_absorbs_jitter_as_translation_but_not_zoom(self):
+        source = face(box=(160., 55., 150., 190.))
+        source = face_guard.Face(source.box, (source.landmarks - [200, 90]) * 3.75 + [235, 150])
+        jittered = self.jittered(source)
+        matrix = face_guard.fallback_alignment(source, jittered, (1143, 2048))
+        np.testing.assert_array_equal(matrix[:, :2], np.eye(2))
+        zoomed = face_guard.Face(source.box, (source.landmarks - source.landmarks.mean(axis=0)) * 1.1 + source.landmarks.mean(axis=0))
+        with self.assertRaisesRegex(face_guard.AlignmentError, 'uncertain-scene-registration'):
+            face_guard.fallback_alignment(source, zoomed, (1143, 2048))

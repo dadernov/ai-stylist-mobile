@@ -9,6 +9,7 @@ from fastapi import UploadFile
 
 import app
 import face_guard
+import tryon_frame
 import tryon_policy
 import image_color
 from test_face_guard import face
@@ -89,6 +90,31 @@ class QualityPolicy(unittest.TestCase):
                 self.assertEqual(result.getpixel((185, 680)), (20, 140, 30))
                 self.assertEqual(result.getpixel((200, 80)), source.getpixel((200, 80)))
                 np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
+
+    def test_provider_frame_on_its_own_canvas_is_cropped_back_not_zoomed(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size, (180, 80, 60))
+        padded, box = tryon_frame.pad(source)
+        self.assertGreater(padded.width, source.width)
+        generated = Image.new('RGB', (padded.width * 2, padded.height * 2), (20, 140, 30))
+        ImageDraw.Draw(generated).rectangle(((190 + box[0]) * 2, 800, (210 + box[0]) * 2 + 1, 1400), fill=(40, 40, 200))
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]) as detect, \
+             patch.object(app, '_silhouette', return_value=cutout):
+            result, status = app._apply_identity_lock(photo_bytes(source), generated, ['long_outer'], (source, cutout, [face()], self.labels))
+        self.assertEqual(status, 'composed')
+        self.assertEqual(detect.call_args.args[0].size, source.size)
+        self.assertEqual(result.getpixel((200, 680)), (40, 40, 200))
+        self.assertEqual(result.getpixel((185, 680)), (20, 140, 30))
+        self.assertEqual(result.getpixel((200, 80)), source.getpixel((200, 80)))
+
+    def test_rejected_alignment_carries_the_fitted_frame_for_the_fallback(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size)
+        with patch.object(face_guard, 'detect_faces', return_value=[face(offset=(90, 0))]), \
+             patch.object(app, '_silhouette'), self.assertRaises(app.AlignmentRejected) as context:
+            app._apply_identity_lock(b'photo', Image.new('RGB', (600, 800), 'green'), ['long_outer'], (source, cutout, [face()], self.labels))
+        self.assertEqual(context.exception.frame.size, source.size)
+        self.assertEqual(context.exception.frame.getpixel((10, 10)), (0, 128, 0))
 
     def test_actual_movement_is_still_rejected_after_margin_removal(self):
         cutout, _ = person()
@@ -235,7 +261,7 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
         self.env.stop()
         self.temp.cleanup()
 
-    async def test_fit_instruction_reaches_one_provider_call_for_entire_outfit(self):
+    async def test_every_selected_garment_gets_its_own_stage_innermost_first(self):
         for mode, instruction in [
             ('tucked', 'Fully tuck the top'),
             ('untucked', 'completely untucked'),
@@ -251,17 +277,26 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
                         top_category='Футболка', outer_category='Куртка', device='test')
                 self.assertEqual(result.get('status'), 'succeeded', result)
                 self.assertEqual(result['tuckModeUsed'], mode)
+                self.assertTrue(result['identityLocked'])
                 self.assertGreaterEqual(result['timings']['totalSeconds'], result['timings']['compositeSeconds'])
                 self.assertTrue(all(step['durationSeconds'] >= 0 for step in result['steps']))
-                self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
-                self.assertEqual(provider.await_count, 1)
-                for call in provider.call_args_list:
-                    self.assertIn(instruction, call.args[3]['prompt'])
-                    self.assertEqual(call.args[3]['generation_mode'], 'quality')
-                self.assertIn('Remove the old collar', provider.call_args.args[3]['prompt'])
-                self.assertIn('fully open and unfastened', provider.call_args.args[3]['prompt'])
+                self.assertEqual([step['step'] for step in result['steps']], ['bottom', 'shoes', 'top', 'outer'])
+                self.assertEqual(provider.await_count, 4)
+                inputs = [call.args[3] for call in provider.call_args_list]
+                for stage in inputs:
+                    self.assertEqual(stage['generation_mode'], 'quality')
+                    self.assertTrue(stage['product_image'].startswith('data:image/'))
+                self.assertIn(instruction, inputs[2]['prompt'])
+                self.assertIn('Remove the old collar', inputs[2]['prompt'])
+                self.assertNotIn('Fully tuck the top', inputs[3]['prompt'].replace('For the inner top only, never the outerwear: Fully tuck the top', ''))
+                self.assertIn('fully open and unfastened', inputs[3]['prompt'])
+                self.assertIn(tryon_policy.TROUSERS, inputs[0]['prompt'])
+                # The photo goes out on the provider canvas; later stages dress the
+                # provider's own frame instead of fitting the photo a second time.
+                self.assertTrue(inputs[0]['model_image'].startswith('data:image/jpeg'))
+                self.assertEqual([stage['model_image'] for stage in inputs[1:]], ['https://example.test/result.png'] * 3)
 
-    async def test_legacy_fast_request_uses_one_quality_pass_for_all_selected_slots(self):
+    async def test_legacy_fast_request_uses_quality_for_every_stage(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
         generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
         with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), patch.object(app, '_prepare_identity_source', return_value='prepared'), \
@@ -271,12 +306,48 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
                 tuck_mode='auto', compare_mode='false', quality_mode='fast', top_category='Рубашка', outer_category='Плащ', device='test')
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(result['qualityModeUsed'], 'quality')
-        self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
-        self.assertEqual(generate.await_count, 1)
+        self.assertEqual([step['step'] for step in result['steps']], ['shoes', 'top', 'outer'])
+        self.assertEqual(generate.await_count, 3)
         for call in generate.call_args_list:
             self.assertEqual(call.args[2], 'tryon-max')
             self.assertEqual(call.kwargs['generation_mode_override'], 'quality')
         self.assertIn('long_outer', protect.call_args.args[3])
+
+    async def test_collage_strategy_remains_available_as_one_call(self):
+        app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
+        generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
+        with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key', 'FASHN_LOOK_STRATEGY': 'collage'}), \
+             patch.object(app, '_prepare_identity_source', return_value='prepared'), \
+             patch.object(app, '_run_fashn_tryon_with_category_fallback', generate), \
+             patch.object(app, '_face_locked_output_url', AsyncMock(return_value='data:image/png;base64,protected')):
+            result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=upload(), shoes_file=None, outer_file=None,
+                tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Футболка', outer_category='', device='collage')
+        self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
+        self.assertEqual(generate.await_count, 1)
+
+    async def test_rejected_lock_returns_provider_frame_with_warning_not_error(self):
+        app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
+        frame = Image.new('RGB', (80, 160), (10, 200, 30))
+        generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/private.png'})
+        rejected = AsyncMock(side_effect=app.AlignmentRejected(app.ALIGNMENT_MESSAGE, frame))
+        with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), patch.object(app, '_prepare_identity_source', return_value='prepared'), \
+             patch.object(app, '_run_fashn_tryon_with_category_fallback', generate), patch.object(app, '_face_locked_output_url', rejected):
+            result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=None, shoes_file=None, outer_file=None,
+                tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Рубашка', outer_category='', device='fallback')
+        self.assertEqual(result.get('status'), 'succeeded', result)
+        self.assertFalse(result['identityLocked'])
+        self.assertIn('перегенерируй', result['warning'])
+        self.assertTrue(result['outputUrl'].startswith('data:image/png;base64,'))
+        self.assertNotIn('private', str(result))
+        content, _ = app._data_url_to_bytes(result['outputUrl'])
+        self.assertEqual(Image.open(BytesIO(content)).getpixel((5, 5)), (10, 200, 30))
+        app._TRYON_LOOK_INFLIGHT.clear()
+        with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key', 'AI_TRYON_UNLOCKED_FALLBACK': 'false'}), \
+             patch.object(app, '_prepare_identity_source', return_value='prepared'), \
+             patch.object(app, '_run_fashn_tryon_with_category_fallback', generate), patch.object(app, '_face_locked_output_url', rejected):
+            result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=None, shoes_file=None, outer_file=None,
+                tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Рубашка', outer_category='', device='strict')
+        self.assertEqual(result.get('error'), app.ALIGNMENT_MESSAGE)
 
     async def test_unprotected_output_is_never_returned(self):
         with patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (80, 160)))), \
