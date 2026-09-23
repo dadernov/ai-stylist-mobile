@@ -178,16 +178,14 @@ def _prepare_identity_source(original_content: bytes):
 
 def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots, prepared=None):
     original, cutout, faces = prepared or _prepare_identity_source(original_content)
-    source_ratio = original.width / original.height
-    generated_ratio = generated_image.width / generated_image.height
-    if abs(source_ratio - generated_ratio) > .02 * max(source_ratio, generated_ratio):
-        return original, 'aspect-mismatch'
+    # A provider can add margins around a narrow source without moving the person.
+    # Remove those margins uniformly, never squeeze the generated body to fit.
+    # Landmark validation still rejects a zoomed/cropped or repositioned person.
+    framed = ImageOps.fit(generated_image, original.size, method=Image.Resampling.LANCZOS)
     try:
-        aligned = face_guard.align_to_source(
-            original, generated_image.resize(original.size, Image.Resampling.LANCZOS), faces[0]
-        )
+        aligned = face_guard.align_to_source(original, framed, faces[0])
     except face_guard.AlignmentError as exc:
-        print(f'Try-on alignment rejected: {exc}', flush=True)
+        print(f'Try-on alignment rejected: {exc}; source={original.size}; generated={generated_image.size}', flush=True)
         raise ValueError('Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.') from exc
     return tryon_composite.compose(
         original,
@@ -215,8 +213,11 @@ async def _face_locked_output_url(
     final_image, status = await asyncio.to_thread(
         _apply_identity_lock, original_content, generated_image, changed_slots, prepared
     )
+    print(f'Try-on composite: {status}; source={final_image.size}; generated={generated_image.size}', flush=True)
     if status != 'composed':
-        raise ValueError('Не удалось сохранить лицо и фон без искажений. Результат примерки отклонён.')
+        if status == 'no-silhouette':
+            raise ValueError('Не удалось отделить одежду от фона на результате примерки. Исходное фото сохранено.')
+        raise ValueError('Не удалось совместить результат с исходным фото. Исходное фото сохранено.')
     buff = BytesIO()
     final_image.save(buff, format='PNG', compress_level=3)
     return _bytes_to_data_url(buff.getvalue(), 'image/png')

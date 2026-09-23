@@ -2,7 +2,7 @@ import os
 from io import BytesIO
 import unittest
 from unittest.mock import AsyncMock, patch
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 from fastapi import UploadFile
 
@@ -33,13 +33,32 @@ class QualityPolicy(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
         self.assertEqual(result.getpixel((200, 710)), generated.getpixel((200, 710)))
 
-    def test_aspect_change_is_rejected_before_alignment(self):
+    def test_generated_margins_are_removed_without_stretching(self):
+        cutout, _ = person()
+        source = Image.new('RGB', cutout.size, (180, 80, 60))
+        narrow = Image.new('RGB', source.size, (20, 140, 30))
+        ImageDraw.Draw(narrow).rectangle((190, 400, 210, 700), fill=(40, 40, 200))
+        for size, origin in [((600, 800), (100, 0)), ((400, 1100), (0, 150))]:
+            with self.subTest(size=size):
+                generated = Image.new('RGB', size, 'white')
+                generated.paste(narrow, origin)
+                with patch.object(face_guard, 'detect_faces', return_value=[face()]) as detect, \
+                     patch.object(app, '_silhouette', return_value=cutout):
+                    result, status = app._apply_identity_lock(b'photo', generated, ['long_outer'], (source, cutout, [face()]))
+                self.assertEqual(status, 'composed')
+                np.testing.assert_array_equal(detect.call_args.args[0], narrow)
+                self.assertEqual(result.getpixel((200, 680)), (40, 40, 200))
+                self.assertEqual(result.getpixel((185, 680)), (20, 140, 30))
+                self.assertEqual(result.getpixel((200, 80)), source.getpixel((200, 80)))
+                np.testing.assert_array_equal(np.asarray(result)[:, :30], np.asarray(source)[:, :30])
+
+    def test_actual_movement_is_still_rejected_after_margin_removal(self):
         cutout, _ = person()
         source = Image.new('RGB', cutout.size)
-        with patch.object(face_guard, 'align_to_source') as align:
-            _, status = app._apply_identity_lock(b'photo', Image.new('RGB', (800, 400)), ['long_outer'], (source, cutout, [face()]))
-        self.assertEqual(status, 'aspect-mismatch')
-        align.assert_not_called()
+        with patch.object(face_guard, 'detect_faces', return_value=[face(offset=(90, 0))]), \
+             patch.object(app, '_silhouette') as segment, self.assertRaisesRegex(ValueError, 'совместить'):
+            app._apply_identity_lock(b'photo', Image.new('RGB', (600, 800)), ['long_outer'], (source, cutout, [face()]))
+        segment.assert_not_called()
 
     def test_png_cache_has_a_byte_limit(self):
         app._TRYON_LOOK_CACHE.clear()
@@ -92,6 +111,15 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
              patch.object(app, '_apply_identity_lock', side_effect=ValueError('unsafe')):
             with self.assertRaises(ValueError):
                 await app._face_locked_output_url(None, b'photo', 'https://example.test/result.png', ['top'])
+
+    async def test_mask_failure_is_reported_separately_and_logged_without_photos(self):
+        image = Image.new('RGB', (400, 800))
+        with patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=image)), \
+             patch.object(app, '_apply_identity_lock', return_value=(image, 'no-silhouette')), patch('builtins.print') as log:
+            with self.assertRaisesRegex(ValueError, 'отделить одежду от фона'):
+                await app._face_locked_output_url(None, b'private-photo', 'https://example.test/private-result.png', ['outer'])
+        self.assertIn('no-silhouette', log.call_args.args[0])
+        self.assertNotIn('private', log.call_args.args[0])
 
     async def test_unusable_source_is_rejected_before_paid_generation(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
