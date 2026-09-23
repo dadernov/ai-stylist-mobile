@@ -22,7 +22,6 @@ type ProfileScreenProps = {
   favoritesCount: number;
   onAvatarChange: (uri: string) => void;
   onModelChange: (uri: string) => void;
-  onShowGuide: () => void;
   onLogout: () => void;
   gender: Gender;
   beautyAdvice: boolean;
@@ -41,7 +40,6 @@ export function ProfileScreen({
   favoritesCount,
   onAvatarChange,
   onModelChange,
-  onShowGuide,
   onLogout,
   gender,
   beautyAdvice,
@@ -209,14 +207,6 @@ export function ProfileScreen({
           value: lang === 'ru' ? 'Русский' : '中文',
           delay: 200,
           onPress: () => setLang(lang === 'ru' ? 'zh' : 'ru')
-        })}
-
-        {renderSettingRow({
-          emoji: '📖',
-          title: t('Как пользоваться приложением'),
-          hint: t('Короткая инструкция: фото, гардероб, генерация образов.'),
-          delay: 240,
-          onPress: onShowGuide
         })}
 
         {renderSettingRow({

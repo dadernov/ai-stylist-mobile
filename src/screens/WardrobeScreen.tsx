@@ -30,9 +30,10 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult } from '../services/ai';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp } from 'lucide-react-native';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
+import { ProductHelp } from '../components/ProductHelp';
 
 type WardrobeScreenProps = {
   items: WardrobeItem[];
@@ -269,6 +270,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
   const { colors } = useTheme();
   const [activeFilter, setActiveFilter] = useState('Все');
   const [search, setSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = items.find(item => item.id === detailId);
   const { width } = useWindowDimensions();
@@ -320,7 +323,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
     return items.filter((item) => item.section === activeFilter);
   }, [items, activeFilter]);
 
-  const { pickPhoto: requestPhoto, cropModal } = usePhotoPicker();
+  const { pickPhoto: requestPhoto, cropModal, isPicking } = usePhotoPicker();
+  const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !searchFocused;
 
   const handleAddItem = async () => {
     const photo = await requestPhoto();
@@ -466,7 +470,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
         {
           text: t('Удалить'),
           style: 'destructive',
-          onPress: () => onItemsChange(items.filter((item) => item.id !== id))
+          onPress: () => { onItemsChange(items.filter((item) => item.id !== id)); setDetailId(null); }
         }
       ]);
     },
@@ -540,6 +544,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
       {!isModalVisible && cropModal}
       <View style={styles.collectionHeader}>
         <View style={{ flex: 1 }}><ScreenHeader eyebrow={t('Личная коллекция')} title={t('Гардероб')} /></View>
+        <View style={styles.helpSlot}>
+          {showHelp && <IconButton icon={CircleHelp} label={t('Открыть справку')} variant="quiet" onPress={() => { Keyboard.dismiss(); setHelpOpen(true); }} />}
+        </View>
         <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} haptics style={styles.addButton} onPress={handleAddItem}>
           <Plus size={23} strokeWidth={1.6} color={colors.buttonPrimaryText} />
         </AppPressable>
@@ -547,7 +554,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
       <View style={styles.searchBar}>
         <Search size={18} color={colors.muted} strokeWidth={1.5} />
         <TextInput style={styles.searchInput} placeholder={t('Найти в гардеробе')} accessibilityLabel={t('Найти в гардеробе')}
-          placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
+          placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} returnKeyType="done" onSubmitEditing={Keyboard.dismiss}
+          onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} />
         {search.length > 0 && <AppPressable accessibilityRole="button" accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
       </View>
 
@@ -608,6 +616,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
         }
       />
 
+      {helpOpen && <ProductHelp onClose={() => setHelpOpen(false)} />}
+
       <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => setDetailId(null)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.detailSheet}>
@@ -629,7 +639,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <IconButton icon={ScanLine} label={t('Повторить анализ')} onPress={() => { setDetailId(null); reanalyzeExisting(detail); }} />
                   <IconButton icon={ImagePlus} label={t('Заменить фото')} onPress={() => { setDetailId(null); handleRetakeExisting(detail.id); }} />
-                  <IconButton icon={Trash2} label={t('Удалить')} danger onPress={() => { setDetailId(null); handleDeleteItem(detail.id); }} />
+                  <IconButton icon={Trash2} label={t('Удалить')} danger onPress={() => handleDeleteItem(detail.id)} />
                 </View>
               </View>
               {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
@@ -799,7 +809,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     maxWidth: 900,
     alignSelf: 'center'
   },
-  collectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  collectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  helpSlot: { width: 44, height: 44, marginBottom: 18, zIndex: 3 },
   addButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18 },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 8, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },

@@ -568,7 +568,6 @@ function AppContent() {
           setModelUri(uri);
           storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
         }}
-        onShowGuide={() => setOnboardingVisible(true)}
         onLogout={() => {
           void signOut(session);
           setSession(null);
