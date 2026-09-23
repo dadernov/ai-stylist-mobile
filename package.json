@@ -18,12 +18,13 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs"
+    "test": "node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.34",
     "expo-blur": "~15.0.8",
+    "expo-crypto": "~15.0.9",
     "expo-dev-client": "~6.0.21",
     "expo-file-system": "~19.0.23",
     "expo-haptics": "~15.0.8",
@@ -40,6 +41,25 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0"
+  },
+  "overrides": {
+    "metro": "0.83.8",
+    "metro-babel-transformer": "0.83.8",
+    "metro-cache": "0.83.8",
+    "metro-cache-key": "0.83.8",
+    "metro-config": "0.83.8",
+    "metro-core": "0.83.8",
+    "metro-file-map": "0.83.8",
+    "metro-minify-terser": "0.83.8",
+    "metro-resolver": "0.83.8",
+    "metro-runtime": "0.83.8",
+    "metro-source-map": "0.83.8",
+    "metro-symbolicate": "0.83.8",
+    "metro-transform-plugins": "0.83.8",
+    "metro-transform-worker": "0.83.8",
+    "postcss": "8.5.28",
+    "uuid": "11.1.1",
+    "ws@7": "7.5.11"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",

@@ -1,5 +1,4 @@
 import {
-  Alert,
   Animated,
   Image,
   Keyboard,
@@ -18,6 +17,8 @@ import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
 import { FittingRoom } from '../components/FittingRoom';
+import { GenerationHistory } from '../components/GenerationHistory';
+import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
@@ -90,7 +91,9 @@ type OutfitBuilderProps = {
   onWardrobe: () => void;
   initialItemId?: string;
   initialItemIds?: string[];
-  initialTab?: 'fitting' | 'builder' | 'looks';
+  initialTab?: 'fitting' | 'builder' | 'looks' | 'history';
+  initialHistoryItemId?: string;
+  onOpenItem: (id: string) => void;
   gender: Gender;
   beautyAdvice: boolean;
 };
@@ -247,6 +250,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           qualityMode={look.tryOnQualityMode}
           history={look.tryOnHistory}
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
+          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: 'quality' })}
         />
         {lookItems.map((item) => (
           <Text key={item.id} style={styles.lookItem}>
@@ -339,6 +343,7 @@ const SavedLookCard = memo(function SavedLookCard({
           qualityMode={look.tryOnQualityMode}
           history={look.tryOnHistory}
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
+          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: 'quality' })}
         />
         {lookItems.map((item) => (
           <Text key={item.id} style={styles.lookItem}>
@@ -364,13 +369,18 @@ export function OutfitBuilderScreen({
   initialItemId,
   initialItemIds,
   initialTab = 'fitting',
+  initialHistoryItemId,
+  onOpenItem,
   gender,
   beautyAdvice
 }: OutfitBuilderProps) {
+  const Alert = useAppDialog();
   const styles = useThemedStyles(makeStyles);
   const { colors: themeColors } = useTheme();
   const t = useT();
-  const [activeTab, setActiveTab] = useState<'fitting' | 'builder' | 'looks'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'fitting' | 'builder' | 'looks' | 'history'>(initialTab);
+  const [historyItemId, setHistoryItemId] = useState(initialHistoryItemId);
+  const [repeatSelection, setRepeatSelection] = useState<{ ids: string[]; key: number }>();
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
   const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
@@ -390,7 +400,7 @@ export function OutfitBuilderScreen({
 
   useEffect(() => {
     Animated.spring(segmentAnim, {
-      toValue: activeTab === 'looks' ? 2 : activeTab === 'builder' ? 1 : 0,
+      toValue: activeTab === 'history' ? 3 : activeTab === 'looks' ? 2 : activeTab === 'builder' ? 1 : 0,
       friction: 9,
       tension: 90,
       useNativeDriver: true
@@ -685,7 +695,7 @@ export function OutfitBuilderScreen({
   );
 
   const weatherEmoji = weatherCode !== null ? weatherEmojiMap[weatherCode] || '🌤️' : '🌤️';
-  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 3 : 0;
+  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 4 : 0;
 
   return (
     <View style={styles.container}>
@@ -696,13 +706,13 @@ export function OutfitBuilderScreen({
         style={styles.heroWash}
         pointerEvents="none"
       />
-      <FormScrollView contentContainerStyle={styles.pageContent}>
+      <View style={styles.pageHeader}>
         <ScreenHeader
           eyebrow={t('Твой стиль')}
           title={t('Примерочная')}
         />
 
-        <View style={styles.segment} onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}>
+        <View accessibilityRole="tablist" style={styles.segment} onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}>
           {segmentThumbWidth > 0 ? (
             <Animated.View
               pointerEvents="none"
@@ -713,8 +723,8 @@ export function OutfitBuilderScreen({
                   transform: [
                     {
                       translateX: segmentAnim.interpolate({
-                        inputRange: [0, 1, 2],
-                        outputRange: [0, segmentThumbWidth, segmentThumbWidth * 2]
+                        inputRange: [0, 1, 2, 3],
+                        outputRange: [0, segmentThumbWidth, segmentThumbWidth * 2, segmentThumbWidth * 3]
                       })
                     }
                   ]
@@ -722,22 +732,32 @@ export function OutfitBuilderScreen({
               ]}
             />
           ) : null}
-          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('fitting')}>
+          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Режим примерки')} accessibilityState={{ selected: activeTab === 'fitting' }} style={styles.segmentTab} onPress={() => setActiveTab('fitting')}>
             <Text style={[styles.segmentText, activeTab === 'fitting' && styles.segmentTextActive]}>{t('Примерка')}</Text>
           </AppPressable>
-          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('builder')}>
+          <AppPressable haptics accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'builder' }} style={styles.segmentTab} onPress={() => setActiveTab('builder')}>
             <Text style={[styles.segmentText, activeTab === 'builder' && styles.segmentTextActive]}>
               {t('Подбор')}
             </Text>
           </AppPressable>
-          <AppPressable haptics style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
-            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Сохранённое')}</Text>
+          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Сохранённое')} accessibilityState={{ selected: activeTab === 'looks' }} style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
+            <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Образы')}</Text>
+          </AppPressable>
+          <AppPressable haptics accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'history' }} style={styles.segmentTab} onPress={() => setActiveTab('history')}>
+            <Text style={[styles.segmentText, activeTab === 'history' && styles.segmentTextActive]}>{t('История')}</Text>
           </AppPressable>
         </View>
-
+      </View>
+      {activeTab === 'history' && <GenerationHistory items={items} savedLooks={savedLooks} itemId={historyItemId}
+        onFilter={setHistoryItemId} onOpenItem={onOpenItem}
+        onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])}
+        onTryOn={ids => { setRepeatSelection(previous => ({ ids, key: (previous?.key || 0) + 1 })); setActiveTab('fitting'); }} />}
+      <FormScrollView style={activeTab === 'history' && { display: 'none' }} contentContainerStyle={styles.pageContent}>
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
-          <FittingRoom items={items} modelUri={modelUri} initialItemId={initialItemId} initialItemIds={initialItemIds} onProfile={onProfile} onWardrobe={onWardrobe}
-            onSave={look => onSavedLooksChange([look, ...savedLooks])} />
+          <FittingRoom key={repeatSelection?.key || 0} items={items} modelUri={modelUri}
+            initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onWardrobe={onWardrobe}
+            onOpenHistory={() => { setHistoryItemId(undefined); setActiveTab('history'); }}
+            onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])} />
         </View>
         {activeTab === 'builder' ? (
           <>
@@ -922,6 +942,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     paddingBottom: SPACING.xl
   },
+  pageHeader: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   segment: {
     flexDirection: 'row',
     backgroundColor: c.surface,
@@ -941,8 +962,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   segmentTab: {
     flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 44,
     paddingVertical: 10,
     borderRadius: RADII.sm,
+    justifyContent: 'center',
     alignItems: 'center'
   },
   segmentText: {

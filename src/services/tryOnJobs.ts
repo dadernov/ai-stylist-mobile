@@ -1,0 +1,151 @@
+import * as Crypto from 'expo-crypto';
+import { WardrobeItem } from '../data/mock';
+import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
+import { Session } from './auth';
+import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TuckMode } from './ai';
+import { ApiError } from './http';
+import { accountKey } from './accountStorage';
+import { loadValidated, saveJson } from './storage';
+import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
+
+export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
+  status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string };
+export type JobSnapshot = { jobs: TryOnJob[]; ready: boolean; readOnly?: boolean; error?: string };
+type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMode: TuckMode };
+
+export const tryOnContext = (modelUri: string, items: WardrobeItem[]) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,
+  JSON.stringify([modelUri, [...items].sort((a, b) => a.id.localeCompare(b.id)).map(i => [i.id, i.section, i.category, i.sourceImageUri || i.imageUri])]));
+
+export class TryOnJobStore {
+  private snapshot: JobSnapshot = { jobs: [], ready: false };
+  private listeners = new Set<() => void>();
+  private working = new Set<string>();
+  private active = false;
+  private writable = true;
+  private initialized?: Promise<void>;
+  constructor(private session: Session) {}
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  getSnapshot = () => this.snapshot;
+  private emit() { this.listeners.forEach(listener => listener()); }
+  private async save() {
+    if (!this.writable) throw new Error('История примерок повреждена и сохранена без изменений.');
+    try { await saveJson(accountKey(this.session.login, 'tryOnJobs'), this.snapshot.jobs); }
+    catch (error) {
+      this.snapshot = { ...this.snapshot, error: 'Не удалось сохранить историю примерок. Освободи место на устройстве.' }; this.emit(); throw error;
+    }
+  }
+  private async update(id: string, patch: Partial<TryOnJob>) {
+    const previous = this.snapshot.jobs.find(job => job.id === id);
+    if (!previous || Object.entries(patch).every(([key, value]) => previous[key as keyof TryOnJob] === value)) return;
+    this.snapshot = { ...this.snapshot, jobs: this.snapshot.jobs.map(job => job.id === id ? { ...job, ...patch } : job) };
+    this.emit(); await this.save();
+  }
+  async activate(session: Session) {
+    this.session = session; this.active = true;
+    if (!this.initialized) this.initialized = this.load();
+    await this.initialized;
+    for (const job of this.snapshot.jobs) if (['pending', 'retry'].includes(job.status)) void this.poll(job);
+  }
+  deactivate() { this.active = false; }
+  private async load() {
+    const result = await loadValidated(accountKey(this.session.login, 'tryOnJobs'), value => {
+      if (!Array.isArray(value) || value.some(j => !j || typeof j.id !== 'string' || typeof j.context !== 'string'
+        || !Array.isArray(j.itemIds) || !j.itemIds.every((id: unknown) => typeof id === 'string')
+        || (j.garments != null && (!Array.isArray(j.garments) || j.garments.some((g: any) => !g || typeof g.id !== 'string' || typeof g.name !== 'string')))
+        || typeof j.name !== 'string' || !Number.isFinite(j.createdAt) || !['auto', 'tucked', 'untucked'].includes(j.tuckMode)
+        || !['pending', 'succeeded', 'failed', 'retry'].includes(j.status)
+        || (j.error != null && typeof j.error !== 'string') || (j.status === 'succeeded' && !j.result)
+        || (j.result != null && (typeof j.result.imageUri !== 'string' || typeof j.result.id !== 'string' || !Number.isFinite(j.result.updatedAt)
+          || (j.result.warning != null && typeof j.result.warning !== 'string'))))) throw new Error('Invalid jobs');
+      return value as TryOnJob[];
+    });
+    this.writable = !result.failed;
+    this.snapshot = { ready: true, readOnly: result.failed, jobs: (result.value || []).map(job => job.result ? { ...job, result: { ...job.result, imageUri: reanchorTryOnUri(job.result.imageUri) || job.result.imageUri } } : job),
+      error: result.failed ? 'История примерок не читается. Исходные данные сохранены без изменений.' : undefined };
+    this.emit();
+  }
+  async importLooks(looks: (GeneratedLook | SavedLook)[], items: WardrobeItem[]) {
+    if (!this.snapshot.ready || !this.writable) return;
+    const known = new Set(this.snapshot.jobs.flatMap(job => job.result ? [job.result.imageUri] : []));
+    const imported: TryOnJob[] = [];
+    for (const look of looks) {
+      const frames = [...(look.tryOnHistory || [])];
+      if (look.tryOnImageUri) frames.push({ id: look.id, imageUri: look.tryOnImageUri,
+        updatedAt: look.tryOnUpdatedAt || ('createdAt' in look ? look.createdAt : 0),
+        warning: look.tryOnWarning, tuckMode: look.tuckMode, qualityMode: look.tryOnQualityMode });
+      for (const frame of frames) {
+        const imageUri = reanchorTryOnUri(frame.imageUri) || frame.imageUri;
+        if (known.has(imageUri)) continue;
+        known.add(imageUri);
+        imported.push({ id: Crypto.randomUUID(), context: `legacy:${look.id}`, itemIds: [...look.itemIds],
+          garments: look.itemIds.flatMap(id => { const item = items.find(item => item.id === id); return item ? [{ id, name: item.name }] : []; }),
+          name: 'name' in look ? look.name : look.title, createdAt: frame.updatedAt, tuckMode: frame.tuckMode || 'auto',
+          status: 'succeeded', result: { ...frame, imageUri } });
+      }
+    }
+    if (!imported.length) return;
+    this.snapshot = { ...this.snapshot, jobs: [...this.snapshot.jobs, ...imported].sort((a, b) => b.createdAt - a.createdAt) };
+    this.emit();
+    await this.save();
+  }
+  private async complete(job: TryOnJob, response: TryOnGenerateResult) {
+    if (!response.outputUrl) return false;
+    const stored = await cacheTryOnImage(response.outputUrl, job.id, this.session.login);
+    await this.update(job.id, { status: 'succeeded', error: undefined, result: { id: job.id, imageUri: stored.imageUri,
+      updatedAt: response.updatedAt || Date.now(), warning: response.warning, tuckMode: job.tuckMode, qualityMode: 'quality' } });
+    return true;
+  }
+  async start(input: Inputs) {
+    if (!this.snapshot.ready || !this.writable) throw new Error(this.snapshot.error || 'История ещё загружается.');
+    const existing = this.snapshot.jobs.find(job => job.context === input.context && job.status === 'pending');
+    if (existing) { void this.poll(existing); return; }
+    const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode && job.status === 'retry');
+    const job: TryOnJob = retry || { id: Crypto.randomUUID(), context: input.context, itemIds: input.items.map(i => i.id),
+      garments: input.items.map(i => ({ id: i.id, name: i.name })),
+      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode };
+    if (this.working.has(job.id)) return;
+    this.working.add(job.id);
+    this.snapshot = { ...this.snapshot, error: undefined, jobs: [{ ...job, status: 'pending', error: undefined }, ...this.snapshot.jobs.filter(j => j.id !== job.id)] };
+    this.emit();
+    try {
+      await this.save();
+      const slot = (section: string) => input.items.find(i => i.section === section && i.imageUri);
+      const uri = (section: string) => { const item = slot(section); return item?.sourceImageUri || item?.imageUri; };
+      const response = await analyzeTryOnGenerateLook(input.modelUri, uri('Верх'), uri('Низ'), uri('Обувь'), job.tuckMode, false, 'quality',
+        uri('Верхняя одежда'), slot('Верх')?.category, slot('Верхняя одежда')?.category, job.id, this.session);
+      if (await this.complete(job, response)) return;
+    } catch (error: any) {
+      if (error instanceof ApiError && error.status && error.status < 500) {
+        await this.update(job.id, { status: 'failed', error: error.message }).catch(() => {}); return;
+      }
+      await this.update(job.id, { status: 'retry', error: error?.message || 'Не удалось получить результат. Повтори загрузку.' }).catch(() => {});
+    } finally { this.working.delete(job.id); }
+    void this.poll(job);
+  }
+  async poll(job: TryOnJob) {
+    if (this.working.has(job.id) || !this.active) return;
+    this.working.add(job.id);
+    let failures = 0;
+    const deadline = Date.now() + 20 * 60 * 1000;
+    try {
+      while (this.active && Date.now() < deadline) {
+        try {
+          const response = await getTryOnJob(job.id, this.session);
+          if (await this.complete(job, response)) return;
+          failures = 0;
+          await this.update(job.id, { status: 'pending', error: undefined });
+        } catch (error: any) {
+          if (error instanceof ApiError && error.status === 200) {
+            await this.update(job.id, { status: 'failed', error: error.message }); return;
+          }
+          if (++failures >= 3 || (error instanceof ApiError && error.status === 401)) {
+            await this.update(job.id, { status: 'retry', error: error?.message || 'Проверь соединение и повтори загрузку результата.' }); return;
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
+      if (this.active) await this.update(job.id, { status: 'retry', error: 'Примерка ещё не завершена. Повтори проверку результата.' });
+    } catch { /* The journal stays available in memory; save() exposes a storage error. */ }
+    finally { this.working.delete(job.id); }
+  }
+}

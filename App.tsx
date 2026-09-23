@@ -11,13 +11,14 @@ import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { readStoredSession, signOut, verifySession, Session } from './src/services/auth';
+import { readStoredSession, signOut, verifySession, forgetStoredSession, Session } from './src/services/auth';
 import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, useT } from './src/constants/i18n';
 import { WardrobeItem } from './src/data/mock';
-import { loadJson, loadRaw, saveJson } from './src/services/storage';
-import { persistPhoto, photoDirectory, reanchorPhoto, removeUnusedPhotos } from './src/services/photos';
+import { loadRaw, saveJson } from './src/services/storage';
+import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
+import { accountKey, DATA_KEYS, loadAccountData, prepareAccountStorage, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { PrimaryButton } from './src/components/ui/PrimaryButton';
@@ -25,30 +26,14 @@ import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
 import { Shirt, ScanLine, Sparkles, Heart, UserRound, LucideIcon } from 'lucide-react-native';
-import { Gender, isGender } from './src/types/profile';
+import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
+import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
+import { AppDialogProvider } from './src/components/AppDialog';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
-type ProfileState = {
-  displayName: string;
-  /** Остался от входа по SMS: по нему видно, что человеку пора завести логин. */
-  authMethod?: string;
-  avatarUri?: string;
-  modelUri?: string;
-  gender?: Gender;
-  beautyAdvice?: boolean;
-};
-
-const STORAGE_KEYS = {
-  profile: 'profileState',
-  wardrobe: 'wardrobeItems',
-  favorites: 'favoriteLooks',
-  lastContext: 'lastContext',
-  lastLooks: 'lastLooks',
-  savedLooks: 'savedLooks',
-  onboardingSeen: 'onboardingSeen'
-};
+const STORAGE_KEYS = DATA_KEYS;
 
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
@@ -77,42 +62,6 @@ const LEGACY_DEFAULT_ITEM_SIGNATURES = new Set([
 
 const isLegacyDefaultItem = (item: WardrobeItem) =>
   LEGACY_DEFAULT_ITEM_SIGNATURES.has(`${item.id}|${item.name}|${item.category}|${item.section}`);
-
-const normalizeGeneratedLook = (look: GeneratedLook): GeneratedLook => ({
-  ...look,
-  itemIds: look.itemIds ?? [],
-  fitScore: typeof look.fitScore === 'number' ? look.fitScore : undefined,
-  fitReasons: Array.isArray(look.fitReasons) ? look.fitReasons.filter((item) => typeof item === 'string') : undefined,
-  tuckMode:
-    look.tuckMode === 'tucked' || look.tuckMode === 'untucked' || look.tuckMode === 'auto'
-      ? look.tuckMode
-      : undefined,
-  tryOnImageUri: typeof look.tryOnImageUri === 'string' ? look.tryOnImageUri : undefined,
-  tryOnWarning: typeof look.tryOnWarning === 'string' ? look.tryOnWarning : undefined,
-  tryOnUpdatedAt: typeof look.tryOnUpdatedAt === 'number' ? look.tryOnUpdatedAt : undefined,
-  tryOnQualityMode: look.tryOnQualityMode === 'fast' || look.tryOnQualityMode === 'quality' ? look.tryOnQualityMode : undefined,
-  tryOnHistory: Array.isArray(look.tryOnHistory)
-    ? look.tryOnHistory.filter((item) => typeof item?.imageUri === 'string' && typeof item?.updatedAt === 'number')
-    : undefined
-});
-
-const normalizeSavedLook = (look: SavedLook): SavedLook => ({
-  ...look,
-  itemIds: look.itemIds ?? [],
-  fitScore: typeof look.fitScore === 'number' ? look.fitScore : undefined,
-  fitReasons: Array.isArray(look.fitReasons) ? look.fitReasons.filter((item) => typeof item === 'string') : undefined,
-  tuckMode:
-    look.tuckMode === 'tucked' || look.tuckMode === 'untucked' || look.tuckMode === 'auto'
-      ? look.tuckMode
-      : undefined,
-  tryOnImageUri: typeof look.tryOnImageUri === 'string' ? look.tryOnImageUri : undefined,
-  tryOnWarning: typeof look.tryOnWarning === 'string' ? look.tryOnWarning : undefined,
-  tryOnUpdatedAt: typeof look.tryOnUpdatedAt === 'number' ? look.tryOnUpdatedAt : undefined,
-  tryOnQualityMode: look.tryOnQualityMode === 'fast' || look.tryOnQualityMode === 'quality' ? look.tryOnQualityMode : undefined,
-  tryOnHistory: Array.isArray(look.tryOnHistory)
-    ? look.tryOnHistory.filter((item) => typeof item?.imageUri === 'string' && typeof item?.updatedAt === 'number')
-    : undefined
-});
 
 // Заставка на время гидрации: серифный логотип с мягким пульсом и скелетон-строчки.
 function LoadingScreen() {
@@ -196,7 +145,7 @@ function Onboarding({ onClose }: { onClose: () => void }) {
                 <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
               </View>
               <Text style={styles.tipText}>
-                {t('Не закрывай приложение во время генерации. Если вещь сложная, перегенерация может дать заметно лучший вариант.')}
+                {t('Результаты остаются в недавних примерках, даже если сменить вкладку. Для нового варианта используй перегенерацию.')}
               </Text>
             </View>
           </FadeInView>
@@ -216,7 +165,67 @@ function Onboarding({ onClose }: { onClose: () => void }) {
   );
 }
 
-function AppContent() {
+function SessionGate() {
+  const { isDark, colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  const [session, setSession] = useState<Session | null>(null);
+  const [ready, setReady] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
+  const [claim, setClaim] = useState<Session | null>(null);
+  const [error, setError] = useState('');
+  const activate = async (next: Session, confirmed = false) => {
+    setReady(false); setError('');
+    try {
+      if (await prepareAccountStorage(next.login, confirmed) === 'claim') setClaim(next);
+      else { setClaim(null); setSession(next); }
+    } catch { setError(t('Не удалось прочитать данные на устройстве. Попробуй ещё раз.')); }
+    finally { setReady(true); }
+  };
+  useEffect(() => {
+    void Promise.all([readStoredSession(), loadRaw('onboardingSeen')]).then(async ([stored, seen]) => {
+      setOnboarding(seen.value !== 'true');
+      if (stored) await activate(stored);
+      else setReady(true);
+    });
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    void verifySession(session).then(async live => {
+      if (!active || live) return;
+      await forgetStoredSession(session);
+      if (active) setSession(current => current?.token === session.token ? null : current);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [session?.token]);
+  const logout = async () => {
+    try {
+      await signOut(session);
+      setSession(null);
+    } catch { setError(t('Не удалось завершить выход. Попробуй ещё раз.')); }
+  };
+  if (!ready) return <LoadingScreen />;
+  if (onboarding) return <Onboarding onClose={() => {
+    setOnboarding(false);
+    void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
+  }} />;
+  if (session) return <TryOnJobsProvider key={session.login} session={session}><AppContent session={session} onLogout={() => void logout()} accountError={error} /></TryOnJobsProvider>;
+  return <SafeAreaView style={styles.container}>
+    <StatusBar style={isDark ? 'light' : 'dark'} />
+    {claim ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 20, maxWidth: 480, width: '100%', alignSelf: 'center' }}>
+      <Text style={{ color: colors.text, fontSize: 24, fontWeight: '600' }}>{t('Гардероб на устройстве')}</Text>
+      <Text style={{ color: colors.muted, fontSize: 16, lineHeight: 24 }}>{t('Перенести прежние вещи и образы в аккаунт {login}? Подтверди, только если это твой гардероб.', { login: claim.login })}</Text>
+      <PrimaryButton title={t('Перенести мой гардероб')} onPress={() => void activate(claim, true)} />
+      <PrimaryButton title={t('Начать без переноса')} variant="ghost" onPress={() => {
+        void startWithoutLegacy(claim.login).then(() => activate(claim)).catch(() => setError(t('Не удалось сохранить выбор. Попробуй ещё раз.')));
+      }} />
+    </View> : <AuthScreen onAuthenticated={next => void activate(next)} />}
+    {error ? <Text accessibilityRole="alert" style={{ padding: 20, color: colors.danger }}>{error}</Text> : null}
+  </SafeAreaView>;
+}
+
+function AppContent({ session, onLogout, accountError }: { session: Session; onLogout: () => void; accountError: string }) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -224,14 +233,14 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
   const [tryOnItemIds, setTryOnItemIds] = useState<string[] | undefined>();
-  const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder'>('fitting');
-  const [isOnboardingVisible, setOnboardingVisible] = useState(true);
-  // Вошедший пользователь — это живая сессия на сервере, а не флаг в профиле:
-  // раньше «я авторизован» хранилось локально и означало ровно ничего.
-  const [session, setSession] = useState<Session | null>(null);
-  const [wasPhoneUser, setWasPhoneUser] = useState(false);
-  const isAuthenticated = Boolean(session);
-  const [displayName, setDisplayName] = useState('Гость');
+  const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder' | 'history'>('fitting');
+  const [historyItemId, setHistoryItemId] = useState<string>();
+  const [wardrobeDetailId, setWardrobeDetailId] = useState<string>();
+  const { store: jobsStore, ready: jobsReady } = useTryOnJobs();
+  const [displayName, setDisplayName] = useState(session.displayName || session.login);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const photoDirectory = accountPhotoDirectory(session.login);
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [modelUri, setModelUri] = useState<string | undefined>(undefined);
   const [gender, setGender] = useState<Gender>();
@@ -250,6 +259,9 @@ function AppContent() {
   });
   const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
   const [isReady, setReady] = useState(false);
+  useEffect(() => {
+    if (isReady && jobsReady) void jobsStore.importLooks([...savedLooks, ...favoriteLooks, ...lastLooks], items).catch(() => {});
+  }, [isReady, jobsReady, jobsStore, savedLooks, favoriteLooks, lastLooks, items]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -272,73 +284,19 @@ function AppContent() {
 
   useEffect(() => {
     const hydrate = async () => {
-      // Каждый ключ читается сам по себе: испорченная запись в одном не должна
-      // ни обрывать чтение остальных, ни приводить к тому, что состояние по
-      // умолчанию запишется поверх целых данных.
-      const [profile, wardrobe, favorites, context, looks, saved, onboarding] = await Promise.all([
-        loadJson<ProfileState>(STORAGE_KEYS.profile),
-        loadJson<WardrobeItem[]>(STORAGE_KEYS.wardrobe),
-        loadJson<GeneratedLook[]>(STORAGE_KEYS.favorites),
-        loadJson<{ style: string; event: string; weather: string }>(STORAGE_KEYS.lastContext),
-        loadJson<GeneratedLook[]>(STORAGE_KEYS.lastLooks),
-        loadJson<SavedLook[]>(STORAGE_KEYS.savedLooks),
-        loadRaw(STORAGE_KEYS.onboardingSeen)
-      ]);
-
-      const damaged: Array<[string, { failed: boolean }]> = [
-        [STORAGE_KEYS.profile, profile],
-        [STORAGE_KEYS.wardrobe, wardrobe],
-        [STORAGE_KEYS.favorites, favorites],
-        [STORAGE_KEYS.lastContext, context],
-        [STORAGE_KEYS.lastLooks, looks],
-        [STORAGE_KEYS.savedLooks, saved]
-      ];
-      damaged.forEach(([key, result]) => {
-        if (result.failed) unreadableKeys.current.add(key);
-      });
-
-      setOnboardingVisible(onboarding.value !== 'true');
-
-      const stored = await readStoredSession();
-      if (stored) {
-        const live = await verifySession(stored);
-        if (live) {
-          setSession(live);
-          if (live.displayName) setDisplayName(live.displayName);
-        }
+      const data = await loadAccountData(session.login);
+      if (!alive.current) return;
+      unreadableKeys.current = data.failed;
+      const profile = data.profile;
+      if (profile) {
+        setDisplayName(profile.displayName || session.displayName || session.login);
+        setAvatarUri(profile.avatarUri); setModelUri(profile.modelUri);
+        setGender(profile.gender); setBeautyAdvice(profile.beautyAdvice === true);
       }
-
-      if (profile.value) {
-        setDisplayName(profile.value.displayName || 'Гость');
-        // Прежний вход был по SMS. Такому человеку нужно завести логин, и на
-        // экране входа это объясняется отдельно, иначе просьба выглядит сбоем.
-        setWasPhoneUser(profile.value.authMethod === 'Телефон');
-        setAvatarUri(reanchorPhoto(profile.value.avatarUri));
-        setModelUri(reanchorPhoto(profile.value.modelUri));
-        setGender(isGender(profile.value.gender) ? profile.value.gender : undefined);
-        setBeautyAdvice(profile.value.beautyAdvice === true);
-      }
-
-      const storedItems = Array.isArray(wardrobe.value) ? wardrobe.value : [];
-      const cleanedItems = storedItems.filter((item) => !isLegacyDefaultItem(item)).map((item) => ({
-        ...item,
-        imageUri: reanchorPhoto(item.imageUri),
-        sourceImageUri: reanchorPhoto(item.sourceImageUri)
-      }));
-      if (wardrobe.value) setItems(cleanedItems);
-
-      if (favorites.value) {
-        setFavoriteLooks((Array.isArray(favorites.value) ? favorites.value : []).map(normalizeGeneratedLook));
-      }
-      if (context.value) setLastContext(context.value);
-      if (looks.value) {
-        setLastLooks((Array.isArray(looks.value) ? looks.value : []).map(normalizeGeneratedLook));
-      }
-      if (saved.value) {
-        setSavedLooks((Array.isArray(saved.value) ? saved.value : []).map(normalizeSavedLook));
-      }
-
-      if (unreadableKeys.current.size) {
+      const cleanedItems = data.items.filter(item => !isLegacyDefaultItem(item));
+      setItems(cleanedItems); setFavoriteLooks(data.favorites); setLastLooks(data.looks); setSavedLooks(data.saved);
+      if (data.context) setLastContext(data.context);
+      if (data.failed.size) {
         showToast('Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.');
       }
       setReady(true);
@@ -348,31 +306,33 @@ function AppContent() {
       // вещь можно удалить.
       const referenced = [
         ...cleanedItems.flatMap((item) => [item.imageUri, item.sourceImageUri]),
-        reanchorPhoto(profile.value?.avatarUri),
-        reanchorPhoto(profile.value?.modelUri)
+        profile?.avatarUri, profile?.modelUri
       ];
-      if (!unreadableKeys.current.has(STORAGE_KEYS.wardrobe)) {
-        removeUnusedPhotos(referenced).catch((error) => console.warn('Failed to clean photo folder', error));
+      if (!data.failed.size) {
+        removeUnusedPhotos(referenced, session.login).catch((error) => console.warn('Failed to clean photo folder', error));
       }
 
       // Перенос для тех, кто уже пользуется приложением: их фото лежат в
       // AsyncStorage как base64 и занимают там всё место. Разово переписываем
       // такие вещи файлами — иначе лимит хранилища остаётся исчерпанным.
-      if (cleanedItems.some((item) => item.imageUri?.startsWith('data:') || item.sourceImageUri?.startsWith('data:'))) {
+      if (!data.failed.has(STORAGE_KEYS.wardrobe)) {
         void movePhotosToFiles(cleanedItems);
       }
-      const legacyAvatar = profile.value?.avatarUri;
-      if (legacyAvatar?.startsWith('data:')) {
+      const legacyAvatar = profile?.avatarUri;
+      if (legacyAvatar && !legacyAvatar.startsWith(photoDirectory)) {
         storeProfilePhoto(legacyAvatar, (stored) => setAvatarUri((current) => (current === legacyAvatar ? stored : current)));
       }
-      const legacyModel = profile.value?.modelUri;
-      if (legacyModel?.startsWith('data:')) {
+      const legacyModel = profile?.modelUri;
+      if (legacyModel && !legacyModel.startsWith(photoDirectory)) {
         storeProfilePhoto(legacyModel, (stored) => setModelUri((current) => (current === legacyModel ? stored : current)));
       }
     };
 
     hydrate().catch((error) => {
       console.warn('Failed to load local state', error);
+      unreadableKeys.current = new Set(Object.values(STORAGE_KEYS));
+      if (!alive.current) return;
+      showToast(t('Не удалось прочитать данные на устройстве. Попробуй ещё раз.'));
       setReady(true);
     });
   }, []);
@@ -382,7 +342,7 @@ function AppContent() {
   // на ключ: иначе каждое нажатие вызывало бы новый тост.
   const persist = (key: string, value: unknown, label: string) => {
     if (!isReady || unreadableKeys.current.has(key)) return;
-    saveJson(key, value)
+    saveJson(accountKey(session.login, key), value)
       .then(() => reportedSaveFailures.current.delete(key))
       .catch((error) => {
         console.warn(`Failed to save ${key}`, error);
@@ -402,18 +362,21 @@ function AppContent() {
       const updates: Partial<WardrobeItem> = {};
       try {
         if (item.imageUri && !item.imageUri.startsWith(photoDirectory)) {
-          updates.imageUri = await persistPhoto(item.imageUri);
+          updates.imageUri = await persistPhoto(item.imageUri, session.login);
         }
         if (item.sourceImageUri && !item.sourceImageUri.startsWith(photoDirectory)) {
-          updates.sourceImageUri = await persistPhoto(item.sourceImageUri);
+          updates.sourceImageUri = await persistPhoto(item.sourceImageUri, session.login);
         }
       } catch (error) {
         console.warn('Failed to store item photo', error);
         continue;
       }
+      if (!alive.current) return;
       if (!Object.keys(updates).length) continue;
       setItems((current) =>
-        current.map((candidate) => (candidate.id === item.id ? { ...candidate, ...updates } : candidate))
+        current.map((candidate) => (candidate.id === item.id ? { ...candidate,
+          imageUri: candidate.imageUri === item.imageUri ? updates.imageUri || candidate.imageUri : candidate.imageUri,
+          sourceImageUri: candidate.sourceImageUri === item.sourceImageUri ? updates.sourceImageUri || candidate.sourceImageUri : candidate.sourceImageUri } : candidate))
       );
     }
   };
@@ -424,9 +387,9 @@ function AppContent() {
   };
 
   const storeProfilePhoto = (uri: string, apply: (stored: string) => void) => {
-    persistPhoto(uri)
+    persistPhoto(uri, session.login)
       .then((stored) => {
-        if (stored && stored !== uri) apply(stored);
+        if (alive.current && stored && stored !== uri) apply(stored);
       })
       .catch((error) => console.warn('Failed to store profile photo', error));
   };
@@ -481,18 +444,13 @@ function AppContent() {
     }, 1400);
   };
 
-  const closeOnboarding = () => {
-    setOnboardingVisible(false);
-    AsyncStorage.setItem(STORAGE_KEYS.onboardingSeen, 'true').catch((error) =>
-      console.warn('Failed to save onboarding state', error)
-    );
-  };
-
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
     const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
-      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
+      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId}
+        onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('builder'); }}
+        onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     }
     if (activeTab === 'builder')
       return (
@@ -502,10 +460,12 @@ function AppContent() {
           initialItemId={tryOnItemId}
           initialItemIds={tryOnItemIds}
           initialTab={builderEntry}
+          initialHistoryItemId={historyItemId}
+          onOpenItem={id => { setWardrobeDetailId(id); setActiveTab('wardrobe'); }}
           gender={gender || 'unspecified'}
           beautyAdvice={beautyAdvice}
           onProfile={() => setActiveTab('profile')}
-          onWardrobe={() => setActiveTab('wardrobe')}
+          onWardrobe={() => { setWardrobeDetailId(undefined); setActiveTab('wardrobe'); }}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
           favoriteLookIds={favoriteLookIds}
@@ -568,16 +528,7 @@ function AppContent() {
           setModelUri(uri);
           storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
         }}
-        onLogout={() => {
-          void signOut(session);
-          setSession(null);
-          setWasPhoneUser(false);
-          setDisplayName('Гость');
-          setAvatarUri(undefined);
-          setModelUri(undefined);
-          setGender(undefined);
-          setBeautyAdvice(false);
-        }}
+        onLogout={onLogout}
       />
     );
   })();
@@ -588,33 +539,6 @@ function AppContent() {
         <LoadingScreen />
         <StatusBar style={isDark ? 'light' : 'dark'} />
       </SafeAreaView>
-    );
-  }
-
-  if (isOnboardingVisible) {
-    return (
-      <>
-        <Onboarding onClose={closeOnboarding} />
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-      </>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <>
-        <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
-          <AuthScreen
-            returning={wasPhoneUser}
-            onAuthenticated={(next) => {
-              setSession(next);
-              if (next.displayName) setDisplayName(next.displayName);
-              setWasPhoneUser(false);
-            }}
-          />
-        </SafeAreaView>
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-      </>
     );
   }
 
@@ -630,6 +554,7 @@ function AppContent() {
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
+      {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 
       <View style={[styles.tabBarWrap, { bottom: tabBarBottom }]} pointerEvents="box-none">
@@ -658,7 +583,7 @@ function AppContent() {
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.label)}
                   accessibilityState={{ selected: isActive }}
-                  onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
+                  onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(undefined); setWardrobeDetailId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
                   <TabIcon size={21} strokeWidth={isActive ? 1.9 : 1.5} color={isActive ? colors.accentGold : colors.muted} />
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
@@ -704,7 +629,7 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <LanguageProvider>
-          <AppContent />
+          <AppDialogProvider><SessionGate /></AppDialogProvider>
         </LanguageProvider>
       </ThemeProvider>
     </SafeAreaProvider>

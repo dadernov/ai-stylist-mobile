@@ -1,5 +1,4 @@
 import {
-  Alert,
   FlatList,
   Image,
   Keyboard,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { usePhotoPicker } from '../components/usePhotoPicker';
+import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
@@ -30,7 +30,8 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult } from '../services/ai';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight } from 'lucide-react-native';
+import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
 import { ProductHelp } from '../components/ProductHelp';
@@ -39,6 +40,8 @@ type WardrobeScreenProps = {
   items: WardrobeItem[];
   onItemsChange: (items: WardrobeItem[]) => void;
   onTryOn: (item: WardrobeItem) => void;
+  onOpenHistory: (item: WardrobeItem) => void;
+  initialDetailId?: string;
 };
 
 const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Верхняя одежда'];
@@ -264,7 +267,8 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
   );
 }
 
-export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreenProps) {
+export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, initialDetailId }: WardrobeScreenProps) {
+  const Alert = useAppDialog();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
@@ -272,7 +276,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(initialDetailId || null);
+  const { jobs } = useTryOnJobs();
+  const historyCount = jobs.filter(job => job.itemIds.includes(detailId || '')).length;
   const detail = items.find(item => item.id === detailId);
   const { width } = useWindowDimensions();
   const columns = width >= 720 ? 3 : 2;
@@ -324,7 +330,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
   }, [items, activeFilter]);
 
   const { pickPhoto: requestPhoto, cropModal, isPicking } = usePhotoPicker();
-  const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !searchFocused;
+  const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !searchFocused && !Alert.visible;
 
   const handleAddItem = async () => {
     const photo = await requestPhoto();
@@ -643,6 +649,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn }: WardrobeScreen
                 </View>
               </View>
               {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
+              <AppPressable accessibilityRole="button" accessibilityLabel={t('История вещи: {count}', { count: historyCount })}
+                style={[styles.detailToolbar, { minHeight: 52, gap: 12, borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}
+                onPress={() => { setDetailId(null); onOpenHistory(detail); }}>
+                <History size={20} color={colors.accentGold} />
+                <Text style={{ flex: 1, color: colors.text, fontSize: 15 }}>{t('История примерок')}</Text>
+                <Text style={styles.detailMeta}>{historyCount}</Text><ChevronRight size={18} color={colors.muted} />
+              </AppPressable>
             </ScrollView>}
           </View>
         </View>

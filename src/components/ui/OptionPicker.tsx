@@ -4,33 +4,36 @@ import { Check, ChevronDown, Search, X } from 'lucide-react-native';
 import { AppPressable } from '../AppPressable';
 import { IconButton } from './IconButton';
 import { useTheme } from '../../constants/ThemeContext';
+import { useT } from '../../constants/i18n';
 
 export function OptionPicker({ options, value, onChange, label = 'Выбрать', swatches, labels = {} }: {
   options: string[]; value: string; onChange: (value: string) => void; label?: string; swatches?: Record<string, string>; labels?: Record<string, string>;
 }) {
   const { colors: c } = useTheme();
+  const t = useT();
+  const display = (value: string) => labels[value] || t(value);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   return <>
-    <AppPressable accessibilityRole="button" accessibilityLabel={`${label}: ${labels[value] || value || 'Не выбрано'}`} onPress={() => { Keyboard.dismiss(); setSearch(''); setOpen(true); }}
+    <AppPressable accessibilityRole="button" accessibilityLabel={`${t(label)}: ${display(value) || t('Не выбрано')}`} onPress={() => { Keyboard.dismiss(); setSearch(''); setOpen(true); }}
       style={[styles.trigger, { backgroundColor: c.surface, borderColor: c.border }]}>
       {swatches?.[value] && <View style={[styles.swatch, { backgroundColor: swatches[value], borderColor: c.border }]} />}
-      <Text style={{ flex: 1, color: value ? c.text : c.muted, fontSize: 15 }}>{labels[value] || value || label}</Text><ChevronDown size={18} color={c.muted} />
+      <Text style={{ flex: 1, color: value ? c.text : c.muted, fontSize: 15 }}>{display(value) || t(label)}</Text><ChevronDown size={18} color={c.muted} />
     </AppPressable>
     <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
       <View style={[styles.backdrop, { backgroundColor: c.overlay }]}>
         <View style={[styles.sheet, { backgroundColor: c.card }]}>
-          <View style={styles.row}><Text style={{ flex: 1, color: c.text, fontSize: 18, fontWeight: '600' }}>{label}</Text><IconButton icon={X} label="Закрыть выбор" onPress={() => setOpen(false)} /></View>
+          <View style={styles.row}><Text style={{ flex: 1, color: c.text, fontSize: 18, fontWeight: '600' }}>{t(label)}</Text><IconButton icon={X} label={t('Закрыть выбор')} onPress={() => setOpen(false)} /></View>
           {options.length > 8 && <View style={[styles.trigger, { backgroundColor: c.surface, borderColor: c.border }]}>
-            <Search size={18} color={c.muted} /><TextInput accessibilityLabel="Поиск вариантов" placeholder="Поиск" placeholderTextColor={c.muted} style={{ flex: 1, minWidth: 0, color: c.text, fontSize: 16 }} value={search} onChangeText={setSearch} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
+            <Search size={18} color={c.muted} /><TextInput accessibilityLabel={t('Поиск вариантов')} placeholder={t('Поиск')} placeholderTextColor={c.muted} style={{ flex: 1, minWidth: 0, color: c.text, fontSize: 16 }} value={search} onChangeText={setSearch} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
           </View>}
-          <FlatList data={options.filter(option => (labels[option] || option).toLocaleLowerCase().includes(search.toLocaleLowerCase()))} keyExtractor={item => item}
+          <FlatList data={options.filter(option => display(option).toLocaleLowerCase().includes(search.toLocaleLowerCase()))} keyExtractor={item => item}
             keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onScrollBeginDrag={Keyboard.dismiss} automaticallyAdjustKeyboardInsets
-            contentContainerStyle={{ paddingBottom: 24 }} ListEmptyComponent={<Text style={{ color: c.muted, paddingVertical: 20 }}>Ничего не найдено</Text>}
-            renderItem={({ item }) => <AppPressable accessibilityRole="radio" accessibilityState={{ checked: value === item }} accessibilityLabel={labels[item] || item}
+            contentContainerStyle={{ paddingBottom: 24 }} ListEmptyComponent={<Text style={{ color: c.muted, paddingVertical: 20 }}>{t('Ничего не найдено')}</Text>}
+            renderItem={({ item }) => <AppPressable accessibilityRole="radio" accessibilityState={{ checked: value === item }} accessibilityLabel={display(item)}
               onPress={() => { Keyboard.dismiss(); onChange(item); setOpen(false); }} style={[styles.option, { borderBottomColor: c.border }]}>
               {swatches?.[item] && <View style={[styles.swatch, { backgroundColor: swatches[item], borderColor: c.border }]} />}
-              <Text style={{ color: c.text, flex: 1, fontSize: 15 }}>{labels[item] || item}</Text>{value === item && <Check color={c.accentGold} size={20} />}
+              <Text style={{ color: c.text, flex: 1, fontSize: 15 }}>{display(item)}</Text>{value === item && <Check color={c.accentGold} size={20} />}
             </AppPressable>} />
         </View>
       </View>

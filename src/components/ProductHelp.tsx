@@ -3,9 +3,10 @@ import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, BookOpen, Camera, ChevronRight, Footprints, Heart, Images, LucideIcon, ScanLine, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Wrench, X } from 'lucide-react-native';
 import { helpTopics, HELP_INTRO, HelpTopic } from '../data/help';
+import { helpTopicsZh, HELP_INTRO_ZH } from '../data/help.zh';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
-import { useT } from '../constants/i18n';
+import { useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { IconButton } from './ui/IconButton';
 
@@ -19,6 +20,8 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { lang } = useLanguage();
+  const topics = lang === 'zh' ? helpTopicsZh : helpTopics;
 
   return <Modal visible animationType="slide" onRequestClose={() => topic ? setTopic(null) : onClose()}>
     <SafeAreaView style={styles.screen} edges={['top', 'bottom', 'left', 'right']}>
@@ -43,9 +46,9 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
             </AppPressable>
           </> : <>
             <Text accessibilityRole="header" style={styles.title}>{t('AI Стилист')}</Text>
-            <Text style={styles.intro}>{t(HELP_INTRO)}</Text>
+            <Text style={styles.intro}>{lang === 'zh' ? HELP_INTRO_ZH : HELP_INTRO}</Text>
             <View style={styles.topics}>
-              {helpTopics.map(item => {
+              {topics.map(item => {
                 const Icon = icons[item.id] || BookOpen;
                 return <AppPressable key={item.id} accessibilityRole="button" accessibilityLabel={t(item.title)}
                   onPress={() => setTopic(item)} style={styles.topic}>

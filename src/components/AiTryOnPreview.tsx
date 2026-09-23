@@ -1,12 +1,15 @@
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as FileSystem from 'expo-file-system/legacy';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
-import { useT, translate } from '../constants/i18n';
+import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
-import { analyzeTryOnGenerateLook, TryOnQualityMode, TuckMode } from '../services/ai';
+import { TryOnQualityMode, TuckMode } from '../services/ai';
+import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
+import { tryOnContext } from '../services/tryOnJobs';
+import { useTryOnJobs } from './TryOnJobsContext';
+export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, ChevronDown, ChevronUp, SlidersHorizontal, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
@@ -21,6 +24,7 @@ type AiTryOnPreviewProps = {
   qualityMode?: TryOnQualityMode;
   history?: TryOnHistoryItem[];
   showSourcePhoto?: boolean;
+  onSelectHistory?: (payload: TryOnHistoryItem) => void;
   onGenerated?: (payload: {
     imageUri: string;
     warning?: string;
@@ -29,8 +33,6 @@ type AiTryOnPreviewProps = {
     qualityMode: TryOnQualityMode;
   }) => void;
 };
-
-const TRY_ON_DIR = `${FileSystem.documentDirectory || ''}try-ons/`;
 
 const pickTopGarment = (items: WardrobeItem[]) =>
   items.find((item) => item.section === 'Верх' && item.imageUri);
@@ -44,83 +46,8 @@ const pickShoesGarment = (items: WardrobeItem[]) => items.find((item) => item.se
 const shortDateTime = (timestamp: number) =>
   new Date(timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-const isRemoteUri = (uri: string) => /^https?:\/\//i.test(uri);
-const isDataImageUri = (uri: string) => /^data:image\/[a-z0-9.+-]+;base64,/i.test(uri);
-
-const inferImageExtension = (uri: string) => {
-  if (isDataImageUri(uri)) {
-    const mime = uri.slice(5, uri.indexOf(';')).toLowerCase();
-    if (mime.includes('png')) return '.png';
-    if (mime.includes('webp')) return '.webp';
-    return '.jpg';
-  }
-  const path = uri.split('?')[0].toLowerCase();
-  const match = path.match(/\.(jpg|jpeg|png|webp)$/);
-  return match ? `.${match[1]}` : '.jpg';
-};
-
 const mergeMessages = (...messages: Array<string | null | undefined>) =>
   messages.filter(Boolean).join(' · ') || undefined;
-
-// Локальные файлы примерки хранятся по абсолютному пути documentDirectory.
-// При обновлении приложения контейнерный префикс пути может смениться, поэтому
-// старый абсолютный путь перестаёт указывать на файл. Здесь мы синхронно
-// «перепривязываем» путь к актуальной папке try-ons по имени файла. Это не
-// делает запросов к ФС (никаких ложных ошибок) — для обычного перезапуска
-// возвращается тот же путь, а сам <Image> остаётся источником правды о том,
-// можно ли реально отрисовать картинку.
-export const reanchorTryOnUri = (uri?: string | null): string | null => {
-  if (!uri) return null;
-  if (isRemoteUri(uri) || isDataImageUri(uri)) return uri;
-  const marker = '/try-ons/';
-  const idx = uri.lastIndexOf(marker);
-  if (idx === -1 || !FileSystem.documentDirectory) return uri;
-  const fileName = uri.slice(idx + marker.length);
-  if (!fileName) return uri;
-  return `${TRY_ON_DIR}${fileName}`;
-};
-
-const cacheTryOnImage = async (sourceUri: string, timestamp: number) => {
-  if (!FileSystem.documentDirectory) {
-    return { imageUri: sourceUri };
-  }
-
-  if (isDataImageUri(sourceUri)) {
-    try {
-      await FileSystem.makeDirectoryAsync(TRY_ON_DIR, { intermediates: true });
-      const fileName = `try-on-${timestamp}-${Math.random().toString(36).slice(2, 8)}${inferImageExtension(sourceUri)}`;
-      const targetUri = `${TRY_ON_DIR}${fileName}`;
-      await FileSystem.writeAsStringAsync(targetUri, sourceUri.split(',')[1], {
-        encoding: FileSystem.EncodingType.Base64
-      });
-      return { imageUri: targetUri };
-    } catch (error) {
-      console.warn('Failed to persist base64 try-on image', error);
-      return { imageUri: sourceUri };
-    }
-  }
-
-  if (!isRemoteUri(sourceUri)) {
-    return { imageUri: sourceUri };
-  }
-
-  try {
-    await FileSystem.makeDirectoryAsync(TRY_ON_DIR, { intermediates: true });
-    const fileName = `try-on-${timestamp}-${Math.random().toString(36).slice(2, 8)}${inferImageExtension(sourceUri)}`;
-    const targetUri = `${TRY_ON_DIR}${fileName}`;
-    const downloaded = await FileSystem.downloadAsync(sourceUri, targetUri);
-    if (downloaded.status >= 200 && downloaded.status < 300) {
-      return { imageUri: downloaded.uri };
-    }
-    throw new Error(`download failed (${downloaded.status})`);
-  } catch (error) {
-    console.warn('Failed to cache try-on image', error);
-    return {
-      imageUri: sourceUri,
-      warning: translate('Картинка пока хранится по временной ссылке. Если позже не откроется, перегенерируй образ.')
-    };
-  }
-};
 
 export function AiTryOnPreview({
   modelUri,
@@ -129,13 +56,27 @@ export function AiTryOnPreview({
   warningMessage,
   updatedAt: controlledUpdatedAt,
   tuckMode,
-  history = [],
+  history: suppliedHistory = [],
   showSourcePhoto = false,
-  onGenerated
+  onGenerated,
+  onSelectHistory
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
+  const { jobs, store, ready: jobsReady, readOnly, error: journalError, login } = useTryOnJobs();
+  const [context, setContext] = useState<string | null>(null);
+  const contextPhotos = JSON.stringify([modelUri, items.map(i => [i.id, i.imageUri, i.sourceImageUri, i.section, i.category])]);
+  useEffect(() => {
+    let active = true;
+    setContext(null);
+    void tryOnContext(modelUri || '', items).then(key => { if (active) setContext(key); }).catch(() => {});
+    return () => { active = false; };
+  }, [contextPhotos]);
+  const matchingJobs = jobs.filter(job => job.context === context);
+  const pendingJob = matchingJobs.find(job => job.status === 'pending');
+  const history = [...new Map([...suppliedHistory, ...matchingJobs.flatMap(job => job.result ? [job.result] : [])]
+    .sort((a, b) => b.updatedAt - a.updatedAt).map(item => [item.imageUri, item])).values()].slice(0, 8);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [isLoading, setLoading] = useState(false);
@@ -165,8 +106,8 @@ export function AiTryOnPreview({
   const outerGarment = useMemo(() => pickOuterGarment(items), [items]);
   const bottomGarment = useMemo(() => pickBottomGarment(items), [items]);
   const shoesGarment = useMemo(() => pickShoesGarment(items), [items]);
-  const canGenerate = Boolean(modelUri && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
-  const isBusy = isLoading;
+  const canGenerate = Boolean(modelUri && context && jobsReady && !readOnly && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
+  const isBusy = isLoading || Boolean(pendingJob);
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
     !topGarment && !outerGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
@@ -193,7 +134,7 @@ export function AiTryOnPreview({
     let cancelled = false;
     const timestamp = controlledUpdatedAt || Date.now();
 
-    cacheTryOnImage(controlledResultUri, timestamp).then((cached) => {
+    cacheTryOnImage(controlledResultUri, String(timestamp), login).then((cached) => {
       if (cancelled || cached.imageUri === controlledResultUri) return;
       const nextWarning = mergeMessages(warningMessage, cached.warning);
       setResultUri(cached.imageUri);
@@ -206,7 +147,7 @@ export function AiTryOnPreview({
         tuckMode: effectiveTuckMode,
         qualityMode: effectiveQualityMode
       });
-    });
+    }).catch(() => { if (!cancelled) setWarning(t('Не удалось сохранить фото на устройстве. Освободи место и повтори загрузку результата.')); });
 
     return () => {
       cancelled = true;
@@ -229,49 +170,28 @@ export function AiTryOnPreview({
     return () => clearTimeout(timeout);
   }, [resultImageLoading, resultUri]);
 
-  const runGenerate = async () => {
-    const generated = await analyzeTryOnGenerateLook(
-      modelUri!,
-      topGarment?.sourceImageUri || topGarment?.imageUri,
-      bottomGarment?.sourceImageUri || bottomGarment?.imageUri,
-      shoesGarment?.sourceImageUri || shoesGarment?.imageUri,
-      effectiveTuckMode,
-      false,
-      effectiveQualityMode,
-      outerGarment?.sourceImageUri || outerGarment?.imageUri,
-      topGarment?.category,
-      outerGarment?.category
-    );
-    if (!generated.outputUrl) {
-      throw new Error(generated.error || t('FASHN не вернул итоговую картинку'));
-    }
-    return { imageUri: generated.outputUrl, warning: generated.warning || undefined };
-  };
-
+  const seenJobs = useRef(new Set<string>());
+  const mountedAt = useRef(Date.now());
+  useEffect(() => {
+    const latest = matchingJobs.find(job => job.status === 'succeeded' && job.result);
+    if (!latest?.result || seenJobs.current.has(latest.id)) return;
+    seenJobs.current.add(latest.id);
+    if (controlledResultUri && latest.createdAt < mountedAt.current) return;
+    const result = latest.result;
+    setResultUri(result.imageUri); setWarning(result.warning || null); setShowOriginal(false);
+    onGenerated?.({ ...result, tuckMode: result.tuckMode || 'auto', qualityMode: 'quality' });
+  }, [jobs, context]);
   const run = async () => {
-    if (!canGenerate || isLoading) return;
+    if (!canGenerate || isBusy || !context || !modelUri) return;
     setLoading(true);
     setError(null);
     setWarning(null);
     try {
-      const generated = await runGenerate();
-      const updatedAt = Date.now();
-      const cached = await cacheTryOnImage(generated.imageUri, updatedAt);
-      if (!mounted.current) return;
-      const nextWarning = mergeMessages(generated.warning, cached.warning);
-      setResultUri(cached.imageUri);
-      setWarning(nextWarning || null);
-      onGenerated?.({
-        imageUri: cached.imageUri,
-        warning: nextWarning,
-        updatedAt,
-        tuckMode: effectiveTuckMode,
-        qualityMode: effectiveQualityMode
-      });
+      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode });
     } catch (e: any) {
-      setError(e?.message || t('Не удалось сгенерировать примерку'));
+      if (mounted.current) setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   };
 
@@ -320,6 +240,7 @@ export function AiTryOnPreview({
       ) : null}
       {!resultUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
       {topGarment?.imageUri && !['Платье', 'Сарафан', 'Комбинезон'].includes(topGarment.category) && <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
         <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
@@ -361,12 +282,16 @@ export function AiTryOnPreview({
             {history.slice(0, 8).map((item) => (
               <AppPressable
                 key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={t('Примерка от {date}', { date: shortDateTime(item.updatedAt) })}
                 style={styles.historyCard}
                 onPress={() => {
                   const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
                   setResultUri(anchored);
                   setWarning(item.warning || null);
                   setResultImageError(null);
+                  setShowOriginal(false);
+                  onSelectHistory?.(item);
                   setPreviewUri(anchored);
                   setPreviewOpen(true);
                 }}
@@ -397,9 +322,9 @@ export function AiTryOnPreview({
         accessibilityRole="button"
         accessibilityState={{ disabled: !canGenerate || isBusy, busy: isBusy }}
       >
-        {isLoading ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
+        {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
         <Text style={styles.buttonText}>
-          {isLoading
+          {isBusy
             ? t('Генерируем образ…')
             : resultUri
               ? t('Перегенерировать')

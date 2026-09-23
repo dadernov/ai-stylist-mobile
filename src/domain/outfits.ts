@@ -151,91 +151,93 @@ function warmthFor(temperature: number) {
 // единственный, который меняет и примерку, — вытеснялся замечанием о светлоте.
 type Tip = { text: string; rank: number };
 const push = (tips: Tip[], rank: number, text: string) => tips.push({ text, rank });
+type Translator = (source: string, vars?: Record<string, string | number>) => string;
+const originalText: Translator = (source, vars) => Object.entries(vars || {}).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), source);
 
-function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], reasons: string[]) {
+function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
   const known = items.map(item => ({ item, info: colorInfo(item.color) })).filter(entry => entry.info) as { item: WardrobeItem; info: ColorInfo }[];
   if (!known.length) return;
   const accents = known.filter(entry => !entry.info.neutral);
   const names = [...new Set(known.map(entry => entry.item.color))];
-  if (names.length) reasons.push(`Палитра: ${names.join(', ').toLocaleLowerCase()}.`);
+  if (names.length) reasons.push(t('Палитра: {colors}.', { colors: names.map(color => t(color)).join(', ').toLocaleLowerCase() }));
 
   if (!accents.length && known.length >= 2) {
-    push(tips, 5, 'Образ в нейтральных тонах. Для более выразительного сочетания можно добавить цветной акцент; для спокойного оставить эту палитру.');
+    push(tips, 5, t('Образ в нейтральных тонах. Для более выразительного сочетания можно добавить цветной акцент; для спокойного оставить эту палитру.'));
   }
   if (accents.length === 1) {
-    push(tips, 4, `Оставь ${named(accents[0].item)} единственным цветным пятном — остальное лучше держать нейтральным.`);
+    push(tips, 4, t('Оставь {item} единственным цветным пятном — остальное лучше держать нейтральным.', { item: named(accents[0].item) }));
   }
   if (accents.length === 2) {
     const distance = hueDistance(accents[0].info.hue, accents[1].info.hue);
-    const pair = `${named(accents[0].item)} и ${named(accents[1].item)}`;
-    if (distance <= 30) reasons.push(`${pair} — соседние оттенки, они складываются в единую гамму.`);
-    else if (distance <= 70) push(tips, 4, `${pair} близки по тону. Их можно оставить в одной гамме; для большего контраста попробуй нейтральную замену одной вещи.`);
-    else if (distance >= 150) reasons.push(`${pair} — контрастная пара; она работает, пока одна из вещей занимает меньшую площадь.`);
-    else push(tips, 4, `${pair} дают выразительное сочетание. Если хочется спокойнее, попробуй нейтральную обувь или замену одного цвета.`);
+    const pair = t('{first} и {second}', { first: named(accents[0].item), second: named(accents[1].item) });
+    if (distance <= 30) reasons.push(t('{pair} — соседние оттенки, они складываются в единую гамму.', { pair }));
+    else if (distance <= 70) push(tips, 4, t('{pair} близки по тону. Их можно оставить в одной гамме; для большего контраста попробуй нейтральную замену одной вещи.', { pair }));
+    else if (distance >= 150) reasons.push(t('{pair} — контрастная пара; она работает, пока одна из вещей занимает меньшую площадь.', { pair }));
+    else push(tips, 4, t('{pair} дают выразительное сочетание. Если хочется спокойнее, попробуй нейтральную обувь или замену одного цвета.', { pair }));
   }
   if (accents.length >= 3) {
-    push(tips, 4, `В сочетании несколько цветов: ${list(accents.map(entry => entry.item))}. Для более сдержанного варианта оставь один акцент.`);
+    push(tips, 4, t('В сочетании несколько цветов: {items}. Для более сдержанного варианта оставь один акцент.', { items: list(accents.map(entry => entry.item)) }));
   }
   const lightness = known.map(entry => entry.info.lightness);
   if (known.length >= 3 && Math.max(...lightness) - Math.min(...lightness) < 0.14) {
-    push(tips, 6, 'Вещи близки по светлоте. Более светлая или тёмная обувь добавит контраста, а текущая палитра сохранит цельный силуэт.');
+    push(tips, 6, t('Вещи близки по светлоте. Более светлая или тёмная обувь добавит контраста, а текущая палитра сохранит цельный силуэт.'));
   }
 }
 
-function formalityAdvice(items: WardrobeItem[], context: OutfitContext, tips: Tip[], warnings: string[], reasons: string[]) {
+function formalityAdvice(items: WardrobeItem[], context: OutfitContext, tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
   const wearables = items.filter(item => describe(item).section !== 'Сумки');
   if (wearables.length < 2) return;
   const ranked = [...wearables].sort((a, b) => describe(a).formality - describe(b).formality);
   const lowest = ranked[0], highest = ranked[ranked.length - 1];
   const spread = describe(highest).formality - describe(lowest).formality;
   if (spread >= 3) {
-    warnings.push(`${named(highest)} и ${named(lowest)} из разных регистров: одна вещь строгая, другая подчёркнуто простая. Подтяни ${named(lowest)} к остальному образу.`);
+    warnings.push(t('{high} и {low} из разных регистров: одна вещь строгая, другая подчёркнуто простая. Подтяни {low} к остальному образу.', { high: named(highest), low: named(lowest) }));
   } else if (spread === 2) {
-    push(tips, 3, `${named(lowest)} снижает градус образа — это уместно, если хочется мягкой, менее формальной подачи.`);
+    push(tips, 3, t('{item} снижает градус образа — это уместно, если хочется мягкой, менее формальной подачи.', { item: named(lowest) }));
   }
   const target = targetFormality(context);
   const average = wearables.reduce((sum, item) => sum + describe(item).formality, 0) / wearables.length;
   if (context.event && Math.abs(average - target) <= 0.6 && spread <= 2) {
-    reasons.push(`Уровень формальности собран ровно под «${context.event.toLocaleLowerCase()}».`);
+    reasons.push(t('Уровень формальности собран ровно под «{event}».', { event: t(context.event).toLocaleLowerCase() }));
   } else if (context.event && average < target - 1.2) {
-    warnings.push(`Для события «${context.event.toLocaleLowerCase()}» образ выглядит слишком повседневным. Замени самую простую вещь на более строгую.`);
+    warnings.push(t('Для события «{event}» образ выглядит слишком повседневным. Замени самую простую вещь на более строгую.', { event: t(context.event).toLocaleLowerCase() }));
   } else if (context.event && average > target + 1.2) {
-    push(tips, 3, `Образ строже, чем требует «${context.event.toLocaleLowerCase()}». Достаточно сменить обувь на более простую, чтобы снять лишний официоз.`);
+    push(tips, 3, t('Образ строже, чем требует «{event}». Достаточно сменить обувь на более простую, чтобы снять лишний официоз.', { event: t(context.event).toLocaleLowerCase() }));
   }
 }
 
-function proportionAdvice(top: WardrobeItem | undefined, bottom: WardrobeItem | undefined, tips: Tip[]) {
+function proportionAdvice(top: WardrobeItem | undefined, bottom: WardrobeItem | undefined, tips: Tip[], t: Translator) {
   if (!top || !bottom) return;
   const topVolume = describe(top).volume, bottomVolume = describe(bottom).volume;
   if (topVolume === 3 && bottomVolume === 3) {
-    push(tips, 2, `Если ${named(top)} и ${named(bottom)} обе объёмные, попробуй открыть линию талии или взять одну вещь прямого кроя.`);
+    push(tips, 2, t('Если {top} и {bottom} обе объёмные, попробуй открыть линию талии или взять одну вещь прямого кроя.', { top: named(top), bottom: named(bottom) }));
   } else if (topVolume === 1 && bottomVolume === 1) {
-    push(tips, 2, 'Если оба слоя облегающие, свободная верхняя одежда или прямой низ добавят объёма.');
+    push(tips, 2, t('Если оба слоя облегающие, свободная верхняя одежда или прямой низ добавят объёма.'));
   }
 }
 
-function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, temperature: number, tips: Tip[], warnings: string[], reasons: string[]) {
+function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, temperature: number, tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
   const comfort = warmthFor(temperature);
   const tooLight = items.filter(item => describe(item).section !== 'Сумки' && describe(item).warmth <= Math.max(0, comfort - 3));
   const tooWarm = items.filter(item => describe(item).warmth >= comfort + 3);
   if (temperature < 12 && !outer) {
-    warnings.push(`На улице ${temperature}°C: для выхода может понадобиться дополнительный слой.`);
+    warnings.push(t('На улице {temperature}°C: для выхода может понадобиться дополнительный слой.', { temperature }));
   }
   if (tooLight.length && temperature < 12) {
-    warnings.push(`При ${temperature}°C ${list(tooLight)} может не подойти для долгого пребывания на улице.`);
+    warnings.push(t('При {temperature}°C {items} может не подойти для долгого пребывания на улице.', { temperature, items: list(tooLight) }));
   }
   if (tooWarm.length) {
-    warnings.push(`При ${temperature}°C ${list(tooWarm)} будет слишком тёплой вещью.`);
+    warnings.push(t('При {temperature}°C {items} будет слишком тёплой вещью.', { temperature, items: list(tooWarm) }));
   }
   if (outer && temperature < 12 && !tooWarm.includes(outer)) {
-    reasons.push(`${named(outer)} добавляет слой для погоды ${temperature}°C; утепление по фото точно не определить.`);
+    reasons.push(t('{item} добавляет слой для погоды {temperature}°C; утепление по фото точно не определить.', { item: named(outer), temperature }));
   }
   if (temperature >= 12 && temperature < 18 && !outer) {
-    push(tips, 3, `Для ${temperature}°C пригодится лёгкий верхний слой на утро и вечер — днём его можно снять.`);
+    push(tips, 3, t('Для {temperature}°C пригодится лёгкий верхний слой на утро и вечер — днём его можно снять.', { temperature }));
   }
 }
 
-export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext) {
+export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
   const top = items.find(item => item.section === 'Верх');
   const bottom = items.find(item => item.section === 'Низ');
   const shoes = items.find(item => item.section === 'Обувь');
@@ -245,35 +247,35 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext) {
   const reasons: string[] = [];
   const tips: Tip[] = [];
 
-  const missing = [!top && 'верх', !bottom && !completePiece && 'низ', !shoes && 'обувь'].filter(Boolean);
-  if (missing.length) warnings.push(`Неполный образ: ещё нужны ${missing.join(', ')}.`);
-  if (items.some(item => !item.imageUri)) warnings.push('У части вещей нет фото: их не получится примерить.');
+  const missing = [!top && t('Верх').toLocaleLowerCase(), !bottom && !completePiece && t('Низ').toLocaleLowerCase(), !shoes && t('Обувь').toLocaleLowerCase()].filter(Boolean);
+  if (missing.length) warnings.push(t('Неполный образ: ещё нужны {items}.', { items: missing.join(', ') }));
+  if (items.some(item => !item.imageUri)) warnings.push(t('У части вещей нет фото: их не получится примерить.'));
 
-  colorAdvice(items, tips, warnings, reasons);
-  formalityAdvice(items, context, tips, warnings, reasons);
-  proportionAdvice(top, bottom, tips);
+  colorAdvice(items, tips, warnings, reasons, t);
+  formalityAdvice(items, context, tips, warnings, reasons, t);
+  proportionAdvice(top, bottom, tips, t);
 
   const patterns = items.filter(item => item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern));
-  if (patterns.length === 1) push(tips, 4, `Рисунок на ${named(patterns[0])} уже задаёт акцент: дополнительные принты не нужны.`);
-  if (patterns.length > 1) warnings.push(`Вместе несколько рисунков: ${patterns.map(item => item.name).join(', ')}. Более спокойный вариант — заменить один из них однотонной вещью.`);
+  if (patterns.length === 1) push(tips, 4, t('Рисунок на {item} уже задаёт акцент: дополнительные принты не нужны.', { item: named(patterns[0]) }));
+  if (patterns.length > 1) warnings.push(t('Вместе несколько рисунков: {items}. Более спокойный вариант — заменить один из них однотонной вещью.', { items: patterns.map(item => item.name).join(', ') }));
 
   let tuckMode: 'auto' | 'tucked' | 'untucked' = 'auto';
   if (top && bottom && !completePiece) {
     if (['Рубашка', 'Блуза', 'Поло'].includes(top.category) && targetFormality(context) >= 4) {
       tuckMode = 'tucked';
-      push(tips, 1, `Заправь ${named(top)} в ${named(bottom)}, если длина позволяет: линия талии будет аккуратнее.`);
+      push(tips, 1, t('Заправь {top} в {bottom}, если длина позволяет: линия талии будет аккуратнее.', { top: named(top), bottom: named(bottom) }));
     } else if (describe(top).volume === 3) {
       tuckMode = 'untucked';
-      push(tips, 1, `${named(top)} можно оставить навыпуск; проверь, чтобы низ верха не собирался складками над поясом.`);
+      push(tips, 1, t('{item} можно оставить навыпуск; проверь, чтобы низ верха не собирался складками над поясом.', { item: named(top) }));
     }
   }
 
   if (context.event === 'Спортзал') {
     const casual = items.filter(item => !describe(item).sporty && describe(item).section !== 'Сумки');
-    if (casual.length) warnings.push(`Для тренировки ${list(casual)} не подойдёт: нужен спортивный комплект.`);
+    if (casual.length) warnings.push(t('Для тренировки {items} не подойдёт: нужен спортивный комплект.', { items: list(casual) }));
   }
-  if (context.event === 'Прогулка' && shoes) push(tips, 7, `Для прогулки проверь удобство ${named(shoes)} и запас места в носке.`);
-  if (context.temperature !== null) weatherAdvice(items, outer, context.temperature, tips, warnings, reasons);
+  if (context.event === 'Прогулка' && shoes) push(tips, 7, t('Для прогулки проверь удобство {item} и запас места в носке.', { item: named(shoes) }));
+  if (context.temperature !== null) weatherAdvice(items, outer, context.temperature, tips, warnings, reasons, t);
 
   const ordered = tips.map((tip, index) => ({ tip, index }))
     .sort((a, b) => a.tip.rank - b.tip.rank || a.index - b.index)
@@ -351,7 +353,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   });
 }
 
-export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem[], context: OutfitContext, anchorId?: string) {
+export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem[], context: OutfitContext, anchorId?: string, t: Translator = originalText) {
   const current = new Set(selection.map(item => item.id));
   const swaps: { from: WardrobeItem; to: WardrobeItem; reason: string; gain: number }[] = [];
   for (const from of selection) {
@@ -363,8 +365,8 @@ export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem
       const gain = itemScore(to, context) - itemScore(from, context) + paletteScore(replaced) - paletteScore(selection);
       if (gain < 4) continue;
       const reason = context.temperature !== null && Math.abs(describe(to).warmth - warmthFor(context.temperature)) < Math.abs(describe(from).warmth - warmthFor(context.temperature))
-        ? `Ближе к погоде ${context.temperature}°C`
-        : Math.abs(describe(to).formality - targetFormality(context)) < Math.abs(describe(from).formality - targetFormality(context)) ? 'Ближе к выбранному событию' : 'Более спокойная палитра';
+        ? t('Ближе к погоде {temperature}°C', { temperature: context.temperature })
+        : t(Math.abs(describe(to).formality - targetFormality(context)) < Math.abs(describe(from).formality - targetFormality(context)) ? 'Ближе к выбранному событию' : 'Более спокойная палитра');
       swaps.push({ from, to, reason, gain });
     }
   }

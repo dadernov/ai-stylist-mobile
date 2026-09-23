@@ -13,6 +13,7 @@ import { GarmentTile } from './GarmentTile';
 import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
 import { FormScrollView } from './ui/FormScrollView';
+import { RecentTryOns } from './RecentTryOns';
 
 type Props = {
   items: WardrobeItem[];
@@ -20,6 +21,7 @@ type Props = {
   onProfile: () => void;
   onWardrobe: () => void;
   onSave: (look: SavedLook) => void;
+  onOpenHistory: () => void;
   initialItemId?: string;
   initialItemIds?: string[];
 };
@@ -27,7 +29,7 @@ type Props = {
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
-export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, initialItemId, initialItemIds }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds }: Props) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
@@ -121,6 +123,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, in
       </View>
       {!visibleItems.length && <Text style={styles.muted}>{t(items.length ? 'Ничего не найдено' : 'Гардероб пока пуст')}</Text>}
       {!items.length && <PrimaryButton title={t('Добавить вещи')} onPress={onWardrobe} variant="ghost" />}
+      <RecentTryOns onSave={onSave} onOpenHistory={onOpenHistory} />
       {selection.length > 0 && <FittingSession key={sessionKey} items={selection} modelUri={modelUri} onSave={onSave} visible={previewOpen} onClose={() => setPreviewOpen(false)} />}
     </View>
   );
@@ -131,8 +134,9 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
   const t = useT();
   const [name, setName] = useState('');
   const [history, setHistory] = useState<TryOnHistoryItem[]>([]);
+  const [selected, setSelected] = useState<TryOnHistoryItem>();
   const [saved, setSaved] = useState(false);
-  const latest = history[0];
+  const latest = selected || history[0];
   return <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
     <View style={styles.backdrop}>
       <View style={styles.sheet}>
@@ -146,8 +150,14 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
         <FormScrollView contentContainerStyle={styles.content}>
     <AiTryOnPreview modelUri={modelUri} items={items} history={history} showSourcePhoto resultUri={latest?.imageUri}
       updatedAt={latest?.updatedAt} warningMessage={latest?.warning} onGenerated={payload => {
-      setHistory(previous => [{ ...payload, id: String(payload.updatedAt) }, ...previous].slice(0, 8));
+      const entry = { ...payload, id: String(payload.updatedAt) };
+      setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
+      setSelected(entry);
       setSaved(false);
+    }} onSelectHistory={entry => {
+      setSelected(entry); setSaved(false);
+      setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
+        .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
     }} />
     <TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />
     <PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {

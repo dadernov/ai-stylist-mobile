@@ -9,6 +9,7 @@ from PIL import Image
 import access
 import accounts
 import app
+import jobs
 
 
 def photo(size=(64, 64), fmt="JPEG"):
@@ -85,8 +86,9 @@ class Gate(unittest.TestCase):
     def test_quota_is_counted_per_account(self):
         for _ in range(3):
             access.charge("masha")
+        self.assertEqual(self.call(), 'masha')
         with self.assertRaises(HTTPException) as raised:
-            self.call()
+            jobs.start('masha', 'quota-test', 'fingerprint', 1)
         self.assertEqual(raised.exception.status_code, 429)
         # Переустановка приложения больше не обнуляет израсходованное: счёт
         # ведётся по аккаунту, а новый аккаунт — это уже другой человек.

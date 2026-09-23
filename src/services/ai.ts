@@ -1,6 +1,7 @@
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { Platform } from 'react-native';
-import { readStoredSession } from './auth';
+import { readStoredSession, Session } from './auth';
+import { fetchJson } from './http';
 
 export type AiResult = {
   dominantColor: string | null;
@@ -47,6 +48,8 @@ export type TryOnModelResult = {
 
 export type TryOnGenerateResult = {
   status: string;
+  jobId?: string;
+  updatedAt?: number;
   outputUrl?: string;
   predictionId?: string;
   webUrl?: string;
@@ -63,8 +66,8 @@ export type TryOnQualityMode = 'fast' | 'quality';
 // больше не открыты всем подряд, а суточная норма считается по аккаунту.
 // Сессия читается из хранилища на каждый запрос, чтобы после входа или выхода
 // не остался заголовок от прошлого пользователя.
-const authHeaders = async (): Promise<Record<string, string>> => {
-  const session = await readStoredSession();
+const authHeaders = async (owner?: Session): Promise<Record<string, string>> => {
+  const session = owner || await readStoredSession();
   return {
     ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
     ...(session ? { 'X-Session-Token': session.token } : {})
@@ -114,23 +117,12 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
   await appendPhoto(form, 'file', uri);
   if (sectionHint) form.append('section_hint', sectionHint);
 
-  const res = await fetchWithTimeout(AI_BASE_URL + '/analyze', {
+  return fetchJson(AI_BASE_URL + '/analyze', {
     method: 'POST',
     headers: await authHeaders(),
     body: form
   }, 90000);
 
-  const data = await parseJsonOrThrow(res);
-
-  if (res.ok === false) {
-    throw new Error(data?.error || (typeof data?.detail === 'string' ? data.detail : 'Не удалось проанализировать фото. Попробуй ещё раз.'));
-  }
-
-  if (data?.error) {
-    throw new Error(data.error);
-  }
-
-  return data;
 }
 
 export async function analyzeTryOnModel(uri: string): Promise<TryOnModelResult> {
@@ -200,7 +192,9 @@ export async function analyzeTryOnGenerateLook(
   qualityMode: TryOnQualityMode = 'quality',
   outerUri?: string,
   topCategory?: string,
-  outerCategory?: string
+  outerCategory?: string,
+  requestId?: string,
+  owner?: Session
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   await appendPhoto(form, 'person_file', personUri);
@@ -212,25 +206,23 @@ export async function analyzeTryOnGenerateLook(
   if (outerCategory) form.append('outer_category', outerCategory);
   form.append('tuck_mode', tuckMode);
   form.append('quality_mode', 'quality');
+  if (requestId) { form.append('request_id', requestId); form.append('async_mode', 'true'); }
   if (compareMode) {
     form.append('compare_mode', 'true');
   }
 
   const timeoutMs = 1080000;
-  const res = await fetchWithTimeout(
+  return fetchJson(
     AI_BASE_URL + '/tryon-generate-look',
     {
       method: 'POST',
-      headers: await authHeaders(),
+      headers: await authHeaders(owner),
       body: form
     },
-    timeoutMs
+    requestId ? 90000 : timeoutMs
   );
+}
 
-  const data = await parseJsonOrThrow(res);
-  if (!res.ok || data?.error) {
-    throw new Error(data?.error || `AI try-on look failed (${res.status})`);
-  }
-
-  return data;
+export async function getTryOnJob(id: string, owner: Session): Promise<TryOnGenerateResult> {
+  return fetchJson(AI_BASE_URL + '/tryon-jobs/' + encodeURIComponent(id), { headers: await authHeaders(owner) }, 15000);
 }

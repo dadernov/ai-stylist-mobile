@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -64,7 +65,7 @@ class Registration(unittest.TestCase):
 
     def test_password_is_not_stored_in_the_clear(self):
         accounts.register("masha", "very-long-password")
-        dump = open(os.environ["AI_ACCOUNTS_DB"], "rb").read()
+        dump = Path(os.environ["AI_ACCOUNTS_DB"]).read_bytes()
         self.assertNotIn(b"very-long-password", dump)
         self.assertIn(b"scrypt$", dump)
 
@@ -106,7 +107,7 @@ class Sessions(unittest.TestCase):
     def test_raw_token_is_not_stored(self):
         # В базе лежит отпечаток: утечка таблицы не должна давать готовые
         # ключи от чужих аккаунтов.
-        dump = open(os.environ["AI_ACCOUNTS_DB"], "rb").read()
+        dump = Path(os.environ["AI_ACCOUNTS_DB"]).read_bytes()
         self.assertNotIn(self.token.encode(), dump)
 
 

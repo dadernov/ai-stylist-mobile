@@ -1,6 +1,7 @@
 import os
 from io import BytesIO
 import unittest
+import tempfile
 from unittest.mock import AsyncMock, patch
 from PIL import Image, ImageDraw
 import numpy as np
@@ -114,6 +115,17 @@ class QualityPolicy(unittest.TestCase):
 
 
 class ApiFlow(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3'})
+        self.env.start()
+        app.access.reset_state_for_tests()
+
+    def tearDown(self):
+        app.access.reset_state_for_tests()
+        self.env.stop()
+        self.temp.cleanup()
+
     async def test_legacy_fast_request_uses_quality_and_coat_is_last(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
         generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})

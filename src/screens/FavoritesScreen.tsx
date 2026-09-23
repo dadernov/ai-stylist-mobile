@@ -1,4 +1,5 @@
-import { Alert, FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
+import { useAppDialog } from '../components/AppDialog';
 import { memo, useCallback, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
@@ -116,6 +117,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
 });
 
 export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, beautyAdvice }: FavoritesScreenProps) {
+  const Alert = useAppDialog();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const t = useT();

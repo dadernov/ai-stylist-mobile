@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Platform } from 'react-native';
+import { Keyboard, Platform } from 'react-native';
+import { useAppDialog } from './AppDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { CropPhoto, PhotoCropper } from './PhotoCropper';
 
 export function usePhotoPicker() {
+  const Alert = useAppDialog();
   const [photo, setPhoto] = useState<CropPhoto | null>(null);
   const [visible, setVisible] = useState(false);
   const [isPicking, setPicking] = useState(false);

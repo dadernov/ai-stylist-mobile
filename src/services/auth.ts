@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
+import { ApiError, fetchJson } from './http';
 
 /**
  * Вход по логину и паролю. Проверка — на сервере.
@@ -13,9 +14,18 @@ import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 const SESSION_KEY = 'authSession';
 
 export type Session = { token: string; login: string; displayName: string };
+let sessionWrites: Promise<unknown> = Promise.resolve();
+const mutateSession = <T>(action: () => Promise<T>) => {
+  const result = sessionWrites.then(action, action);
+  sessionWrites = result.catch(() => {});
+  return result;
+};
+
+const validSession = (value: any): value is Session => Boolean(value && typeof value.token === 'string' && value.token
+  && typeof value.login === 'string' && /^[a-z0-9._-]{3,32}$/.test(value.login) && typeof value.displayName === 'string');
 
 const request = async (path: string, body: unknown, sessionToken?: string) => {
-  const response = await fetch(AI_BASE_URL + path, {
+  return fetchJson(AI_BASE_URL + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -24,24 +34,14 @@ const request = async (path: string, body: unknown, sessionToken?: string) => {
     },
     body: JSON.stringify(body)
   });
-  const raw = await response.text();
-  let data: any = {};
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    throw new Error('Сервер ответил неожиданным образом. Попробуй позже.');
-  }
-  if (!response.ok) {
-    // detail — формат ошибок FastAPI; сообщения там уже человеческие.
-    throw new Error(typeof data?.detail === 'string' ? data.detail : 'Не удалось связаться с сервером.');
-  }
-  return data;
 };
 
 export const readStoredSession = async (): Promise<Session | null> => {
   try {
+    await sessionWrites;
     const raw = await AsyncStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
+    const value = raw ? JSON.parse(raw) : null;
+    return validSession(value) ? value : null;
   } catch (error) {
     console.warn('Failed to read session', error);
     return null;
@@ -50,7 +50,8 @@ export const readStoredSession = async (): Promise<Session | null> => {
 
 const store = async (session: Session) => {
   try {
-    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    if (!validSession(session)) throw new Error('Invalid server session');
+    await mutateSession(() => AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session)));
   } catch (error) {
     // Сессия не записалась — на этом запуске человек внутри, но при следующем
     // придётся войти заново. Молчать об этом нельзя, поэтому пробрасываем выше.
@@ -76,33 +77,31 @@ export async function signIn(login: string, password: string): Promise<Session> 
 /** Жива ли сохранённая сессия. null — входить заново. */
 export async function verifySession(session: Session): Promise<Session | null> {
   try {
-    const response = await fetch(AI_BASE_URL + '/auth/me', {
+    const data = await fetchJson(AI_BASE_URL + '/auth/me', {
       headers: {
         ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
         'X-Session-Token': session.token
       }
-    });
-    if (response.status === 401) return null;
-    if (!response.ok) return session; // сервер лежит — не выкидываем человека
-    const data = await response.json();
-    return { ...session, login: data.login || session.login, displayName: data.displayName || session.displayName };
-  } catch {
+    }, 8000);
+    return { ...session, displayName: typeof data.displayName === 'string' ? data.displayName : session.displayName };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) return null;
     // Нет сети — оставляем как есть: гардероб лежит локально и доступен.
     return session;
   }
 }
 
+export async function forgetStoredSession(session: Session) {
+  await mutateSession(async () => {
+    const raw = await AsyncStorage.getItem(SESSION_KEY);
+    const stored = raw ? JSON.parse(raw) : null;
+    if (stored?.token === session.token) await AsyncStorage.removeItem(SESSION_KEY);
+  });
+}
+
 export async function signOut(session: Session | null) {
-  if (session) {
-    try {
-      await request('/auth/logout', {}, session.token);
-    } catch (error) {
-      console.warn('Failed to end session on server', error);
-    }
-  }
-  try {
-    await AsyncStorage.removeItem(SESSION_KEY);
-  } catch (error) {
-    console.warn('Failed to clear session', error);
-  }
+  if (!session) return;
+  // Clear locally before networking; an old logout must never erase a new login.
+  await forgetStoredSession(session);
+  void request('/auth/logout', {}, session.token).catch(() => console.warn('Remote logout unavailable'));
 }

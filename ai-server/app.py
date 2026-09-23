@@ -7,12 +7,15 @@ import math
 import os
 import time
 import threading
+import re
+from contextlib import asynccontextmanager
 
 import httpx
 import numpy as np
 from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES
@@ -22,6 +25,8 @@ import footwear_guard
 import tryon_policy
 import access
 import accounts
+import jobs
+from request_guard import RequestGuard, BoundedFormRoute
 
 try:
     import mediapipe as mp
@@ -38,7 +43,15 @@ try:
 except Exception:
     REMBG_RUNTIME_AVAILABLE = False
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(_app):
+    await asyncio.to_thread(jobs.recover_interrupted)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.router.route_class = BoundedFormRoute
+app.add_middleware(RequestGuard)
 
 # Мобильный клиент не браузер и Origin не присылает, поэтому по умолчанию не
 # открываем API ни одному сайту. Нужен веб-клиент — перечисли его в
@@ -48,8 +61,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Device-Id"]
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Session-Token"]
 )
 
 # Застёгнутый слой полностью скрывает то, что под ним; открытый — нет.
@@ -125,7 +138,11 @@ def _prepare_tryon_image_data_url(content: bytes, mime_type: str, max_side: int,
     if max_side <= 0:
         return _bytes_to_data_url(content, mime_type)
     try:
-        image = ImageOps.exif_transpose(Image.open(BytesIO(content)))
+        source = Image.open(BytesIO(content))
+        _check_image_size(source)
+        source.draft('RGB', (min(max_side, 2048), min(max_side, 2048)))
+        image = ImageOps.exif_transpose(source)
+        max_side = min(max_side, 2048)
         if max(image.size) > max_side:
             image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
 
@@ -145,16 +162,23 @@ def _prepare_tryon_image_data_url(content: bytes, mime_type: str, max_side: int,
 
 async def _load_image_from_url_or_data_url(client: httpx.AsyncClient, source: str):
     try:
+        if source.startswith('data:') and len(source) > MAX_UPLOAD_BYTES * 4 // 3 + 128:
+            raise ValueError('Generated image exceeds byte limit')
         decoded = _data_url_to_bytes(source)
         if decoded:
             content, _mime_type = decoded
-            return Image.open(BytesIO(content)).convert("RGB")
+            return await asyncio.to_thread(_working_image, content)
         if source.startswith("http://") or source.startswith("https://"):
-            res = await client.get(source)
-            res.raise_for_status()
-            return Image.open(BytesIO(res.content)).convert("RGB")
+            content = bytearray()
+            async with client.stream('GET', source) as res:
+                res.raise_for_status()
+                async for chunk in res.aiter_bytes():
+                    if len(content) + len(chunk) > MAX_UPLOAD_BYTES:
+                        raise ValueError('Generated image exceeds byte limit')
+                    content.extend(chunk)
+            return await asyncio.to_thread(_working_image, content)
     except Exception as exc:
-        print(f"Failed to load generated image for face lock: {type(exc).__name__}: {exc}")
+        print(f"Failed to load generated image for face lock: {type(exc).__name__}")
     return None
 
 
@@ -167,7 +191,7 @@ def _silhouette(image: Image.Image):
 
 
 def _prepare_identity_source(original_content: bytes):
-    original = ImageOps.exif_transpose(Image.open(BytesIO(original_content))).convert("RGB")
+    original = _working_image(original_content)
     faces = face_guard.detect_faces(original)
     if len(faces) != 1:
         raise ValueError('Для защищённой примерки нужно фото одного человека с хорошо видимым лицом.')
@@ -226,6 +250,22 @@ async def _face_locked_output_url(
 
 
 MAX_UPLOAD_BYTES = _env_int("AI_MAX_UPLOAD_BYTES", 15 * 1024 * 1024)
+MAX_IMAGE_PIXELS = min(25_000_000, _env_int("AI_MAX_IMAGE_PIXELS", 25_000_000))
+MAX_IMAGE_SIDE = 10000
+
+
+def _check_image_size(image):
+    if image.width * image.height > MAX_IMAGE_PIXELS or max(image.size) > MAX_IMAGE_SIDE:
+        raise HTTPException(413, 'Фото слишком большое. Выбери изображение до 25 мегапикселей.')
+
+
+def _working_image(content):
+    with Image.open(BytesIO(content)) as source:
+        _check_image_size(source)
+        source.draft('RGB', (2048, 2048))
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+        return image.convert('RGB')
 
 
 async def read_upload(upload: UploadFile | None, field: str):
@@ -245,10 +285,13 @@ async def read_upload(upload: UploadFile | None, field: str):
         raise HTTPException(413, f"Файл в поле {field} больше {MAX_UPLOAD_BYTES // (1024 * 1024)} МБ.")
     try:
         probe = Image.open(BytesIO(content))
+        _check_image_size(probe)
         probe.verify()
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(422, f"Файл в поле {field} не похож на изображение.")
-    return content, upload.content_type or "image/jpeg"
+    return content, Image.MIME.get(probe.format, "image/jpeg")
 
 
 def _prepare_image_for_analysis(content: bytes):
@@ -315,9 +358,7 @@ def _build_fashn_inputs(
         seed = os.getenv("FASHN_SEED", "").strip()
         if seed:
             inputs["seed"] = int(seed)
-        num_images = os.getenv("FASHN_NUM_IMAGES", "").strip()
-        if num_images:
-            inputs["num_images"] = int(num_images)
+        inputs["num_images"] = 1
         return inputs
 
     mode_value = mode_override or os.getenv("FASHN_MODE", "balanced")
@@ -491,11 +532,9 @@ def _cache_key_for_tryon_look(
     hasher.update(quality_mode.encode("utf-8"))
     hasher.update(tuck_mode_normalized.encode("utf-8"))
     hasher.update(categories.encode("utf-8"))
-    hasher.update(person_content)
-    hasher.update(top_content or b"")
-    hasher.update(bottom_content or b"")
-    hasher.update(shoes_content or b"")
-    hasher.update(outer_content or b"")
+    for slot, content in [('person', person_content), ('top', top_content), ('bottom', bottom_content), ('shoes', shoes_content), ('outer', outer_content)]:
+        hasher.update(slot.encode('ascii'))
+        hasher.update(hashlib.sha256(content).digest() if content is not None else b'missing')
     return hasher.hexdigest()
 
 
@@ -527,7 +566,8 @@ async def _run_fashn_tryon_with_category_fallback(
     generation_mode_override: str | None = None,
     prompt_override: str | None = None,
     max_wait_seconds: int | None = None,
-    poll_interval_seconds: float | None = None
+    poll_interval_seconds: float | None = None,
+    seed_override: int | None = None
 ):
     if "max" in model_name:
         inputs = _build_fashn_inputs(
@@ -542,6 +582,8 @@ async def _run_fashn_tryon_with_category_fallback(
             inputs["_max_wait_seconds"] = max_wait_seconds
         if poll_interval_seconds is not None:
             inputs["_poll_interval_seconds"] = poll_interval_seconds
+        if seed_override is not None:
+            inputs['seed'] = seed_override
         return await _run_fashn_tryon(client, token, model_name, inputs)
 
     errors = []
@@ -822,9 +864,9 @@ def _build_avatar_model(original_rgb: Image.Image, person_rgba: Image.Image, pos
 
 
 class Credentials(BaseModel):
-    login: str
-    password: str
-    displayName: str = ""
+    login: str = Field(max_length=64)
+    password: str = Field(max_length=1024)
+    displayName: str = Field(default="", max_length=128)
 
 
 @app.post("/auth/register")
@@ -959,47 +1001,15 @@ async def tryon_avatar(file: UploadFile = File(...), device: str = Depends(acces
 @app.post("/tryon-generate")
 async def tryon_generate(person_file: UploadFile = File(...), garment_file: UploadFile = File(...),
                          device: str = Depends(access.require_account)):
-    try:
-        token = os.getenv("FASHN_API_KEY", "").strip()
-        if not token:
-            return {"error": "FASHN_API_KEY is not set"}
-        if not token.isascii():
-            return {"error": "FASHN_API_KEY contains non-ASCII symbols. Set the real API key (latin letters/numbers only)."}
+    raise HTTPException(410, 'Этот способ примерки устарел. Обнови приложение.')
 
-        model_name = tryon_policy.MODEL
-        single_prompt = tryon_policy.IDENTITY
 
-        person_content, person_mime = await read_upload(person_file, "person_file")
-        garment_content, garment_mime = await read_upload(garment_file, "garment_file")
-        prepared = await asyncio.to_thread(_prepare_identity_source, person_content)
-
-        max_side = _env_int("FASHN_IMAGE_MAX_SIDE", 2048)
-        jpeg_quality = 97
-        person_data = _prepare_tryon_image_data_url(person_content, person_mime, max_side, jpeg_quality)
-        garment_data = _prepare_tryon_image_data_url(garment_content, garment_mime, max_side, jpeg_quality)
-
-        async with httpx.AsyncClient(timeout=90.0, trust_env=False) as client:
-            generic_categories = _category_candidates("generic", ["auto"])
-            result = await _run_fashn_tryon_with_category_fallback(
-                client,
-                token,
-                model_name,
-                person_data,
-                garment_data,
-                generic_categories,
-                prompt_override=single_prompt,
-                max_wait_seconds=_env_int('FASHN_QUALITY_MAX_WAIT_SECONDS', 240),
-                poll_interval_seconds=1.0
-            )
-            if result.get("outputUrl"):
-                result["outputUrl"] = await _face_locked_output_url(client, person_content, result["outputUrl"], ["unknown"], prepared)
-                access.charge(device)
-            return result
-    except ValueError as exc:
-        return {"error": str(exc)}
-    except Exception as exc:
-        print(f'Try-on failed: {type(exc).__name__}')
-        return {"error": "Не удалось завершить примерку. Попробуй ещё раз."}
+@app.get('/tryon-jobs/{request_id}')
+async def tryon_job(request_id: str, device: str = Depends(access.require_account)):
+    job = await asyncio.to_thread(jobs.get, device, request_id)
+    if job is None:
+        raise HTTPException(404, 'Примерка не найдена.')
+    return job['result'] or {'status': 'processing', 'jobId': request_id}
 
 
 @app.post("/tryon-generate-look")
@@ -1014,6 +1024,8 @@ async def tryon_generate_look(
     quality_mode: str = Form("quality"),
     top_category: str = Form(""),
     outer_category: str = Form(""),
+    request_id: str = Form(""),
+    async_mode: str = Form("false"),
     device: str = Depends(access.require_account)
 ):
     try:
@@ -1058,6 +1070,13 @@ async def tryon_generate_look(
             quality_mode_normalized,
             f"{top_category.strip()}|{outer_category.strip()}"
         )
+        request_id = request_id if isinstance(request_id, str) else ''
+        if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
+            raise HTTPException(422, 'Некорректный идентификатор примерки.')
+        job_id = request_id or f'legacy-{int(time.time() // 21600)}-{cache_key[:32]}'
+        task_key = f'{device}:{job_id}'
+        seed = int(hashlib.sha256(job_id.encode()).hexdigest()[:8], 16) % 2147483647
+        cost = sum(bool(content) for content in [top_content, bottom_content, shoes_content, outer_content])
 
         async def _generate_look():
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
@@ -1074,6 +1093,7 @@ async def tryon_generate_look(
                     nonlocal current_model
                     bottom_prompt = tryon_policy.garment_prompt('bottom')
                     bottom_categories = _category_candidates("bottom", ["bottoms"])
+                    jobs.attempt(device, job_id)
                     bottom_result = await _run_fashn_tryon_with_category_fallback(
                         client,
                         token,
@@ -1085,7 +1105,7 @@ async def tryon_generate_look(
                         generation_mode_override=look_generation_mode,
                         prompt_override=bottom_prompt,
                         max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
                     )
                     steps.append({"step": step_name, "result": bottom_result})
                     if not bottom_result.get("error"):
@@ -1098,6 +1118,7 @@ async def tryon_generate_look(
                     top_categories = _category_candidates(
                         "top", ["one-pieces", "auto"] if top_category.strip() in ONE_PIECE_GARMENTS else ["tops"]
                     )
+                    jobs.attempt(device, job_id)
                     top_result = await _run_fashn_tryon_with_category_fallback(
                         client,
                         token,
@@ -1109,7 +1130,7 @@ async def tryon_generate_look(
                         generation_mode_override=look_generation_mode,
                         prompt_override=top_prompt,
                         max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
                     )
                     steps.append({"step": step_name, "result": top_result})
                     if not top_result.get("error"):
@@ -1120,6 +1141,7 @@ async def tryon_generate_look(
                     nonlocal current_model
                     outer_prompt = tryon_policy.garment_prompt('outer', outer_category.strip())
                     outer_categories = ['auto']
+                    jobs.attempt(device, job_id)
                     outer_result = await _run_fashn_tryon_with_category_fallback(
                         client,
                         token,
@@ -1131,7 +1153,7 @@ async def tryon_generate_look(
                         generation_mode_override=look_generation_mode,
                         prompt_override=outer_prompt,
                         max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
                     )
                     steps.append({"step": step_name, "result": outer_result})
                     if not outer_result.get("error"):
@@ -1162,13 +1184,14 @@ async def tryon_generate_look(
                             return {"error": "Top garment generation failed", "top": top_result, "steps": steps}
 
                 if shoes_image is not None:
+                    jobs.attempt(device, job_id)
                     shoes_result = await _run_fashn_tryon_with_category_fallback(
                         client, token, look_model_name, current_model, shoes_image, ['auto'],
                         mode_override=look_mode,
                         generation_mode_override=look_generation_mode,
                         prompt_override=tryon_policy.garment_prompt('shoes'),
                         max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
                     )
                     steps.append({"step": "shoes", "result": shoes_result})
                     if shoes_result.get("error"):
@@ -1206,31 +1229,37 @@ async def tryon_generate_look(
             }
             return response
 
+        async def execute():
+            try:
+                result = await _generate_look()
+            except (ValueError, HTTPException) as exc:
+                result = {'error': exc.detail if isinstance(exc, HTTPException) else str(exc)}
+            except Exception as exc:
+                print(f'Try-on job failed: {type(exc).__name__}')
+                result = {'error': 'Не удалось завершить примерку. Создай новый вариант.'}
+            # Persist only the protected result, not unprotected provider URLs.
+            if result.get('error'):
+                result = {'status': 'failed', 'error': result['error']}
+            elif result.get('steps'):
+                result['steps'] = [{'step': step['step'], 'result': {'status': step['result'].get('status')}} for step in result['steps']]
+            result.update(jobId=job_id, updatedAt=int(time.time() * 1000))
+            await asyncio.to_thread(jobs.finish, device, job_id, result)
+            _TRYON_LOOK_INFLIGHT.pop(task_key, None)
+            return result
+
         async with _TRYON_LOOK_LOCK:
-            cached = _get_cached_tryon_look(cache_key)
-            if cached:
-                return cached
-            inflight_task = _TRYON_LOOK_INFLIGHT.get(cache_key)
-            if inflight_task is None:
-                inflight_task = asyncio.create_task(_generate_look())
-                _TRYON_LOOK_INFLIGHT[cache_key] = inflight_task
-
-        try:
-            result = await inflight_task
-        finally:
-            async with _TRYON_LOOK_LOCK:
-                if _TRYON_LOOK_INFLIGHT.get(cache_key) is inflight_task:
-                    _TRYON_LOOK_INFLIGHT.pop(cache_key, None)
-
-        if result.get("status") == "succeeded" and result.get("outputUrl"):
-            async with _TRYON_LOOK_LOCK:
-                _set_cached_tryon_look(cache_key, result)
-            # Сюда попадают только те, для кого генерация реально выполнялась:
-            # ответ из кеша вернулся выше и денег не стоил. Списываем по числу
-            # проходов — образ из четырёх вещей дороже одной футболки.
-            access.charge(device, len([step for step in result.get("steps", []) if step["result"].get("outputUrl")]) or 1)
-
-        return result
+            created, job = await asyncio.to_thread(jobs.start, device, job_id, cache_key, cost)
+            if not created and job['result']:
+                return {**job['result'], 'cached': True}
+            inflight_task = _TRYON_LOOK_INFLIGHT.get(task_key)
+            if created:
+                inflight_task = asyncio.create_task(execute())
+                _TRYON_LOOK_INFLIGHT[task_key] = inflight_task
+        if async_mode == 'true' or inflight_task is None:
+            return JSONResponse({'status': 'processing', 'jobId': job_id}, status_code=202)
+        return await asyncio.shield(inflight_task)
+    except HTTPException:
+        raise
     except ValueError as exc:
         return {"error": str(exc)}
     except Exception as exc:

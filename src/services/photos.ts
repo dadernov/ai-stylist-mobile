@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 const PHOTO_DIR = `${FileSystem.documentDirectory || ''}photos/`;
 const MARKER = '/photos/';
+export const accountPhotoDirectory = (login: string) => `${PHOTO_DIR}${encodeURIComponent(login)}/`;
 
 const isDataUri = (uri: string) => /^data:image\/[a-z0-9.+-]+;base64,/i.test(uri);
 const isRemote = (uri: string) => /^https?:\/\//i.test(uri);
@@ -37,20 +38,21 @@ const uniqueName = (extension: string) => `${Date.now().toString(36)}-${Math.ran
  * правды о том, читается ли картинка, остаётся сам <Image>.
  */
 export const reanchorPhoto = (uri?: string | null): string | undefined => {
-  if (!uri) return undefined;
+  if (!uri || typeof uri !== 'string') return undefined;
   if (isDataUri(uri) || isRemote(uri) || !FileSystem.documentDirectory) return uri;
   const index = uri.lastIndexOf(MARKER);
   if (index === -1) return uri;
   const name = uri.slice(index + MARKER.length);
-  return name ? `${PHOTO_DIR}${name}` : uri;
+  return name && !name.split('/').some(part => part === '..' || part === '.') ? `${PHOTO_DIR}${name}` : undefined;
 };
 
 /** Кладёт фото в папку приложения и возвращает путь к файлу. */
-export async function persistPhoto(uri?: string | null): Promise<string | undefined> {
+export async function persistPhoto(uri?: string | null, login?: string): Promise<string | undefined> {
   if (!uri || !FileSystem.documentDirectory) return uri || undefined;
-  if (uri.startsWith(PHOTO_DIR)) return uri;
-  const target = `${PHOTO_DIR}${uniqueName(extensionOf(uri))}`;
-  await FileSystem.makeDirectoryAsync(PHOTO_DIR, { intermediates: true });
+  const directory = login ? accountPhotoDirectory(login) : PHOTO_DIR;
+  if (uri.startsWith(directory)) return uri;
+  const target = `${directory}${uniqueName(extensionOf(uri))}`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
   if (isDataUri(uri)) {
     await FileSystem.writeAsStringAsync(target, uri.split(',')[1], { encoding: FileSystem.EncodingType.Base64 });
     return target;
@@ -70,20 +72,22 @@ export async function persistPhoto(uri?: string | null): Promise<string | undefi
  * загрузки состояния: так удаление вещи не требует отдельной уборки в каждом
  * месте, откуда её можно удалить, и файл не остаётся висеть навсегда.
  */
-export async function removeUnusedPhotos(keep: Array<string | undefined>): Promise<number> {
+export async function removeUnusedPhotos(keep: Array<string | undefined>, login?: string): Promise<number> {
   if (!FileSystem.documentDirectory) return 0;
+  const directory = login ? accountPhotoDirectory(login) : PHOTO_DIR;
   const used = new Set(keep.filter(Boolean).map((uri) => (uri as string).split('/').pop()));
   let names: string[] = [];
   try {
-    names = await FileSystem.readDirectoryAsync(PHOTO_DIR);
+    names = await FileSystem.readDirectoryAsync(directory);
   } catch {
     return 0;
   }
   let removed = 0;
   for (const name of names) {
+    if (name.includes('/') || (!login && !/\.(png|jpe?g|webp)$/i.test(name))) continue;
     if (used.has(name)) continue;
     try {
-      await FileSystem.deleteAsync(`${PHOTO_DIR}${name}`, { idempotent: true });
+      await FileSystem.deleteAsync(`${directory}${name}`, { idempotent: true });
       removed += 1;
     } catch {
       // Не смогли удалить — не повод ломать запуск.
