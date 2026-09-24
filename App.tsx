@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
@@ -11,14 +11,15 @@ import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { readStoredSession, signOut, verifySession, forgetStoredSession, Session } from './src/services/auth';
+import { deleteAccount, readStoredSession, signOut, verifySession, forgetStoredSession, Session } from './src/services/auth';
+import { PRIVACY_URL } from './src/constants/ai';
 import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, useT } from './src/constants/i18n';
 import { WardrobeItem } from './src/data/mock';
 import { loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
-import { accountKey, DATA_KEYS, loadAccountData, prepareAccountStorage, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
+import { accountKey, DATA_KEYS, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { PrimaryButton } from './src/components/ui/PrimaryButton';
@@ -205,12 +206,20 @@ function SessionGate() {
       setSession(null);
     } catch { setError(t('Не удалось завершить выход. Попробуй ещё раз.')); }
   };
+  const removeAccount = async () => {
+    if (!session) return;
+    try {
+      await deleteAccount(session);
+      await purgeAccountData(session.login);
+      setSession(null);
+    } catch (e: any) { setError(e?.message || t('Не удалось удалить аккаунт. Проверь соединение и попробуй ещё раз.')); }
+  };
   if (!ready) return <LoadingScreen />;
   if (onboarding) return <Onboarding onClose={() => {
     setOnboarding(false);
     void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
   }} />;
-  if (session) return <TryOnJobsProvider key={session.login} session={session}><AppContent session={session} onLogout={() => void logout()} accountError={error} /></TryOnJobsProvider>;
+  if (session) return <TryOnJobsProvider key={session.login} session={session}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></TryOnJobsProvider>;
   return <SafeAreaView style={styles.container}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
     {claim ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 20, maxWidth: 480, width: '100%', alignSelf: 'center' }}>
@@ -225,7 +234,7 @@ function SessionGate() {
   </SafeAreaView>;
 }
 
-function AppContent({ session, onLogout, accountError }: { session: Session; onLogout: () => void; accountError: string }) {
+function AppContent({ session, onLogout, onDeleteAccount, accountError }: { session: Session; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -529,6 +538,11 @@ function AppContent({ session, onLogout, accountError }: { session: Session; onL
           storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
         }}
         onLogout={onLogout}
+        onOpenPrivacy={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}
+        onDeleteAccount={() => Alert.alert(t('Удалить аккаунт?'), t('Аккаунт, история примерок на сервере и все данные приложения на этом устройстве будут удалены. Это действие нельзя отменить.'), [
+          { text: t('Отмена'), style: 'cancel' },
+          { text: t('Удалить'), style: 'destructive', onPress: onDeleteAccount }
+        ])}
       />
     );
   })();

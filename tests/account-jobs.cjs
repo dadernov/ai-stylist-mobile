@@ -59,6 +59,22 @@ let passed = 0;
 const test = async (name, callback) => { values.clear(); disk.clear(); await callback(); passed++; console.log(`PASS: ${name}`); };
 
 async function run() {
+  await test('account deletion purges records, photos and try-on frames of that account only', async () => {
+    const { purgeAccountData, DATA_KEYS } = service('accountStorage');
+    for (const login of ['alice', 'bobby']) {
+      for (const key of Object.values(DATA_KEYS)) await saveJson(accountKey(login, key), [{ id: login }]);
+      await saveJson(accountKey(login, 'tryOnJobs'), [{ id: login }]);
+      values.set(accountKey(login, 'storageVersion'), '1');
+      disk.set(`/docs/photos/${login}/a.jpg`, 'x');
+    }
+    await purgeAccountData('alice');
+    for (const key of [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion']) {
+      assert.equal(values.has(accountKey('alice', key)), false, `alice ${key} removed`);
+      assert.equal(values.has(accountKey('bobby', key)), true, `bobby ${key} kept`);
+    }
+    assert.equal(disk.has('/docs/photos/alice/a.jpg'), false);
+    assert.equal(disk.has('/docs/photos/bobby/a.jpg'), true);
+  });
   await test('legacy migration requires a claim and never leaks to another account', async () => {
     values.set('wardrobeItems', JSON.stringify([item]));
     values.set('profileState', JSON.stringify({ displayName: 'Alice', gender: 'male', modelUri: '/docs/photos/alice.jpg' }));

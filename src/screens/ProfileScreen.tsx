@@ -23,6 +23,8 @@ type ProfileScreenProps = {
   onAvatarChange: (uri: string) => void;
   onModelChange: (uri: string) => void;
   onLogout: () => void;
+  onDeleteAccount: () => void;
+  onOpenPrivacy: () => void;
   gender: Gender;
   beautyAdvice: boolean;
   onGenderChange: (gender: Gender) => void;
@@ -41,6 +43,8 @@ export function ProfileScreen({
   onAvatarChange,
   onModelChange,
   onLogout,
+  onDeleteAccount,
+  onOpenPrivacy,
   gender,
   beautyAdvice,
   onGenderChange,
@@ -210,11 +214,28 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
+          emoji: '🔒',
+          title: t('Политика конфиденциальности'),
+          hint: t('Какие данные обрабатываются и где'),
+          delay: 240,
+          onPress: onOpenPrivacy
+        })}
+
+        {renderSettingRow({
           emoji: '🚪',
           title: t('Выйти из аккаунта'),
           danger: true,
           delay: 280,
           onPress: onLogout
+        })}
+
+        {renderSettingRow({
+          emoji: '🗑️',
+          title: t('Удалить аккаунт'),
+          hint: t('Удалит аккаунт и все данные без возможности восстановления'),
+          danger: true,
+          delay: 320,
+          onPress: onDeleteAccount
         })}
       </ScrollView>
     </View>

@@ -120,6 +120,15 @@ def finish(owner, job_id, result):
                        ('succeeded' if result.get('outputUrl') else 'failed', encoded, time.time(), owner, job_id))
 
 
+def purge_owner(owner):
+    """Account deletion: stored results and usage rows of this owner go away."""
+    with access._DB_LOCK:
+        db = _database()
+        with db:
+            db.execute("DELETE FROM tryon_jobs WHERE owner=?", (owner,))
+            db.execute("DELETE FROM usage WHERE device=?", (owner,))
+
+
 def recover_interrupted():
     """Single-worker startup: never silently replay an uncertain paid operation."""
     with access._DB_LOCK:

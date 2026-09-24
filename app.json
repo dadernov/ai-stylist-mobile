@@ -3,18 +3,18 @@
     "name": "AI Стилист",
     "slug": "ai-stylist-mobile",
     "scheme": "aistylist",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.aistylist.mobile",
       "infoPlist": {
         "NSCameraUsageDescription": "Нужно разрешение, чтобы сфотографировать одежду.",
-        "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды.",
+        "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды и фото для примерки.",
         "NSLocationWhenInUseUsageDescription": "Нужно разрешение, чтобы получить погоду рядом с вами.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryAddUsageDescription": "Нужно разрешение, чтобы сохранить результат примерки в галерею."
@@ -22,7 +22,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F6F5F2"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1C1E23"
       },
       "package": "com.aistylist.mobile",
       "permissions": [
@@ -46,10 +47,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F6F5F2",
-          "resizeMode": "contain"
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#1C1E23"
         }
       ]
-    ]
+    ],
+    "icon": "./assets/icon.png"
   }
 }

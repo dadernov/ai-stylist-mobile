@@ -105,3 +105,9 @@ export async function signOut(session: Session | null) {
   await forgetStoredSession(session);
   void request('/auth/logout', {}, session.token).catch(() => console.warn('Remote logout unavailable'));
 }
+
+/** Удаляет аккаунт на сервере (сессии, результаты примерок, расход) и забывает вход. */
+export async function deleteAccount(session: Session) {
+  await request('/auth/delete-account', {}, session.token);
+  await forgetStoredSession(session);
+}

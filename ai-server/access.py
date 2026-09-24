@@ -53,6 +53,7 @@ def reset_state_for_tests():
         if _connection is not None:
             _connection.close()
         _connection = None
+    reset_throttle_for_tests()
 
 
 def _today():
@@ -75,6 +76,31 @@ def charge(device: str, cost: int = 1):
             (device, _today(), cost)
         )
         database.commit()
+
+
+_RATE_LOCK = threading.Lock()
+_rate_windows: dict[tuple[str, str], list[float]] = {}
+
+
+def throttle(login: str, action: str, limit: int, window_seconds: int = 60):
+    """Per-account sliding window. nginx limits by IP are only a coarse net:
+    a mobile carrier puts thousands of people behind one address."""
+    now = time.time()
+    with _RATE_LOCK:
+        stamps = [stamp for stamp in _rate_windows.get((login, action), []) if now - stamp < window_seconds]
+        if len(stamps) >= limit:
+            _rate_windows[(login, action)] = stamps
+            raise HTTPException(429, "Слишком много запросов подряд. Подожди минуту.")
+        stamps.append(now)
+        _rate_windows[(login, action)] = stamps
+        if len(_rate_windows) > 5000:
+            for key in [key for key, values in _rate_windows.items() if not values or now - values[-1] >= window_seconds]:
+                _rate_windows.pop(key, None)
+
+
+def reset_throttle_for_tests():
+    with _RATE_LOCK:
+        _rate_windows.clear()
 
 
 def token_is_known(presented: str):

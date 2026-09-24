@@ -4,7 +4,7 @@ import { Gender, isGender } from '../types/profile';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { loadValidated } from './storage';
-import { reanchorPhoto } from './photos';
+import { reanchorPhoto, removeUnusedPhotos } from './photos';
 
 export type ProfileState = { displayName: string; authMethod?: string; avatarUri?: string; modelUri?: string; gender?: Gender; beautyAdvice?: boolean };
 export const DATA_KEYS = { profile: 'profileState', wardrobe: 'wardrobeItems', favorites: 'favoriteLooks', lastContext: 'lastContext', lastLooks: 'lastLooks', savedLooks: 'savedLooks' };
@@ -124,4 +124,18 @@ export async function loadAccountData(login: string) {
   }
   return { profile: profile.value, items: wardrobe.value || [], favorites: favorites.value || [], context: context.value,
     looks: looks.value || [], saved: saved.value || [], failed };
+}
+
+/** Стирает всё локальное для аккаунта: записи, фото гардероба и кадры примерок. */
+export async function purgeAccountData(login: string) {
+  const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion'].map(key => accountKey(login, key));
+  await Promise.all(keys.flatMap(key => [storage.removeItem(key).catch(() => {}), AsyncStorage.removeItem(key).catch(() => {})]));
+  await removeUnusedPhotos([], login).catch(() => {});
+  await removeTryOnFrames(login).catch(() => {});
+}
+
+async function removeTryOnFrames(login: string) {
+  const FileSystem = await import('expo-file-system/legacy');
+  if (!FileSystem.documentDirectory) return;
+  await FileSystem.deleteAsync(`${FileSystem.documentDirectory}try-ons/${encodeURIComponent(login)}/`, { idempotent: true });
 }

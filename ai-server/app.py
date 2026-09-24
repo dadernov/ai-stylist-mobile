@@ -31,6 +31,7 @@ import tryon_frame
 import tryon_debug
 import access
 import accounts
+import fashn_credits
 import jobs
 from request_guard import RequestGuard, BoundedFormRoute
 
@@ -989,6 +990,15 @@ def auth_logout(_: bool = Depends(access.require_app), x_session_token: str | No
     return {"status": "ok"}
 
 
+@app.post("/auth/delete-account")
+async def auth_delete_account(login: str = Depends(access.require_account)):
+    """Account deletion required by the app stores: the user, sessions, stored
+    try-on results and usage rows are removed. Local data is cleared by the app."""
+    await asyncio.to_thread(jobs.purge_owner, login)
+    existed = await asyncio.to_thread(accounts.delete_account, login)
+    return {"deleted": bool(existed), "login": login}
+
+
 @app.get("/auth/me")
 def auth_me(login: str = Depends(access.require_account)):
     """Приложение спрашивает это при запуске, чтобы понять, жива ли сессия."""
@@ -998,6 +1008,7 @@ def auth_me(login: str = Depends(access.require_account)):
 
 @app.post("/analyze")
 def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
+    access.throttle(device, 'analyze', _env_int('AI_ANALYZE_PER_MINUTE', 20))
     if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
         raise HTTPException(422, "Неизвестная категория гардероба.")
     content = file.file.read(15 * 1024 * 1024 + 1)
@@ -1295,6 +1306,9 @@ async def tryon_generate_look(
             _TRYON_LOOK_INFLIGHT.pop(task_key, None)
             return result
 
+        access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 6))
+        if not await asyncio.to_thread(fashn_credits.sufficient, token, cost):
+            return {"error": fashn_credits.ERROR}
         async with _TRYON_LOOK_LOCK:
             created, job = await asyncio.to_thread(jobs.start, device, job_id, cache_key, cost)
             if not created and job['status'] != 'running' and job['result']:

@@ -19,3 +19,6 @@ const selected = envBaseUrl && envBaseUrl.length > 0 ? envBaseUrl : FALLBACK_AI_
 export const AI_BASE_URL = selected.replace(/\/+$/, '');
 
 export const AI_CLIENT_TOKEN = process.env.EXPO_PUBLIC_AI_CLIENT_TOKEN?.trim() || '';
+
+// Published next to the API so the store listing, the app and the server agree.
+export const PRIVACY_URL = `${AI_BASE_URL}/privacy`;

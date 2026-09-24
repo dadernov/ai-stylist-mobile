@@ -187,6 +187,17 @@ def forget_session(token: str | None):
         database.commit()
 
 
+def delete_account(login: str):
+    """Удаляет пользователя и все его сессии. Возвращает True, если аккаунт был."""
+    with _LOCK:
+        database = _database()
+        existed = database.execute("SELECT 1 FROM users WHERE login = ?", (login,)).fetchone() is not None
+        database.execute("DELETE FROM sessions WHERE login = ?", (login,))
+        database.execute("DELETE FROM users WHERE login = ?", (login,))
+        database.commit()
+    return existed
+
+
 def profile(login: str):
     with _LOCK:
         row = _database().execute("SELECT login, display_name FROM users WHERE login = ?", (login,)).fetchone()
