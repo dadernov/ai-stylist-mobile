@@ -33,6 +33,7 @@ import access
 import accounts
 import fashn_credits
 import jobs
+import stage_cache
 from request_guard import RequestGuard, BoundedFormRoute
 
 try:
@@ -304,10 +305,13 @@ async def _face_locked_output_url(
     changed_slots=(),
     prepared=None,
     debug_context=None,
+    generated_image=None,
 ):
     # Never expose an unchecked provider image as the final result. PNG preserves
     # source pixels exactly; JPEG would modify the protected face and background.
-    generated_image = await _load_image_from_url_or_data_url(client, output_url)
+    # A caller that already downloaded the frame passes it in to skip a second fetch.
+    if generated_image is None:
+        generated_image = await _load_image_from_url_or_data_url(client, output_url)
     if generated_image is None:
         raise ValueError('Не удалось проверить результат примерки. Попробуй ещё раз.')
 
@@ -417,10 +421,13 @@ def _build_fashn_inputs(
     category_value: str | None = None,
     mode_override: str | None = None,
     generation_mode_override: str | None = None,
-    prompt_override: str | None = None
+    prompt_override: str | None = None,
+    resolution_override: str | None = None
 ):
     if "max" in model_name:
-        generation_mode = 'quality'
+        # The profile decides: a draft is fast 1k, a final quality 2k. Without
+        # an explicit value this stays the final's quality mode.
+        generation_mode = generation_mode_override or 'quality'
         prompt = prompt_override or os.getenv("FASHN_PROMPT", "").strip()
         inputs = {
             "model_image": model_image,
@@ -432,7 +439,7 @@ def _build_fashn_inputs(
             inputs["prompt"] = prompt
         if generation_mode:
             inputs["generation_mode"] = generation_mode
-        resolution = os.getenv("FASHN_QUALITY_RESOLUTION", "2k").strip()
+        resolution = resolution_override or os.getenv("FASHN_QUALITY_RESOLUTION", "2k").strip()
         if resolution:
             inputs["resolution"] = resolution
         seed = os.getenv("FASHN_SEED", "").strip()
@@ -600,15 +607,50 @@ def _plan_stages(garments, top_category, outer_category, tuck, max_side, jpeg_qu
         images = {slot: tryon_reference.decode(content) for slot, (content, _) in garments.items()}
         board, positions = tryon_reference.build(images)
         return [('outfit', _image_to_data_url(board), tryon_reference.prompt(positions, top_category, outer_category, tuck))]
-    stages = []
+    return [(slot, _prepare_tryon_image_data_url(content, mime, max_side, jpeg_quality), prompt)
+            for slot, content, mime, prompt in _stage_specs(garments, top_category, outer_category, tuck)]
+
+
+def _stage_specs(garments, top_category, outer_category, tuck):
+    """The layer chain before any image work: (slot, content, mime, prompt).
+
+    Planning and the layer cache both read the chain from here, so a cached
+    layer can only ever be matched to exactly the instruction it was made with.
+    """
+    specs = []
     for slot in tryon_policy.STAGE_ORDER:
         if slot not in garments:
             continue
         content, mime = garments[slot]
         category = outer_category if slot == 'outer' else top_category if slot == 'top' else ''
         prompt = tryon_policy.garment_prompt(slot, category, tuck, keep_outer_open=(slot == 'outer' and 'top' in garments))
-        stages.append((slot, _prepare_tryon_image_data_url(content, mime, max_side, jpeg_quality), prompt))
-    return stages
+        specs.append((slot, content, mime, prompt))
+    return specs
+
+
+def _layer_chain_keys(profile, person_content, garments, top_category, outer_category, tuck, max_side, jpeg_quality):
+    """Cache keys of the layer chain, or [] when layers cannot be reused.
+
+    Everything that shapes a provider frame goes into the key: the policy
+    version, model, profile and the preparation of the photo and garments.
+    """
+    if _look_strategy() == 'collage':
+        return []
+    profile_key = f'{tryon_policy.CACHE_VERSION}|{tryon_policy.MODEL}|{profile.mode}|{profile.resolution}|{max_side}|{jpeg_quality}'
+    stages = [(slot, hashlib.sha256(content).hexdigest(), prompt)
+              for slot, content, _, prompt in _stage_specs(garments, top_category, outer_category, tuck)]
+    return stage_cache.chain_keys(profile_key, hashlib.sha256(person_content).hexdigest(), stages)
+
+
+def _frame_for_cache(image):
+    """A provider frame as it will be fed back to the provider later.
+
+    The first layer already goes out as a JPEG at this quality, so a reused
+    frame reaches the provider in the same form as a fresh one would.
+    """
+    buff = BytesIO()
+    image.convert('RGB').save(buff, format='JPEG', quality=97, optimize=True, icc_profile=image_color.SRGB_BYTES)
+    return buff.getvalue()
 
 
 def _cache_key_for_tryon_look(
@@ -672,7 +714,8 @@ async def _run_fashn_tryon_with_category_fallback(
     prompt_override: str | None = None,
     max_wait_seconds: int | None = None,
     poll_interval_seconds: float | None = None,
-    seed_override: int | None = None
+    seed_override: int | None = None,
+    resolution_override: str | None = None
 ):
     if "max" in model_name:
         inputs = _build_fashn_inputs(
@@ -681,7 +724,8 @@ async def _run_fashn_tryon_with_category_fallback(
             garment_image,
             mode_override=mode_override,
             generation_mode_override=generation_mode_override,
-            prompt_override=prompt_override
+            prompt_override=prompt_override,
+            resolution_override=resolution_override
         )
         if max_wait_seconds is not None:
             inputs["_max_wait_seconds"] = max_wait_seconds
@@ -993,8 +1037,10 @@ def auth_logout(_: bool = Depends(access.require_app), x_session_token: str | No
 @app.post("/auth/delete-account")
 async def auth_delete_account(login: str = Depends(access.require_account)):
     """Account deletion required by the app stores: the user, sessions, stored
-    try-on results and usage rows are removed. Local data is cleared by the app."""
+    try-on results, cached try-on layers and usage rows are removed. Local data
+    is cleared by the app."""
     await asyncio.to_thread(jobs.purge_owner, login)
+    await asyncio.to_thread(stage_cache.purge_owner, login)
     existed = await asyncio.to_thread(accounts.delete_account, login)
     return {"deleted": bool(existed), "login": login}
 
@@ -1003,7 +1049,8 @@ async def auth_delete_account(login: str = Depends(access.require_account)):
 def auth_me(login: str = Depends(access.require_account)):
     """Приложение спрашивает это при запуске, чтобы понять, жива ли сессия."""
     return {**(accounts.profile(login) or {"login": login, "displayName": ""}),
-            "spentToday": access.spent_today(login), "dailyQuota": access.daily_quota()}
+            # Both in FASHN credits: a draft layer costs 1, a final one 4.
+            "spentToday": access.spent_today(login), "dailyQuota": access.daily_credits()}
 
 
 @app.post("/analyze")
@@ -1141,6 +1188,7 @@ async def tryon_generate_look(
     outer_category: str = Form(""),
     request_id: str = Form(""),
     async_mode: str = Form("false"),
+    fresh: str = Form("false"),
     device: str = Depends(access.require_account)
 ):
     try:
@@ -1149,11 +1197,14 @@ async def tryon_generate_look(
             return {"error": "FASHN_API_KEY is not set"}
         if not token.isascii():
             return {"error": "FASHN_API_KEY contains non-ASCII symbols. Set the real API key (latin letters/numbers only)."}
+        # A draft (fast 1k, 1 credit per layer) unless the app asks for the
+        # final (quality 2k, 4 credits). The app names them 'fast'/'quality'.
+        profile = tryon_policy.profile(tryon_policy.normalize_quality(quality_mode))
         look_model_name = tryon_policy.MODEL
-        look_mode = tryon_policy.MODE
-        look_generation_mode = tryon_policy.MODE
+        look_mode = profile.mode
+        look_generation_mode = profile.mode
         base_prompt = tryon_policy.IDENTITY
-        quality_mode_normalized = 'quality'
+        quality_mode_normalized = 'fast' if profile.name == 'draft' else 'quality'
         step_max_wait_seconds = _env_int('FASHN_QUALITY_MAX_WAIT_SECONDS', 240)
         poll_interval_seconds = 1.0
         tryon_max_side = _env_int('FASHN_IMAGE_MAX_SIDE', 2048)
@@ -1182,7 +1233,7 @@ async def tryon_generate_look(
             look_mode,
             look_generation_mode,
             base_prompt,
-            quality_mode_normalized,
+            f'{profile.name}|{profile.mode}|{profile.resolution}',
             f"{top_category.strip()}|{outer_category.strip()}"
         )
         request_id = request_id if isinstance(request_id, str) else ''
@@ -1191,26 +1242,37 @@ async def tryon_generate_look(
         job_id = request_id or f'legacy-{int(time.time() // 21600)}-{cache_key[:32]}'
         task_key = f'{device}:{job_id}'
         seed = int(hashlib.sha256(job_id.encode()).hexdigest()[:8], 16) % 2147483647
-        # One reserved provider operation per garment stage (see _plan_stages).
-        selected_count = sum(1 for content in (top_content, bottom_content, shoes_content, outer_content) if content)
-        cost = 1 if _look_strategy() == 'collage' else selected_count
+        garments = {slot: (content, mime) for slot, content, mime in [
+            ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
+            ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
+        ] if content}
+        stage_total = 1 if _look_strategy() == 'collage' else len(garments)
+        # Layers shared with an earlier look of this person are taken from the
+        # layer cache instead of being paid for again. `fresh` is set by the app
+        # when the same garments are generated once more: the user wants a new
+        # variant, and any of the layers may be the one they disliked.
+        chain_keys = _layer_chain_keys(profile, person_content, garments, top_category.strip(), outer_category.strip(),
+                                       tuck_mode_normalized, tryon_max_side, tryon_jpeg_quality)
+        reuse = (fresh if isinstance(fresh, str) else '').strip().lower() not in ('1', 'true', 'yes', 'on')
+        reused_depth, reused_frame = await asyncio.to_thread(stage_cache.lookup, device, chain_keys) if chain_keys and reuse else (0, None)
+        # The budget is reserved in credits for exactly the layers that will run.
+        cost = (stage_total - reused_depth) * profile.credits
 
         async def _generate_look():
             started = time.monotonic()
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
-            current_model = await asyncio.to_thread(_prepare_provider_frame, person_content, tryon_max_side, tryon_jpeg_quality)
-            garments = {slot: (content, mime) for slot, content, mime in [
-                ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
-                ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
-            ] if content}
             stages = await asyncio.to_thread(
                 _plan_stages, garments, top_category.strip(), outer_category.strip(), tuck_mode_normalized,
                 tryon_max_side, tryon_jpeg_quality
             )
-            timings = {'prepareSeconds': round(time.monotonic() - started, 2)}
+            timings = {'prepareSeconds': round(time.monotonic() - started, 2), 'layersReused': reused_depth}
             steps = []
             names = [name for name, _, _ in stages]
             preview_url = None
+            # Frames this job generated, as (layer index, bytes). They reach the
+            # layer cache only after the whole look passes the identity lock.
+            fresh_frames = []
+            last_frame = None
 
             async def publish(done, stage=None, preview_url=None):
                 # Progress is best effort: a failed write never fails the paid work.
@@ -1223,16 +1285,32 @@ async def tryon_generate_look(
                 except Exception as exc:
                     print(f'Try-on progress unavailable: {type(exc).__name__}', flush=True)
 
+            if reused_depth:
+                # The base layers come from an earlier look of this person;
+                # dressing continues on that frame, and the user sees it at once.
+                current_model = _bytes_to_data_url(reused_frame, 'image/jpeg')
+                steps.extend({'step': name, 'result': {'status': 'reused'}, 'durationSeconds': 0}
+                             for name in names[:reused_depth])
+                try:
+                    reused_image = await asyncio.to_thread(_working_image, reused_frame)
+                    preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, reused_image)
+                except Exception as exc:
+                    print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
+            else:
+                current_model = await asyncio.to_thread(_prepare_provider_frame, person_content, tryon_max_side, tryon_jpeg_quality)
+
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-                for index, (step_name, reference, prompt) in enumerate(stages):
+                for index in range(reused_depth, len(stages)):
+                    step_name, reference, prompt = stages[index]
                     step_started = time.monotonic()
-                    await publish(names[:index], stage=step_name, preview_url=preview_url if index else None)
-                    jobs.attempt(device, job_id)
+                    await publish(names[:index], stage=step_name, preview_url=preview_url)
+                    jobs.attempt(device, job_id, profile.credits)
                     result = await _run_fashn_tryon_with_category_fallback(
                         client, token, look_model_name, current_model, reference, ['auto'],
                         mode_override=look_mode, generation_mode_override=look_generation_mode,
                         prompt_override=prompt, max_wait_seconds=step_max_wait_seconds,
-                        poll_interval_seconds=poll_interval_seconds, seed_override=seed
+                        poll_interval_seconds=poll_interval_seconds, seed_override=seed,
+                        resolution_override=profile.resolution
                     )
                     elapsed = round(time.monotonic()-step_started, 2)
                     steps.append({'step': step_name, 'result': result, 'durationSeconds': elapsed})
@@ -1242,12 +1320,20 @@ async def tryon_generate_look(
                     # The provider's frame is the model for the next garment. It is
                     # already on the provider's canvas, so nothing is refitted.
                     current_model = result['outputUrl']
-                    if index < len(stages) - 1:
-                        try:
-                            frame = await _load_image_from_url_or_data_url(client, current_model)
-                            preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, frame) if frame else None
-                        except Exception as exc:
-                            print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
+                    # The frame feeds the progress preview, the layer cache and the
+                    # final lock. None of them may fail the paid work.
+                    try:
+                        frame = await _load_image_from_url_or_data_url(client, current_model)
+                        if frame is not None:
+                            if chain_keys:
+                                fresh_frames.append((index, await asyncio.to_thread(_frame_for_cache, frame)))
+                            if index < len(stages) - 1:
+                                preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, frame)
+                            else:
+                                last_frame = frame
+                    except Exception as exc:
+                        print(f'Try-on layer frame unavailable: {type(exc).__name__}', flush=True)
+                        if index < len(stages) - 1:
                             preview_url = None
                 await publish(names, stage='composite', preview_url=preview_url)
 
@@ -1260,7 +1346,7 @@ async def tryon_generate_look(
                 try:
                     locked_output_url = await _face_locked_output_url(
                         output_client, person_content, current_model, changed_slots, prepared_identity,
-                        debug_context=(device, job_id),
+                        debug_context=(device, job_id), generated_image=last_frame,
                     )
                 except AlignmentRejected as exc:
                     if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
@@ -1272,6 +1358,15 @@ async def tryon_generate_look(
                     warning = UNLOCKED_WARNING
                     print('Try-on composite: unlocked-fallback', flush=True)
             timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
+            # Only a look that passed the identity lock may seed later looks: a
+            # frame that could not be aligned would carry its defect into every
+            # look built on top of it.
+            if warning is None and fresh_frames:
+                try:
+                    for index, data in fresh_frames:
+                        await asyncio.to_thread(stage_cache.store, device, chain_keys[index], data)
+                except Exception as exc:
+                    print(f'Try-on layer cache unavailable: {type(exc).__name__}', flush=True)
             timings['totalSeconds'] = round(time.monotonic() - started, 2)
             print(f'Try-on timing: prepare={timings["prepareSeconds"]}; composite={timings["compositeSeconds"]}; total={timings["totalSeconds"]}', flush=True)
             response = {
@@ -1283,6 +1378,8 @@ async def tryon_generate_look(
                 "modelUsed": look_model_name,
                 "timings": timings,
                 "identityLocked": warning is None,
+                "layersReused": reused_depth,
+                "creditsCharged": (len(stages) - reused_depth) * profile.credits,
             }
             if warning:
                 response["warning"] = warning

@@ -21,13 +21,6 @@ def enabled():
     return os.getenv('FASHN_CREDITS_GUARD', '').strip().lower() in ('1', 'true', 'yes')
 
 
-def per_stage():
-    try:
-        return max(1, int(os.getenv('FASHN_CREDITS_PER_STAGE', '4')))
-    except ValueError:
-        return 4
-
-
 def balance(token, force=False):
     """Total credits or None when unknown. Never raises."""
     with _LOCK:
@@ -46,13 +39,13 @@ def balance(token, force=False):
     return credits
 
 
-def sufficient(token, stages):
+def sufficient(token, needed):
+    """`needed` is the credit price of the job (see tryon_policy.CREDITS)."""
     if not enabled():
         return True
     credits = balance(token)
     if credits is None:
         return True
-    needed = stages * per_stage()
     if credits < needed:
         print(f'FASHN credits low: {credits} < {needed}', flush=True)
         return False

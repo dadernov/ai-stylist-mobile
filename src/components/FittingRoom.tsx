@@ -149,7 +149,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
         </View>
         <FormScrollView contentContainerStyle={styles.content}>
     <AiTryOnPreview modelUri={modelUri} items={items} history={history} showSourcePhoto resultUri={latest?.imageUri}
-      updatedAt={latest?.updatedAt} warningMessage={latest?.warning} onGenerated={payload => {
+      updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
       const entry = { ...payload, id: String(payload.updatedAt) };
       setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
       setSelected(entry);

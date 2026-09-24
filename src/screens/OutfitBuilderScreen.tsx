@@ -250,7 +250,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           qualityMode={look.tryOnQualityMode}
           history={look.tryOnHistory}
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
-          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: 'quality' })}
+          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
         {lookItems.map((item) => (
           <Text key={item.id} style={styles.lookItem}>
@@ -343,7 +343,7 @@ const SavedLookCard = memo(function SavedLookCard({
           qualityMode={look.tryOnQualityMode}
           history={look.tryOnHistory}
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
-          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: 'quality' })}
+          onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
         {lookItems.map((item) => (
           <Text key={item.id} style={styles.lookItem}>

@@ -2,18 +2,23 @@ import * as Crypto from 'expo-crypto';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { Session } from './auth';
-import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TryOnProgress, TuckMode } from './ai';
+import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TryOnProgress, TryOnQualityMode, TuckMode } from './ai';
 import { ApiError } from './http';
 import { accountKey } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
 
 export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
+  // A draft ('fast') or the final ('quality'). Jobs saved before drafts existed have none and were finals.
+  quality?: TryOnQualityMode;
   status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string;
   // Live stage of a running job (kept in memory only; previews are throwaway frames).
   progress?: TryOnProgress };
 export type JobSnapshot = { jobs: TryOnJob[]; ready: boolean; readOnly?: boolean; error?: string };
-type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMode: TuckMode };
+type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMode: TuckMode; quality: TryOnQualityMode;
+  // Generate every layer anew instead of building on layers the server kept from an earlier look.
+  fresh?: boolean };
+const qualityOf = (job: TryOnJob): TryOnQualityMode => job.quality || 'quality';
 
 export const tryOnContext = (modelUri: string, items: WardrobeItem[]) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,
   JSON.stringify([modelUri, [...items].sort((a, b) => a.id.localeCompare(b.id)).map(i => [i.id, i.section, i.category, i.sourceImageUri || i.imageUri])]));
@@ -70,6 +75,7 @@ export class TryOnJobStore {
         || !Array.isArray(j.itemIds) || !j.itemIds.every((id: unknown) => typeof id === 'string')
         || (j.garments != null && (!Array.isArray(j.garments) || j.garments.some((g: any) => !g || typeof g.id !== 'string' || typeof g.name !== 'string')))
         || typeof j.name !== 'string' || !Number.isFinite(j.createdAt) || !['auto', 'tucked', 'untucked'].includes(j.tuckMode)
+        || (j.quality != null && !['fast', 'quality'].includes(j.quality))
         || !['pending', 'succeeded', 'failed', 'retry'].includes(j.status)
         || (j.error != null && typeof j.error !== 'string') || (j.status === 'succeeded' && !j.result)
         || (j.result != null && (typeof j.result.imageUri !== 'string' || typeof j.result.id !== 'string' || !Number.isFinite(j.result.updatedAt)
@@ -109,7 +115,7 @@ export class TryOnJobStore {
     if (!response.outputUrl) return false;
     const stored = await cacheTryOnImage(response.outputUrl, job.id, this.session.login);
     await this.update(job.id, { status: 'succeeded', error: undefined, progress: undefined, result: { id: job.id, imageUri: stored.imageUri,
-      updatedAt: response.updatedAt || Date.now(), warning: response.warning, tuckMode: job.tuckMode, qualityMode: 'quality' } });
+      updatedAt: response.updatedAt || Date.now(), warning: response.warning, tuckMode: job.tuckMode, qualityMode: qualityOf(job) } });
     return true;
   }
   private async reconcileFailed(job: TryOnJob) {
@@ -125,14 +131,18 @@ export class TryOnJobStore {
     } catch { /* A single read never changes a failed job into pending/retry or submits paid work. */ }
     finally { this.working.delete(job.id); }
   }
-  async start(input: Inputs) {
+  async start(request: Inputs) {
+    // A caller that names no quality asks for the final, as before drafts existed.
+    const input = { ...request, quality: request.quality || 'quality' };
     if (!this.snapshot.ready || !this.writable) throw new Error(this.snapshot.error || 'История ещё загружается.');
-    const existing = this.snapshot.jobs.find(job => job.context === input.context && job.status === 'pending');
+    // A draft and the final of the same look are separate jobs: one may run while the other is shown.
+    const existing = this.snapshot.jobs.find(job => job.context === input.context && qualityOf(job) === input.quality && job.status === 'pending');
     if (existing) { void this.poll(existing); return; }
-    const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode && job.status === 'retry');
+    const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode
+      && qualityOf(job) === input.quality && job.status === 'retry');
     const job: TryOnJob = retry || { id: Crypto.randomUUID(), context: input.context, itemIds: input.items.map(i => i.id),
       garments: input.items.map(i => ({ id: i.id, name: i.name })),
-      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode };
+      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality };
     if (this.working.has(job.id)) return;
     this.working.add(job.id);
     this.snapshot = { ...this.snapshot, error: undefined, jobs: [{ ...job, status: 'pending', error: undefined }, ...this.snapshot.jobs.filter(j => j.id !== job.id)] };
@@ -141,8 +151,8 @@ export class TryOnJobStore {
       await this.save();
       const slot = (section: string) => input.items.find(i => i.section === section && i.imageUri);
       const uri = (section: string) => { const item = slot(section); return item?.sourceImageUri || item?.imageUri; };
-      const response = await analyzeTryOnGenerateLook(input.modelUri, uri('Верх'), uri('Низ'), uri('Обувь'), job.tuckMode, false, 'quality',
-        uri('Верхняя одежда'), slot('Верх')?.category, slot('Верхняя одежда')?.category, job.id, this.session);
+      const response = await analyzeTryOnGenerateLook(input.modelUri, uri('Верх'), uri('Низ'), uri('Обувь'), job.tuckMode, false, qualityOf(job),
+        uri('Верхняя одежда'), slot('Верх')?.category, slot('Верхняя одежда')?.category, job.id, this.session, Boolean(input.fresh));
       if (await this.complete(job, response)) return;
     } catch (error: any) {
       if (error instanceof ApiError && error.status && error.status < 500) {

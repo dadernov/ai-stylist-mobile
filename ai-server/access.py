@@ -36,6 +36,41 @@ def daily_quota():
         return 20
 
 
+def _env_credits(name, legacy_name, legacy_default):
+    """A daily budget in FASHN credits.
+
+    Budgets used to be counted in provider calls, each a quality-2k layer, and
+    the deployed configuration still says so. Without the new variable the old
+    value is converted at the price those calls had, so the money ceiling stays
+    exactly where it was.
+    """
+    raw = os.getenv(name, '').strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    try:
+        legacy = int(os.getenv(legacy_name, str(legacy_default)))
+    except ValueError:
+        legacy = legacy_default
+    try:
+        per_call = max(1, int(os.getenv('FASHN_CREDITS_PER_STAGE', '4')))
+    except ValueError:
+        per_call = 4
+    return legacy * per_call if legacy >= 0 else legacy
+
+
+def daily_credits():
+    """Credits one account may spend per day; negative means unlimited."""
+    return _env_credits('AI_DAILY_CREDITS', 'AI_DEVICE_DAILY_QUOTA', 20)
+
+
+def global_daily_credits():
+    """Credits the whole service may spend per day: the ceiling on the bill."""
+    return max(0, _env_credits('AI_GLOBAL_DAILY_CREDITS', 'AI_GLOBAL_DAILY_QUOTA', 200))
+
+
 def _database():
     global _connection
     if _connection is None:

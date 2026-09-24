@@ -1,4 +1,9 @@
-"""Durable, account-scoped idempotency and budget reservations for try-on jobs."""
+"""Durable, account-scoped idempotency and budget reservations for try-on jobs.
+
+Budgets are counted in FASHN credits, not in provider calls: a draft layer
+costs one credit and a final one four, and counting calls would let drafts eat
+the daily limit as if they were finals.
+"""
 import json
 import os
 import time
@@ -40,9 +45,13 @@ def get(owner, job_id):
         return _get(_database(), owner, job_id)
 
 
+# Four layers at the most expensive tryon-max price (quality 4k, 5 credits).
+MAX_JOB_CREDITS = 20
+
+
 def start(owner, job_id, fingerprint, cost):
     """Return (created, job). Reservation and idempotency are one transaction."""
-    if not 1 <= cost <= 4:
+    if not 1 <= cost <= MAX_JOB_CREDITS:
         raise ValueError('Invalid job cost')
     with access._DB_LOCK:
         db = _database()
@@ -56,10 +65,10 @@ def start(owner, job_id, fingerprint, cost):
                 return False, existing
             day = access._today()
             spent = db.execute('SELECT spent FROM usage WHERE device=? AND day=?', (owner, day)).fetchone()
-            limit = access.daily_quota()
+            limit = access.daily_credits()
             if limit >= 0 and (spent[0] if spent else 0) + cost > limit:
                 raise HTTPException(429, f'Для этой примерки недостаточно дневного лимита ({limit}). Попробуй завтра.')
-            global_limit = max(0, int(os.getenv('AI_GLOBAL_DAILY_QUOTA', '200')))
+            global_limit = access.global_daily_credits()
             total = db.execute('SELECT COALESCE(SUM(spent),0) FROM usage WHERE day=?', (day,)).fetchone()[0]
             if total + cost > global_limit:
                 raise HTTPException(429, 'Дневной лимит сервиса исчерпан. Попробуй завтра.')
@@ -77,13 +86,13 @@ def start(owner, job_id, fingerprint, cost):
             raise
 
 
-def attempt(owner, job_id):
+def attempt(owner, job_id, credits=1):
     # Record before calling the provider: a timeout may still mean paid work.
     with access._DB_LOCK:
         db = _database()
         with db:
-            changed = db.execute("UPDATE tryon_jobs SET attempted=attempted+1, updated=? WHERE owner=? AND id=? AND status='running' AND attempted<reserved",
-                                 (time.time(), owner, job_id)).rowcount
+            changed = db.execute("UPDATE tryon_jobs SET attempted=attempted+?, updated=? WHERE owner=? AND id=? AND status='running' AND attempted+?<=reserved",
+                                 (credits, time.time(), owner, job_id, credits)).rowcount
             if not changed:
                 raise RuntimeError('Job has no reserved provider operation')
 

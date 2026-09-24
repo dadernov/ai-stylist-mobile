@@ -241,7 +241,10 @@ export async function analyzeTryOnGenerateLook(
   topCategory?: string,
   outerCategory?: string,
   requestId?: string,
-  owner?: Session
+  owner?: Session,
+  // true when the same garments are generated again: the user wants another
+  // variant, so the server redoes every layer instead of reusing the base.
+  fresh = false
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   await appendPhoto(form, 'person_file', personUri);
@@ -252,7 +255,9 @@ export async function analyzeTryOnGenerateLook(
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
   form.append('tuck_mode', tuckMode);
-  form.append('quality_mode', 'quality');
+  // 'fast' is a cheap draft (1 credit per garment), 'quality' the final (4).
+  form.append('quality_mode', qualityMode);
+  if (fresh) form.append('fresh', 'true');
   if (requestId) { form.append('request_id', requestId); form.append('async_mode', 'true'); }
   if (compareMode) {
     form.append('compare_mode', 'true');

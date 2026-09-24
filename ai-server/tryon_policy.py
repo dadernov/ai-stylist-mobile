@@ -1,7 +1,59 @@
-"""One quality path and garment-specific instructions, shared by API callers."""
+"""Quality profiles and garment-specific instructions, shared by API callers."""
+import os
+from typing import NamedTuple
+
 MODEL = 'tryon-max'
 MODE = 'quality'
-CACHE_VERSION = 'v19-sequential-provider-frame'
+CACHE_VERSION = 'v20-draft-and-final'
+
+# Price of one tryon-max call in FASHN credits by (generation_mode, resolution),
+# from https://help.fashn.ai/plans-and-pricing/api-pricing. The cost of a look
+# is derived from this table rather than configured separately, so the quota
+# can never drift from what the provider actually bills.
+CREDITS = {
+    ('fast', '1k'): 1, ('fast', '2k'): 2, ('fast', '4k'): 3,
+    ('balanced', '1k'): 2, ('balanced', '2k'): 3, ('balanced', '4k'): 4,
+    ('quality', '1k'): 3, ('quality', '2k'): 4, ('quality', '4k'): 5,
+}
+
+# Most try-ons are a quick "how would this look", so they run as a cheap draft;
+# the high-quality final is generated only when the user asks for it. A final
+# costs four times a draft per garment. The draft profile is configurable on
+# the server so that, if drafts look too rough on real photos, it can be raised
+# to balanced or 2k without shipping a new app.
+_DEFAULT_PROFILES = {'draft': ('fast', '1k'), 'final': ('quality', '2k')}
+
+
+class Profile(NamedTuple):
+    name: str
+    mode: str
+    resolution: str
+    credits: int
+
+
+def profile(name):
+    name = name if name in _DEFAULT_PROFILES else 'final'
+    default_mode, default_resolution = _DEFAULT_PROFILES[name]
+    prefix = f'FASHN_{name.upper()}_'
+    # FASHN_QUALITY_RESOLUTION predates profiles and still sets the final one.
+    fallback_resolution = os.getenv('FASHN_QUALITY_RESOLUTION', default_resolution) if name == 'final' else default_resolution
+    mode = os.getenv(prefix + 'MODE', default_mode).strip().lower()
+    resolution = os.getenv(prefix + 'RESOLUTION', fallback_resolution).strip().lower()
+    if (mode, resolution) not in CREDITS:
+        mode, resolution = default_mode, default_resolution
+    return Profile(name, mode, resolution, CREDITS[(mode, resolution)])
+
+
+def normalize_quality(value):
+    """Map the request field to a profile name.
+
+    The app names the two modes 'fast' and 'quality'; 'draft' and 'final' are
+    accepted too. Anything unknown is a final, so an old client that always
+    sends 'quality' keeps getting exactly what it got before.
+    """
+    value = value.strip().lower() if isinstance(value, str) else ''
+    return 'draft' if value in ('fast', 'draft') else 'final'
+
 # One provider call per selected garment, innermost first: the product image of
 # tryon-max is one product. A board of several garments produced extra limbs,
 # exposed leg strips and missing feet; single garments keep the anatomy intact.

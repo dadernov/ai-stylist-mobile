@@ -10,21 +10,25 @@ from fastapi import HTTPException
 import access
 import app
 import jobs
+import tryon_policy
 from test_tryon_quality import upload
+
+# Price of one final (quality) layer: the endpoint defaults to the final profile.
+FINAL = tryon_policy.profile('final').credits
 
 
 class JobBudget(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3', 'AI_DEVICE_DAILY_QUOTA': '4',
-            'AI_GLOBAL_DAILY_QUOTA': '8', 'AI_MAX_ACTIVE_TRYONS': '10'})
+        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3', 'AI_DAILY_CREDITS': '4',
+            'AI_GLOBAL_DAILY_CREDITS': '8', 'AI_MAX_ACTIVE_TRYONS': '10'})
         self.env.start(); access.reset_state_for_tests()
 
     def tearDown(self):
         access.reset_state_for_tests(); self.env.stop(); self.temp.cleanup()
 
     def test_atomic_admission(self):
-        with patch.dict(os.environ, {'AI_DEVICE_DAILY_QUOTA': '1'}):
+        with patch.dict(os.environ, {'AI_DAILY_CREDITS': '1'}):
             def start(i):
                 try: return jobs.start('a', str(i), str(i), 1)[0]
                 except HTTPException as e: return e.status_code
@@ -93,7 +97,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3', 'FASHN_API_KEY': 'test',
-            'AI_DEVICE_DAILY_QUOTA': '10'})
+            'AI_DAILY_CREDITS': '40', 'AI_STAGE_CACHE_DIR': self.temp.name + '/stages'})
         self.env.start(); access.reset_state_for_tests()
         app._TRYON_LOOK_INFLIGHT.clear()
         self.prepare = patch.object(app, '_prepare_identity_source', return_value='prepared'); self.prepare.start()
@@ -103,9 +107,11 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
             return {'status': 'succeeded', 'outputUrl': 'https://test/private-unprotected'}
         self.provider = AsyncMock(side_effect=provider)
         self.provider_patch = patch.object(app, '_run_fashn_tryon_with_category_fallback', self.provider); self.provider_patch.start()
+        # Provider URLs here are fake: a frame fetch fails like a network error would.
+        self.loader = patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=None)); self.loader.start()
 
     def tearDown(self):
-        self.prepare.stop(); self.protect.stop(); self.provider_patch.stop()
+        self.prepare.stop(); self.protect.stop(); self.provider_patch.stop(); self.loader.stop()
         access.reset_state_for_tests(); self.env.stop(); self.temp.cleanup()
 
     async def generate(self, job_id='request_000000001', **overrides):
@@ -119,7 +125,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         results = await asyncio.gather(self.generate(), self.generate())
         self.assertTrue(all(r['outputUrl'] == 'protected' for r in results))
         self.assertEqual(self.provider.await_count, 1)
-        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(access.spent_today('a'), 1 * FINAL)
         self.assertNotIn('private-unprotected', str(results))
 
     async def test_each_garment_stage_reserves_and_attempts_one_operation(self):
@@ -127,14 +133,19 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['outputUrl'], 'protected')
         self.assertEqual([step['step'] for step in result['steps']], ['bottom', 'top', 'outer'])
         self.assertEqual(self.provider.await_count, 3)
-        self.assertEqual(access.spent_today('a'), 3)
+        self.assertEqual(access.spent_today('a'), 3 * FINAL)
 
     async def test_running_job_exposes_stage_progress_and_is_not_served_as_cached(self):
         first = self.generate(bottom_file=upload(), outer_file=upload(), async_mode='true')
         accepted = await first
         self.assertEqual(accepted.status_code, 202)
-        await asyncio.sleep(.005)
-        live = await app.tryon_job('request_000000001', device='a')
+        # Wait for the first published stage instead of a fixed 5 ms: image
+        # preparation runs in a thread and its duration varies with the load.
+        for _ in range(500):
+            live = await app.tryon_job('request_000000001', device='a')
+            if 'progress' in live or live.get('status') != 'processing':
+                break
+            await asyncio.sleep(.001)
         self.assertEqual(live['status'], 'processing')
         self.assertEqual(live['progress']['total'], 3)
         self.assertIn(live['progress']['stage'], ['bottom', 'top', 'outer', 'composite'])
@@ -158,13 +169,13 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=ValueError('rejected'))):
             result = await self.generate()
         self.assertEqual(result['error'], 'rejected')
-        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(access.spent_today('a'), 1 * FINAL)
 
     async def test_four_garments_reserve_and_charge_one_operation_each(self):
         result = await self.generate(bottom_file=upload(), outer_file=upload(), shoes_file=upload())
         self.assertEqual(result['status'], 'succeeded')
         self.assertEqual(self.provider.await_count, 4)
-        self.assertEqual(access.spent_today('a'), 4)
+        self.assertEqual(access.spent_today('a'), 4 * FINAL)
         self.assertEqual(self.protect_mock.call_args.args[3], ['bottom', 'outer', 'shoes', 'top'])
 
     async def test_stage_failure_releases_unused_reservations(self):
@@ -178,7 +189,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         result = await self.generate(bottom_file=upload(), outer_file=upload())
         self.assertIn('error', result)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(access.spent_today('a'), 2, 'two attempted stages stay charged, the third is released')
+        self.assertEqual(access.spent_today('a'), 2 * FINAL, 'two attempted layers stay charged, the third is released')
 
     async def test_failed_outfit_never_retries_paid_calls(self):
         self.provider.side_effect = None
@@ -187,7 +198,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertNotIn('outputUrl', result)
         self.assertEqual(self.provider.await_count, 1)
-        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(access.spent_today('a'), 1 * FINAL)
 
     async def test_async_job_is_retrievable_by_owner_only(self):
         response = await self.generate(async_mode='true')
@@ -205,7 +216,7 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError): await request
         result = await task
         self.assertEqual(result['status'], 'succeeded')
-        self.assertEqual(access.spent_today('a'), 1)
+        self.assertEqual(access.spent_today('a'), 1 * FINAL)
 
     async def test_slots_have_distinct_fingerprints(self):
         await self.generate(top_file=None, bottom_file=upload(), top_category='')

@@ -60,8 +60,9 @@ class ReleaseGuards(unittest.IsolatedAsyncioTestCase):
             balance.return_value = None
             self.assertTrue(fashn_credits.sufficient('key', 3), 'unknown balance never blocks')
             balance.return_value = 11
-            self.assertFalse(fashn_credits.sufficient('key', 3), '11 < 3 stages x 4 credits')
-            self.assertTrue(fashn_credits.sufficient('key', 2))
+            # A three-layer final costs 3 x 4 = 12 credits; the same draft costs 3.
+            self.assertFalse(fashn_credits.sufficient('key', 12), '11 credits cannot pay a three-layer final')
+            self.assertTrue(fashn_credits.sufficient('key', 3), 'but they pay the same look as a draft')
 
     async def test_look_is_refused_before_reserving_quota_when_balance_is_short(self):
         os.environ['FASHN_CREDITS_GUARD'] = '1'

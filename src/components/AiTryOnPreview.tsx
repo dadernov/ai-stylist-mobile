@@ -60,6 +60,7 @@ export function AiTryOnPreview({
   warningMessage,
   updatedAt: controlledUpdatedAt,
   tuckMode,
+  qualityMode,
   history: suppliedHistory = [],
   showSourcePhoto = false,
   onGenerated,
@@ -94,10 +95,12 @@ export function AiTryOnPreview({
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  // Fit is adjustable; every generation uses the same quality policy.
   const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
-  const effectiveQualityMode: TryOnQualityMode = 'quality';
+  // What the shown picture is: a cheap draft ('fast') or the final ('quality').
+  // Results saved before drafts existed carry no mode and were finals.
+  const [resultQuality, setResultQuality] = useState<TryOnQualityMode>(qualityMode || 'quality');
+  const isDraft = resultQuality === 'fast';
   const cachedRemoteUris = useRef<Record<string, boolean>>({});
   const mounted = useRef(true);
   useEffect(() => {
@@ -140,6 +143,7 @@ export function AiTryOnPreview({
 
   useEffect(() => {
     setResultUri(reanchorTryOnUri(controlledResultUri));
+    setResultQuality(qualityMode || 'quality');
     setResultImageError(null);
     setResultImageLoading(false);
   }, [controlledResultUri]);
@@ -157,7 +161,7 @@ export function AiTryOnPreview({
         ? (await cacheTryOnImage(resultUri, `export-${Date.now()}`, login)).imageUri : resultUri;
       await MediaLibrary.saveToLibraryAsync(fileUri);
       if (!mounted.current) return;
-      setSaveState('saved'); setSaveMessage(t('Сохранено в галерею в полном качестве'));
+      setSaveState('saved'); setSaveMessage(t(isDraft ? 'Черновик сохранён в галерею' : 'Сохранено в галерею в полном качестве'));
     } catch (e: any) {
       if (!mounted.current) return;
       setSaveState('error'); setSaveMessage(e?.message || t('Не удалось сохранить в галерею'));
@@ -188,7 +192,7 @@ export function AiTryOnPreview({
         warning: nextWarning,
         updatedAt: timestamp,
         tuckMode: effectiveTuckMode,
-        qualityMode: effectiveQualityMode
+        qualityMode: qualityMode || 'quality'
       });
     }).catch(() => { if (!cancelled) setWarning(t('Не удалось сохранить фото на устройстве. Освободи место и повтори загрузку результата.')); });
 
@@ -221,16 +225,20 @@ export function AiTryOnPreview({
     seenJobs.current.add(latest.id);
     if (controlledResultUri && latest.createdAt < mountedAt.current) return;
     const result = latest.result;
-    setResultUri(result.imageUri); setWarning(result.warning || null); setShowOriginal(false);
-    onGenerated?.({ ...result, tuckMode: result.tuckMode || 'auto', qualityMode: 'quality' });
+    setResultUri(result.imageUri); setResultQuality(result.qualityMode || 'quality');
+    setWarning(result.warning || null); setShowOriginal(false);
+    onGenerated?.({ ...result, tuckMode: result.tuckMode || 'auto', qualityMode: result.qualityMode || 'quality' });
   }, [jobs, context]);
-  const run = async () => {
+  // A try-on starts as a draft (one credit per garment). The final costs four
+  // times more and is made only when the user wants to keep the look. `fresh`
+  // redoes every layer: the user disliked the result, and any layer may be why.
+  const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
     setLoading(true);
     setError(null);
     setWarning(null);
     try {
-      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode });
+      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh });
     } catch (e: any) {
       if (mounted.current) setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
@@ -276,6 +284,9 @@ export function AiTryOnPreview({
               setResultImageError(t('Эта старая картинка больше недоступна. Перегенерируй образ, новая версия сохранится локально.'));
             }}
           />
+          {isDraft && !showOriginal ? (
+            <View style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Черновик')}</Text></View>
+          ) : null}
           {resultImageLoading && !resultImageError ? (
             <View style={styles.imageOverlay}>
               <ActivityIndicator color="#1F1D1A" />
@@ -294,7 +305,8 @@ export function AiTryOnPreview({
           accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
           {saveState === 'saving' ? <ActivityIndicator size="small" color={colors.text} />
             : saveState === 'saved' ? <Check size={17} strokeWidth={1.8} color={colors.text} /> : <Download size={17} strokeWidth={1.6} color={colors.text} />}
-          <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')}</Text>
+          <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею'
+            : isDraft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')}</Text>
         </AppPressable>
       ) : null}
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
@@ -352,6 +364,7 @@ export function AiTryOnPreview({
                 onPress={() => {
                   const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
                   setResultUri(anchored);
+                  setResultQuality(item.qualityMode || 'quality');
                   setWarning(item.warning || null);
                   setResultImageError(null);
                   setShowOriginal(false);
@@ -374,14 +387,18 @@ export function AiTryOnPreview({
                   ) : null}
                 </View>
                 <Text style={styles.historyText}>{shortDateTime(item.updatedAt)}</Text>
+                {item.qualityMode === 'fast' ? <Text style={styles.historyText}>{t('черновик')}</Text> : null}
               </AppPressable>
             ))}
           </ScrollView>
         </View>
       ) : null}
+      {resultUri && isDraft && !isBusy ? (
+        <Text style={styles.hint}>{t('Это быстрый черновик: лицо и фон твои, но ткань и детали упрощены. Понравилось — сделай в высоком качестве.')}</Text>
+      ) : null}
       <AppPressable
         style={[styles.button, (!canGenerate || isBusy) && styles.buttonDisabled]}
-        onPress={run}
+        onPress={() => void (!resultUri ? run('fast') : isDraft ? run('quality') : run('quality', true))}
         disabled={!canGenerate || isBusy}
         accessibilityRole="button"
         accessibilityState={{ disabled: !canGenerate || isBusy, busy: isBusy }}
@@ -390,11 +407,22 @@ export function AiTryOnPreview({
         <Text style={styles.buttonText}>
           {isBusy
             ? busyLabel
-            : resultUri
-              ? t('Перегенерировать')
-              : t('Примерить')}
+            : !resultUri
+              ? t('Примерить')
+              : isDraft
+                ? t('Сделать в высоком качестве')
+                : t('Перегенерировать')}
         </Text>
       </AppPressable>
+      {resultUri && isDraft && !isBusy ? (
+        <AppPressable style={styles.linkButton} onPress={() => void run('fast', true)} disabled={!canGenerate}
+          accessibilityRole="button" accessibilityState={{ disabled: !canGenerate }}>
+          <Text style={styles.linkText}>{t('Другой вариант черновика')}</Text>
+        </AppPressable>
+      ) : null}
+      {!resultUri && !isBusy && canGenerate ? (
+        <Text style={styles.hint}>{t('Сначала сделаем быстрый черновик. Понравится — сделаем в высоком качестве.')}</Text>
+      ) : null}
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>
@@ -504,6 +532,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     minHeight: 46,
     paddingVertical: 11,
     backgroundColor: c.card
+  },
+  linkButton: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12
+  },
+  linkText: {
+    color: c.accentGold,
+    fontSize: 14
   },
   secondaryButtonText: {
     color: c.text,

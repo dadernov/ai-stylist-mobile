@@ -217,12 +217,17 @@ class ProviderPolicy(unittest.TestCase):
         self.assertIn('Match the open or closed state of the product photo', prompt)
         self.assertNotIn('fully open and unfastened', prompt)
 
-    def test_provider_inputs_force_quality_even_with_legacy_env(self):
+    def test_legacy_env_never_leaks_into_provider_inputs(self):
+        # Old variables must not quietly downgrade a final: only the profile decides.
         with patch.dict(os.environ, {'FASHN_GENERATION_MODE': 'fast', 'FASHN_RESOLUTION': '1k'}):
-            inputs = app._build_fashn_inputs('tryon-max', 'person', 'garment', generation_mode_override='fast')
+            inputs = app._build_fashn_inputs('tryon-max', 'person', 'garment')
         self.assertEqual(inputs['generation_mode'], 'quality')
         self.assertEqual(inputs['resolution'], '2k')
         self.assertEqual(inputs['output_format'], 'png')
+
+    def test_profile_values_reach_the_provider(self):
+        inputs = app._build_fashn_inputs('tryon-max', 'person', 'garment', generation_mode_override='fast', resolution_override='1k')
+        self.assertEqual((inputs['generation_mode'], inputs['resolution']), ('fast', '1k'))
 
     def test_long_coat_has_full_length_prompt_and_composite_zone(self):
         for category in ['Плащ', 'Тренч', 'Пальто']:
@@ -252,11 +257,17 @@ class ProviderPolicy(unittest.TestCase):
 class ApiFlow(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3'})
+        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3',
+                                           'AI_STAGE_CACHE_DIR': self.temp.name + '/stages'})
         self.env.start()
         app.access.reset_state_for_tests()
+        # Provider URLs here are fake: fetching a layer frame fails, as it would
+        # on a network error, which the pipeline must tolerate.
+        self.loader = patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=None))
+        self.loader.start()
 
     def tearDown(self):
+        self.loader.stop()
         app.access.reset_state_for_tests()
         self.env.stop()
         self.temp.cleanup()
@@ -296,7 +307,7 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(inputs[0]['model_image'].startswith('data:image/jpeg'))
                 self.assertEqual([stage['model_image'] for stage in inputs[1:]], ['https://example.test/result.png'] * 3)
 
-    async def test_legacy_fast_request_uses_quality_for_every_stage(self):
+    async def test_fast_request_is_a_draft_on_every_layer(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
         generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
         with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), patch.object(app, '_prepare_identity_source', return_value='prepared'), \
@@ -305,13 +316,29 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
             result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=None, shoes_file=upload(), outer_file=upload(),
                 tuck_mode='auto', compare_mode='false', quality_mode='fast', top_category='Рубашка', outer_category='Плащ', device='test')
         self.assertEqual(result['status'], 'succeeded', result)
-        self.assertEqual(result['qualityModeUsed'], 'quality')
+        self.assertEqual(result['qualityModeUsed'], 'fast')
         self.assertEqual([step['step'] for step in result['steps']], ['shoes', 'top', 'outer'])
         self.assertEqual(generate.await_count, 3)
         for call in generate.call_args_list:
             self.assertEqual(call.args[2], 'tryon-max')
-            self.assertEqual(call.kwargs['generation_mode_override'], 'quality')
+            self.assertEqual(call.kwargs['generation_mode_override'], 'fast')
+            self.assertEqual(call.kwargs['resolution_override'], '1k')
+        self.assertEqual(result['creditsCharged'], 3, 'three draft layers at one credit each')
+        # The draft goes through the same identity lock as the final.
         self.assertIn('long_outer', protect.call_args.args[3])
+
+    async def test_quality_request_is_a_final_on_every_layer(self):
+        app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()
+        generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://example.test/result.png'})
+        with patch.dict(os.environ, {'FASHN_API_KEY': 'test-key'}), patch.object(app, '_prepare_identity_source', return_value='prepared'), \
+             patch.object(app, '_run_fashn_tryon_with_category_fallback', generate), \
+             patch.object(app, '_face_locked_output_url', AsyncMock(return_value='data:image/png;base64,protected')):
+            result = await app.tryon_generate_look(person_file=upload(), top_file=upload(), bottom_file=upload(), shoes_file=None, outer_file=None,
+                tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Рубашка', outer_category='', device='test')
+        self.assertEqual(result['qualityModeUsed'], 'quality')
+        for call in generate.call_args_list:
+            self.assertEqual((call.kwargs['generation_mode_override'], call.kwargs['resolution_override']), ('quality', '2k'))
+        self.assertEqual(result['creditsCharged'], 8, 'two final layers at four credits each')
 
     async def test_collage_strategy_remains_available_as_one_call(self):
         app._TRYON_LOOK_CACHE.clear(); app._TRYON_LOOK_INFLIGHT.clear()

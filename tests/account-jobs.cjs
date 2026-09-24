@@ -158,7 +158,7 @@ async function run() {
   await test('in-flight generation survives screen/account unmount and charges one request', async () => {
     const pending = deferred();
     let calls = 0;
-    submit = async (...args) => { calls++; assert.equal(args.at(-1).login, 'alice'); return pending.promise; };
+    submit = async (...args) => { calls++; assert.equal(args.at(-2).login, 'alice'); return pending.promise; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'context', tuckMode: 'auto' };
@@ -273,7 +273,7 @@ async function run() {
   });
   await test('regenerate gets a new ID; a rejected protected result is not displayed', async () => {
     const ids = [];
-    submit = async (...args) => { ids.push(args.at(-2)); return response; };
+    submit = async (...args) => { ids.push(args.at(-3)); return response; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'ctx', tuckMode: 'auto' };
@@ -344,6 +344,80 @@ async function run() {
     await store.activate(alice);
     await store.importLooks([{ id: 'old', name: 'Old', itemIds: ['coat'], createdAt: 1, tryOnImageUri: response.outputUrl }], [item]);
     assert.equal(values.get(accountKey('alice', 'tryOnJobs')), '[null]');
+    store.deactivate();
+  });
+  await test('a draft goes out as fast, the final as quality, and each result remembers which it was', async () => {
+    const sent = [];
+    submit = async (...args) => { sent.push({ quality: args[6], fresh: args.at(-1) }); return { ...response, updatedAt: 1000 + sent.length }; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const look = { modelUri: 'person', items: [item], context: 'draft-final', tuckMode: 'auto' };
+    await store.start({ ...look, quality: 'fast' });
+    await store.start({ ...look, quality: 'quality' });
+    assert.deepEqual(sent, [{ quality: 'fast', fresh: false }, { quality: 'quality', fresh: false }]);
+    const [final, draft] = store.getSnapshot().jobs;
+    assert.equal(draft.result.qualityMode, 'fast');
+    assert.equal(final.result.qualityMode, 'quality');
+    const saved = JSON.parse(values.get(accountKey('alice', 'tryOnJobs')));
+    assert.deepEqual(saved.map(job => job.quality), ['quality', 'fast'], 'the mode survives a restart');
+    store.deactivate();
+  });
+  await test('a running draft does not block the final of the same look', async () => {
+    const draft = deferred();
+    let calls = 0;
+    submit = async (...args) => { calls++; return args[6] === 'fast' ? draft.promise : response; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const look = { modelUri: 'person', items: [item], context: 'parallel', tuckMode: 'auto' };
+    const running = store.start({ ...look, quality: 'fast' });
+    await settle();
+    await store.start({ ...look, quality: 'quality' });
+    assert.equal(calls, 2, 'the final is a separate paid job, not a duplicate of the draft');
+    draft.resolve(response); await running;
+    store.deactivate();
+  });
+  await test('the same draft twice while it runs is still one paid request', async () => {
+    const draft = deferred();
+    let calls = 0;
+    submit = async () => { calls++; return draft.promise; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const look = { modelUri: 'person', items: [item], context: 'double-tap', tuckMode: 'auto', quality: 'fast' };
+    const first = store.start(look);
+    await settle();
+    await store.start(look);
+    draft.resolve(response); await first;
+    assert.equal(calls, 1);
+    store.deactivate();
+  });
+  await test('fresh reaches the server only when asked', async () => {
+    const flags = [];
+    submit = async (...args) => { flags.push(args.at(-1)); return response; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const look = { modelUri: 'person', items: [item], context: 'fresh', tuckMode: 'auto', quality: 'fast' };
+    await store.start(look);
+    await store.start({ ...look, fresh: true });
+    assert.deepEqual(flags, [false, true]);
+    store.deactivate();
+  });
+  await test('history saved before drafts existed loads as finals', async () => {
+    const old = { id: 'old', context: 'ctx', itemIds: ['coat'], name: 'Old', createdAt: 1, tuckMode: 'auto', status: 'succeeded',
+      result: { id: 'old', imageUri: 'data:image/png;base64,OLD', updatedAt: 1 } };
+    values.set(accountKey('alice', 'tryOnJobs'), JSON.stringify([old]));
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    assert.equal(store.getSnapshot().readOnly, false);
+    assert.equal(store.getSnapshot().jobs[0].quality, undefined);
+    store.deactivate();
+  });
+  await test('an unknown quality in stored history is treated as damage, not guessed', async () => {
+    const odd = { id: 'odd', context: 'ctx', itemIds: [], name: 'Odd', createdAt: 1, tuckMode: 'auto', status: 'pending', quality: 'ultra' };
+    values.set(accountKey('alice', 'tryOnJobs'), JSON.stringify([odd]));
+    submit = () => assert.fail('must not submit');
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    assert.equal(store.getSnapshot().readOnly, true);
     store.deactivate();
   });
   console.log(`PASS: ${passed} account, networking and durable job regressions`);

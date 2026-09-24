@@ -24,7 +24,7 @@
 <ul>
   <li><b>Аккаунт.</b> Логин, отображаемое имя и пароль. Пароль хранится только в виде необратимого хеша. Нужны для входа и для учёта лимита генераций.</li>
   <li><b>Фото одежды.</b> Отправляются на сервер для распознавания типа вещи и цвета. Сервер обрабатывает снимок в памяти и не сохраняет его после ответа.</li>
-  <li><b>Фото для примерки.</b> Ваше фото в полный рост и фото выбранных вещей отправляются на сервер и передаются партнёру по генерации изображений FASHN AI (fashn.ai) для создания виртуальной примерки. Готовый результат хранится на сервере не дольше 24 часов, чтобы приложение могло его получить, после чего удаляется. Записи о заданиях без изображений (идентификатор, время, статус) хранятся для защиты от повторного списания.</li>
+  <li><b>Фото для примерки.</b> Ваше фото в полный рост и фото выбранных вещей отправляются на сервер и передаются партнёру по генерации изображений FASHN AI (fashn.ai) для создания виртуальной примерки. Готовый результат и промежуточные слои примерки (кадры после каждой надетой вещи) хранятся на сервере не дольше 24 часов, после чего удаляются. Результат нужен, чтобы приложение могло его получить; промежуточные слои позволяют при следующей примерке с теми же вещами не генерировать их заново. Слои доступны только вашему аккаунту. Записи о заданиях без изображений (идентификатор, время, статус) хранятся для защиты от повторного списания.</li>
   <li><b>Счётчики использования.</b> Сколько генераций сделано за день по аккаунту. Нужны для дневного лимита.</li>
   <li><b>Геопозиция.</b> Только с вашего разрешения и только для прогноза погоды. Координаты отправляются приложением напрямую в сервис Open-Meteo (open-meteo.com) и на наш сервер не передаются.</li>
 </ul>
@@ -41,7 +41,7 @@
 <p>Приложение не содержит рекламных и аналитических трекеров и не продаёт данные.</p>
 
 <h2>5. Сроки хранения и удаление</h2>
-<p>Аккаунт можно удалить в приложении: Профиль → «Удалить аккаунт». При этом на сервере удаляются учётная запись, сессии, результаты примерок и счётчики, а на устройстве — все данные приложения. Результаты примерок и без этого удаляются через 24 часа.</p>
+<p>Аккаунт можно удалить в приложении: Профиль → «Удалить аккаунт». При этом на сервере удаляются учётная запись, сессии, результаты и промежуточные слои примерок и счётчики, а на устройстве — все данные приложения. Результаты и слои примерок и без этого удаляются через 24 часа.</p>
 
 <h2>6. Безопасность</h2>
 <p>Соединение с сервером защищено HTTPS. Доступ к генерации есть только у вошедших пользователей, число запросов ограничено. Сервер размещён на арендованном VPS.</p>
@@ -54,7 +54,7 @@
 
 <hr>
 <h2>Privacy Policy (English summary)</h2>
-<p>AI Stylist is maintained by an individual developer (contact: mrbdigital@proton.me). We store your login, display name and a password hash. Garment photos are processed in memory for classification and are not retained. For virtual try-on, your full-body photo and garment photos are sent to our server and to the generation provider FASHN AI (fashn.ai); the resulting image is kept on our server for up to 24 hours so the app can fetch it, then deleted. Daily usage counters are kept per account. Location, with your permission, is sent directly by the app to Open-Meteo for the weather forecast and never reaches our server. Your wardrobe, looks and try-on history live on your device. No ads, no analytics trackers. You can delete your account and all server data in the app (Profile → Delete account); local data is removed at the same time. The app is not directed at children under 13.</p>
+<p>AI Stylist is maintained by an individual developer (contact: mrbdigital@proton.me). We store your login, display name and a password hash. Garment photos are processed in memory for classification and are not retained. For virtual try-on, your full-body photo and garment photos are sent to our server and to the generation provider FASHN AI (fashn.ai); the resulting image and the intermediate try-on layers (the frame after each garment is put on) are kept on our server for up to 24 hours, then deleted. The result lets the app fetch it; the layers let a later try-on with the same garments skip regenerating them, and are available only to your account. Daily usage counters are kept per account. Location, with your permission, is sent directly by the app to Open-Meteo for the weather forecast and never reaches our server. Your wardrobe, looks and try-on history live on your device. No ads, no analytics trackers. You can delete your account and all server data in the app (Profile → Delete account); local data is removed at the same time. The app is not directed at children under 13.</p>
 </main>
 </body>
 </html>

@@ -24,7 +24,7 @@ class Gate(unittest.TestCase):
         os.environ["AI_QUOTA_DB"] = os.path.join(self.directory.name, "quota.sqlite3")
         os.environ["AI_ACCOUNTS_DB"] = os.path.join(self.directory.name, "accounts.sqlite3")
         os.environ["AI_CLIENT_TOKENS"] = "good-token, second-token"
-        os.environ["AI_DEVICE_DAILY_QUOTA"] = "3"
+        os.environ["AI_DAILY_CREDITS"] = "3"
         access.reset_state_for_tests()
         accounts.reset_state_for_tests()
         self.session = accounts.register("masha", "very-long-password")["token"]
@@ -33,7 +33,7 @@ class Gate(unittest.TestCase):
         access.reset_state_for_tests()
         accounts.reset_state_for_tests()
         self.directory.cleanup()
-        for name in ("AI_QUOTA_DB", "AI_ACCOUNTS_DB", "AI_CLIENT_TOKENS", "AI_DEVICE_DAILY_QUOTA"):
+        for name in ("AI_QUOTA_DB", "AI_ACCOUNTS_DB", "AI_CLIENT_TOKENS", "AI_DAILY_CREDITS"):
             os.environ.pop(name, None)
 
     DEFAULT = object()
