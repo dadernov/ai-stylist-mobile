@@ -19,6 +19,7 @@ import { FormScrollView } from '../components/ui/FormScrollView';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
+import { DragHandle } from '../components/DragHandle';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -668,7 +669,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={closeDraft}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHandle} />
+            <DragHandle onDismiss={closeDraft} />
             <View style={{ flex: 1 }}>
               <FormScrollView
                 contentContainerStyle={styles.modalContent}
@@ -764,7 +765,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHandle} />
+            <DragHandle onDismiss={() => setEditModalVisible(false)} />
             <View style={{ flex: 1 }}>
               <FormScrollView
                 contentContainerStyle={styles.modalContent}

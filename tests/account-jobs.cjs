@@ -31,6 +31,7 @@ const stubs = {
   '@react-native-async-storage/async-storage': { default: storage },
   'react-native': { Platform: { OS: 'ios' } },
   'expo-file-system/legacy': files,
+  'expo-file-system': { File: class File { constructor(...parts) { this.uri = parts.join('/'); } write() {} get name() { return 'file'; } }, Paths: { cache: '/cache/' } },
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'sha256' }, randomUUID: crypto.randomUUID,
     digestStringAsync: async (algorithm, value) => crypto.createHash(algorithm).update(value).digest('hex') }
 };

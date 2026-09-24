@@ -1,4 +1,6 @@
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
+import { File } from 'expo-file-system';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { readStoredSession, Session } from './auth';
 import { fetchJson } from './http';
@@ -110,17 +112,51 @@ const parseJsonOrThrow = async (res: Response) => {
   }
 };
 
+const UPLOAD_ERROR = 'Не удалось прочитать выбранное фото. Выбери его ещё раз.';
+
+// Since SDK 57 the global fetch is Expo's: multipart parts must be strings,
+// Blobs or expo-file-system File objects. The old { uri, name, type } part
+// throws "Unsupported FormDataPart implementation".
 const appendPhoto = async (form: FormData, field: string, uri: string) => {
+  const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
+  const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
+  const extension = png ? 'png' : webp ? 'webp' : 'jpg';
   if (Platform.OS === 'web') {
     const response = await fetch(uri);
-    if (!response.ok) throw new Error('Не удалось прочитать выбранное фото. Выбери его ещё раз.');
+    if (!response.ok) throw new Error(UPLOAD_ERROR);
     const blob = await response.blob();
     form.append(field, blob, `${field}.${blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'}`);
     return;
   }
-  const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
-  const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
-  form.append(field, { uri, name: `${field}.${png ? 'png' : webp ? 'webp' : 'jpg'}`, type: png ? 'image/png' : webp ? 'image/webp' : 'image/jpeg' } as any);
+  let fileUri = uri;
+  if (!/^file:\/\//i.test(uri)) {
+    // Data URLs and foreign schemes are materialised in the cache first; the
+    // legacy writer is the same one that stores wardrobe photos.
+    const target = `${LegacyFileSystem.cacheDirectory || ''}upload-${field}-${Date.now()}.${extension}`;
+    try {
+      if (/^data:image\//i.test(uri)) {
+        await LegacyFileSystem.writeAsStringAsync(target, uri.split(',')[1] || '', { encoding: LegacyFileSystem.EncodingType.Base64 });
+      } else if (/^https?:\/\//i.test(uri)) {
+        const download = await LegacyFileSystem.downloadAsync(uri, target);
+        if (download.status < 200 || download.status >= 300) throw new Error(UPLOAD_ERROR);
+      } else {
+        await LegacyFileSystem.copyAsync({ from: uri, to: target });
+      }
+    } catch {
+      throw new Error(UPLOAD_ERROR);
+    }
+    fileUri = target;
+  }
+  // Expo's multipart encoder accepts any part with bytes(); File itself
+  // exposes arrayBuffer() only, so wrap it with the name and type it needs.
+  const file = new File(fileUri);
+  const part = {
+    uri: fileUri,
+    name: `${field}.${extension}`,
+    type: png ? 'image/png' : webp ? 'image/webp' : 'image/jpeg',
+    bytes: async () => new Uint8Array(await file.arrayBuffer())
+  };
+  form.append(field, part as unknown as Blob);
 };
 
 export async function analyzeImage(uri: string, sectionHint?: string): Promise<AiResult> {
