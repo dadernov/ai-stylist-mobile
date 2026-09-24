@@ -129,6 +129,24 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.provider.await_count, 3)
         self.assertEqual(access.spent_today('a'), 3)
 
+    async def test_running_job_exposes_stage_progress_and_is_not_served_as_cached(self):
+        first = self.generate(bottom_file=upload(), outer_file=upload(), async_mode='true')
+        accepted = await first
+        self.assertEqual(accepted.status_code, 202)
+        await asyncio.sleep(.005)
+        live = await app.tryon_job('request_000000001', device='a')
+        self.assertEqual(live['status'], 'processing')
+        self.assertEqual(live['progress']['total'], 3)
+        self.assertIn(live['progress']['stage'], ['bottom', 'top', 'outer', 'composite'])
+        self.assertNotIn('outputUrl', live)
+        # A duplicate submit while running must not hand the progress payload back as a finished result.
+        again = await self.generate(bottom_file=upload(), outer_file=upload(), async_mode='true')
+        self.assertEqual(again.status_code, 202)
+        await asyncio.gather(*app._TRYON_LOOK_INFLIGHT.values())
+        done = await app.tryon_job('request_000000001', device='a')
+        self.assertEqual(done['outputUrl'], 'protected')
+        self.assertNotIn('progress', done)
+
     async def test_new_id_generates_new_seed_but_retry_reuses_result(self):
         await self.generate(); cached = await self.generate()
         await self.generate('request_000000002')
@@ -198,3 +216,25 @@ class JobApi(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_request_id_never_starts(self):
         with self.assertRaises(HTTPException): await self.generate('../../bad')
         self.provider.assert_not_called()
+
+
+class Progress(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'AI_QUOTA_DB': self.temp.name + '/quota.sqlite3'})
+        self.env.start(); access.reset_state_for_tests()
+
+    def tearDown(self):
+        access.reset_state_for_tests(); self.env.stop(); self.temp.cleanup()
+
+    def test_progress_is_visible_while_running_and_replaced_by_the_result(self):
+        jobs.start('a', 'job', 'fingerprint', 2)
+        jobs.progress('a', 'job', {'progress': {'done': [], 'pending': ['top'], 'stage': 'bottom', 'total': 2}})
+        live = jobs.get('a', 'job')
+        self.assertEqual(live['status'], 'running')
+        self.assertEqual(live['result']['status'], 'processing')
+        self.assertEqual(live['result']['progress']['stage'], 'bottom')
+        jobs.finish('a', 'job', {'status': 'succeeded', 'outputUrl': 'data:image/png;base64,AA'})
+        self.assertNotIn('progress', jobs.get('a', 'job')['result'])
+        jobs.progress('a', 'job', {'progress': {'stage': 'late'}})
+        self.assertEqual(jobs.get('a', 'job')['result']['outputUrl'], 'data:image/png;base64,AA', 'finished jobs ignore late progress')

@@ -6,12 +6,13 @@ import { useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
+import * as MediaLibrary from 'expo-media-library';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, ChevronDown, ChevronUp, SlidersHorizontal, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
@@ -48,6 +49,9 @@ const shortDateTime = (timestamp: number) =>
 
 const mergeMessages = (...messages: Array<string | null | undefined>) =>
   messages.filter(Boolean).join(' · ') || undefined;
+
+// Server stage names map onto wardrobe sections, so progress can name the garment itself.
+const STAGE_SECTIONS: Record<string, string> = { bottom: 'Низ', shoes: 'Обувь', top: 'Верх', outer: 'Верхняя одежда' };
 
 export function AiTryOnPreview({
   modelUri,
@@ -88,6 +92,8 @@ export function AiTryOnPreview({
   const [resultImageLoading, setResultImageLoading] = useState(false);
   const [resultImageError, setResultImageError] = useState<string | null>(null);
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   // Fit is adjustable; every generation uses the same quality policy.
   const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
@@ -108,6 +114,23 @@ export function AiTryOnPreview({
   const shoesGarment = useMemo(() => pickShoesGarment(items), [items]);
   const canGenerate = Boolean(modelUri && context && jobsReady && !readOnly && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
   const isBusy = isLoading || Boolean(pendingJob);
+  const progress = pendingJob?.progress;
+  const stageLabel = (stage: string) => {
+    const section = STAGE_SECTIONS[stage];
+    const garment = section ? items.find(item => item.section === section && item.imageUri) : undefined;
+    return garment?.name || (section ? t(section) : stage);
+  };
+  const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
+  const busyLabel = !progress ? t('Генерируем образ…')
+    : progress.stage === 'composite' ? t('Восстанавливаем лицо и фон…')
+    : progress.stage ? t('Надеваем: {name} ({step} из {total})…', { name: stageLabel(progress.stage), step: String(progress.done.length + 1), total: String(progress.total) })
+    : t('Генерируем образ…');
+  const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
+  const intermediateHint = !progress ? null
+    : progress.pending.length || (progress.stage && progress.stage !== 'composite')
+      ? t('Уже надето: {done}. Осталось: {pending}. Лицо и фон восстановятся в финальной версии.', {
+        done: listStages(progress.done) || '—', pending: listStages([...(progress.stage && progress.stage !== 'composite' ? [progress.stage] : []), ...progress.pending]) })
+      : t('Все вещи надеты. Восстанавливаем лицо и фон…');
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
     !topGarment && !outerGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
@@ -120,6 +143,26 @@ export function AiTryOnPreview({
     setResultImageError(null);
     setResultImageLoading(false);
   }, [controlledResultUri]);
+
+  useEffect(() => { setSaveState('idle'); setSaveMessage(null); }, [resultUri]);
+
+  const saveToGallery = async () => {
+    if (!resultUri || saveState === 'saving' || isBusy) return;
+    setSaveState('saving'); setSaveMessage(null);
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (!permission.granted) throw new Error(t('Нет доступа к галерее. Разреши сохранение фото в настройках.'));
+      // The gallery gets the stored full-size PNG, never a downscaled preview.
+      const fileUri = isRemoteUri(resultUri) || resultUri.startsWith('data:')
+        ? (await cacheTryOnImage(resultUri, `export-${Date.now()}`, login)).imageUri : resultUri;
+      await MediaLibrary.saveToLibraryAsync(fileUri);
+      if (!mounted.current) return;
+      setSaveState('saved'); setSaveMessage(t('Сохранено в галерею в полном качестве'));
+    } catch (e: any) {
+      if (!mounted.current) return;
+      setSaveState('error'); setSaveMessage(e?.message || t('Не удалось сохранить в галерею'));
+    }
+  };
 
   useEffect(() => {
     setWarning(warningMessage || null);
@@ -197,13 +240,20 @@ export function AiTryOnPreview({
 
   return (
     <View style={styles.wrap}>
-      {resultUri && modelUri && <View style={styles.comparison} accessibilityRole="tablist">
+      {resultUri && modelUri && !intermediateUri && <View style={styles.comparison} accessibilityRole="tablist">
         {[false, true].map(original => <AppPressable key={String(original)} accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
           style={[styles.compareTab, showOriginal === original && styles.compareTabActive]} onPress={() => setShowOriginal(original)}>
           <Text style={styles.compareTitle}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
         </AppPressable>)}
       </View>}
-      {resultUri ? (
+      {intermediateUri ? (
+        <View style={styles.imageWrap} accessibilityLabel={t('Промежуточный результат')}>
+          <Image source={{ uri: intermediateUri }} style={styles.image} resizeMode="contain" />
+          <View style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></View>
+        </View>
+      ) : null}
+      {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
+      {resultUri && !intermediateUri ? (
         <AppPressable style={styles.imageWrap} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
@@ -238,7 +288,16 @@ export function AiTryOnPreview({
           ) : null}
         </AppPressable>
       ) : null}
-      {!resultUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
+      {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
+      {resultUri && !isBusy ? (
+        <AppPressable style={styles.secondaryButton} onPress={saveToGallery} disabled={saveState === 'saving'}
+          accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
+          {saveState === 'saving' ? <ActivityIndicator size="small" color={colors.text} />
+            : saveState === 'saved' ? <Check size={17} strokeWidth={1.8} color={colors.text} /> : <Download size={17} strokeWidth={1.6} color={colors.text} />}
+          <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')}</Text>
+        </AppPressable>
+      ) : null}
+      {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
       {warning ? <Text style={styles.hint}>{warning}</Text> : null}
@@ -330,7 +389,7 @@ export function AiTryOnPreview({
         {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
         <Text style={styles.buttonText}>
           {isBusy
-            ? t('Генерируем образ…')
+            ? busyLabel
             : resultUri
               ? t('Перегенерировать')
               : t('Примерить')}
@@ -367,7 +426,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     position: 'relative'
   },
   imageOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(245,241,234,0.88)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -419,6 +478,37 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   hint: {
     color: c.muted,
     fontSize: 11
+  },
+  intermediateBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(31,29,26,0.78)',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  intermediateBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 8,
+    minHeight: 46,
+    paddingVertical: 11,
+    backgroundColor: c.card
+  },
+  secondaryButtonText: {
+    color: c.text,
+    fontSize: 14,
+    fontWeight: '600'
   },
   qualityCard: {
     paddingVertical: 8,
@@ -499,7 +589,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.surface
   },
   historyImageError: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: c.surface,
     justifyContent: 'center',
     alignItems: 'center',

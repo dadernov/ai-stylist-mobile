@@ -9,10 +9,6 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#F6F5F2"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aistylist.mobile",
@@ -20,7 +16,8 @@
         "NSCameraUsageDescription": "Нужно разрешение, чтобы сфотографировать одежду.",
         "NSPhotoLibraryUsageDescription": "Нужно разрешение, чтобы выбрать фото одежды.",
         "NSLocationWhenInUseUsageDescription": "Нужно разрешение, чтобы получить погоду рядом с вами.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryAddUsageDescription": "Нужно разрешение, чтобы сохранить результат примерки в галерею."
       }
     },
     "android": {
@@ -28,7 +25,10 @@
         "backgroundColor": "#F6F5F2"
       },
       "package": "com.aistylist.mobile",
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -40,6 +40,16 @@
     },
     "updates": {
       "url": "https://u.expo.dev/c0772743-44f5-4023-b30d-673669bbba1d"
-    }
+    },
+    "plugins": [
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F6F5F2",
+          "resizeMode": "contain"
+        }
+      ]
+    ]
   }
 }

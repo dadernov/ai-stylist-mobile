@@ -2,14 +2,16 @@ import * as Crypto from 'expo-crypto';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { Session } from './auth';
-import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TuckMode } from './ai';
+import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TryOnProgress, TuckMode } from './ai';
 import { ApiError } from './http';
 import { accountKey } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
 
 export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
-  status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string };
+  status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string;
+  // Live stage of a running job (kept in memory only; previews are throwaway frames).
+  progress?: TryOnProgress };
 export type JobSnapshot = { jobs: TryOnJob[]; ready: boolean; readOnly?: boolean; error?: string };
 type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMode: TuckMode };
 
@@ -30,7 +32,7 @@ export class TryOnJobStore {
   private emit() { this.listeners.forEach(listener => listener()); }
   private async save() {
     if (!this.writable) throw new Error('История примерок повреждена и сохранена без изменений.');
-    try { await saveJson(accountKey(this.session.login, 'tryOnJobs'), this.snapshot.jobs); }
+    try { await saveJson(accountKey(this.session.login, 'tryOnJobs'), this.snapshot.jobs.map(({ progress: _progress, ...job }) => job)); }
     catch (error) {
       this.snapshot = { ...this.snapshot, error: 'Не удалось сохранить историю примерок. Освободи место на устройстве.' }; this.emit(); throw error;
     }
@@ -40,6 +42,14 @@ export class TryOnJobStore {
     if (!previous || Object.entries(patch).every(([key, value]) => previous[key as keyof TryOnJob] === value)) return;
     this.snapshot = { ...this.snapshot, jobs: this.snapshot.jobs.map(job => job.id === id ? { ...job, ...patch } : job) };
     this.emit(); await this.save();
+  }
+  private setProgress(id: string, progress?: TryOnProgress) {
+    const job = this.snapshot.jobs.find(job => job.id === id);
+    if (!job || job.status !== 'pending') return;
+    const same = (a?: TryOnProgress, b?: TryOnProgress) => JSON.stringify(a || null) === JSON.stringify(b || null);
+    if (same(job.progress, progress)) return;
+    this.snapshot = { ...this.snapshot, jobs: this.snapshot.jobs.map(current => current.id === id ? { ...current, progress } : current) };
+    this.emit();
   }
   async activate(session: Session) {
     this.session = session; this.active = true;
@@ -98,7 +108,7 @@ export class TryOnJobStore {
   private async complete(job: TryOnJob, response: TryOnGenerateResult) {
     if (!response.outputUrl) return false;
     const stored = await cacheTryOnImage(response.outputUrl, job.id, this.session.login);
-    await this.update(job.id, { status: 'succeeded', error: undefined, result: { id: job.id, imageUri: stored.imageUri,
+    await this.update(job.id, { status: 'succeeded', error: undefined, progress: undefined, result: { id: job.id, imageUri: stored.imageUri,
       updatedAt: response.updatedAt || Date.now(), warning: response.warning, tuckMode: job.tuckMode, qualityMode: 'quality' } });
     return true;
   }
@@ -154,6 +164,7 @@ export class TryOnJobStore {
           if (await this.complete(job, response)) return;
           failures = 0;
           await this.update(job.id, { status: 'pending', error: undefined });
+          this.setProgress(job.id, response.progress);
         } catch (error: any) {
           if (error instanceof ApiError && error.status === 200) {
             await this.update(job.id, { status: 'failed', error: error.message }); return;

@@ -88,6 +88,16 @@ def attempt(owner, job_id):
                 raise RuntimeError('Job has no reserved provider operation')
 
 
+def progress(owner, job_id, payload):
+    """Publish an intermediate state of a running job; finish() replaces it."""
+    encoded = json.dumps({'status': 'processing', 'jobId': job_id, **payload}, ensure_ascii=False)
+    with access._DB_LOCK:
+        db = _database()
+        with db:
+            db.execute("UPDATE tryon_jobs SET result=?, updated=? WHERE owner=? AND id=? AND status='running'",
+                       (encoded, time.time(), owner, job_id))
+
+
 def finish(owner, job_id, result):
     encoded = json.dumps(result, ensure_ascii=False)
     with access._DB_LOCK:

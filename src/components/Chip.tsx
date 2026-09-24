@@ -47,7 +47,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginRight: 6
   },
   activeLayer: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     pointerEvents: 'none',
     backgroundColor: c.accentGoldSoft,
     borderRadius: 6

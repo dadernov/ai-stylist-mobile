@@ -225,6 +225,22 @@ def _unlocked_output_url(original_content: bytes, frame: Image.Image):
     return _bytes_to_data_url(buff.getvalue(), 'image/png')
 
 
+def _stage_preview_url(prepared, generated_image: Image.Image, max_height: int = 1024):
+    """A small provider frame in the photo's coordinates for the progress view.
+
+    Nothing is locked here: the head and far background are the generator's
+    own. The client labels it as intermediate; the final frame replaces it.
+    """
+    original = prepared[0]
+    padded, box = tryon_frame.pad(original)
+    framed = tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
+    if framed.height > max_height:
+        framed = framed.resize((max(1, round(framed.width * max_height / framed.height)), max_height), Image.Resampling.LANCZOS)
+    buff = BytesIO()
+    framed.convert('RGB').save(buff, format='JPEG', quality=82, optimize=True, icc_profile=image_color.SRGB_BYTES)
+    return _bytes_to_data_url(buff.getvalue(), 'image/jpeg')
+
+
 def _silhouette(image: Image.Image):
     """Cut the person out so the composite can tell body from background."""
     buffer = BytesIO()
@@ -1182,10 +1198,24 @@ async def tryon_generate_look(
             )
             timings = {'prepareSeconds': round(time.monotonic() - started, 2)}
             steps = []
+            names = [name for name, _, _ in stages]
+            preview_url = None
+
+            async def publish(done, stage=None, preview_url=None):
+                # Progress is best effort: a failed write never fails the paid work.
+                try:
+                    payload = {'progress': {'done': done, 'pending': [n for n in names if n not in done and n != stage],
+                                            'stage': stage, 'total': len(names)}}
+                    if preview_url:
+                        payload['progress']['previewUrl'] = preview_url
+                    await asyncio.to_thread(jobs.progress, device, job_id, payload)
+                except Exception as exc:
+                    print(f'Try-on progress unavailable: {type(exc).__name__}', flush=True)
 
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-                for step_name, reference, prompt in stages:
+                for index, (step_name, reference, prompt) in enumerate(stages):
                     step_started = time.monotonic()
+                    await publish(names[:index], stage=step_name, preview_url=preview_url if index else None)
                     jobs.attempt(device, job_id)
                     result = await _run_fashn_tryon_with_category_fallback(
                         client, token, look_model_name, current_model, reference, ['auto'],
@@ -1201,6 +1231,14 @@ async def tryon_generate_look(
                     # The provider's frame is the model for the next garment. It is
                     # already on the provider's canvas, so nothing is refitted.
                     current_model = result['outputUrl']
+                    if index < len(stages) - 1:
+                        try:
+                            frame = await _load_image_from_url_or_data_url(client, current_model)
+                            preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, frame) if frame else None
+                        except Exception as exc:
+                            print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
+                            preview_url = None
+                await publish(names, stage='composite', preview_url=preview_url)
 
             changed_slots = sorted(tryon_policy.composite_slot(slot, outer_category if slot == 'outer' else top_category)
                                    for slot in garments)
@@ -1259,7 +1297,7 @@ async def tryon_generate_look(
 
         async with _TRYON_LOOK_LOCK:
             created, job = await asyncio.to_thread(jobs.start, device, job_id, cache_key, cost)
-            if not created and job['result']:
+            if not created and job['status'] != 'running' and job['result']:
                 return {**job['result'], 'cached': True}
             inflight_task = _TRYON_LOOK_INFLIGHT.get(task_key)
             if created:

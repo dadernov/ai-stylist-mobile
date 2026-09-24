@@ -46,6 +46,15 @@ export type TryOnModelResult = {
   sourceHeight: number;
 };
 
+export type TryOnProgress = {
+  // Server stage names: bottom | shoes | top | outer | outfit, plus 'composite' for the final lock.
+  done: string[];
+  pending: string[];
+  stage?: string | null;
+  total: number;
+  previewUrl?: string;
+};
+
 export type TryOnGenerateResult = {
   status: string;
   jobId?: string;
@@ -56,6 +65,8 @@ export type TryOnGenerateResult = {
   error?: string;
   detail?: string;
   warning?: string;
+  identityLocked?: boolean;
+  progress?: TryOnProgress;
   steps?: Array<Record<string, any>>;
 };
 

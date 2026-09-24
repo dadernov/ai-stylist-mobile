@@ -93,7 +93,7 @@ async function login(page, name) {
     await page.getByRole('button', { name: item.name, exact: true }).waitFor();
     assert.equal((await read(page, 'account:alice:favoriteLooks'))[0].id, look.id);
     const adapter = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/services/keyValueStorage.web.ts'), 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: false }
     }).outputText;
     await page.evaluate(async source => {
       const module = { exports: {} };

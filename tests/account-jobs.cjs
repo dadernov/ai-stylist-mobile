@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const ts = require('typescript');
 
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: false }
 }).outputText, filename);
 
 const values = new Map();
@@ -155,6 +155,30 @@ async function run() {
     assert.equal(store.getSnapshot().jobs[0].status, 'succeeded');
     assert.equal(values.has(accountKey('bobby', 'tryOnJobs')), false);
     assert.equal(JSON.parse(values.get(accountKey('alice', 'tryOnJobs')))[0].status, 'succeeded');
+  });
+  await test('stage progress is shown while polling but never persisted, and cleared on completion', async () => {
+    const job = { id: crypto.randomUUID(), context: 'ctx', itemIds: ['coat'], name: 'Coat', createdAt: 1, status: 'pending', tuckMode: 'auto' };
+    await saveJson(accountKey('alice', 'tryOnJobs'), [job]);
+    submit = () => assert.fail('must not resubmit');
+    const progress = { done: ['bottom'], pending: ['outer'], stage: 'top', total: 3, previewUrl: 'data:image/jpeg;base64,BBBB' };
+    let polls = 0;
+    poll = async () => (++polls === 1 ? { status: 'processing', jobId: job.id, progress } : response);
+    const store = new TryOnJobStore(alice);
+    const seen = [];
+    store.subscribe(() => seen.push(store.getSnapshot().jobs[0].progress));
+    // The poll loop waits 2.5 s between requests; collapse that wait for the test.
+    const originalTimeout = global.setTimeout;
+    global.setTimeout = (fn, ms, ...rest) => originalTimeout(fn, ms >= 1000 ? 0 : ms, ...rest);
+    try {
+      await store.activate(alice);
+      for (let i = 0; i < 10 && !seen.some(Boolean); i++) await settle();
+      assert.deepEqual(seen.find(Boolean), progress, 'the live stage reaches subscribers');
+      assert.equal('progress' in JSON.parse(values.get(accountKey('alice', 'tryOnJobs')))[0], false, 'previews are not written to storage');
+      for (let i = 0; i < 60 && store.getSnapshot().jobs[0].status !== 'succeeded'; i++) await settle();
+    } finally { global.setTimeout = originalTimeout; }
+    assert.equal(store.getSnapshot().jobs[0].status, 'succeeded');
+    assert.equal(store.getSnapshot().jobs[0].progress, undefined, 'a finished job carries no stale progress');
+    store.deactivate();
   });
   await test('reload resumes a persisted pending job without resubmitting', async () => {
     const job = { id: crypto.randomUUID(), context: 'ctx', itemIds: ['coat'], name: 'Coat', createdAt: 1, status: 'pending', tuckMode: 'auto' };
