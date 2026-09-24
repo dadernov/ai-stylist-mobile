@@ -12,7 +12,7 @@ import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, Sparkles, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
@@ -408,7 +408,7 @@ export function AiTryOnPreview({
           {isBusy
             ? busyLabel
             : !resultUri
-              ? t('Примерить')
+              ? t('Быстрый черновик')
               : isDraft
                 ? t('Сделать в высоком качестве')
                 : t('Перегенерировать')}
@@ -420,8 +420,17 @@ export function AiTryOnPreview({
           <Text style={styles.linkText}>{t('Другой вариант черновика')}</Text>
         </AppPressable>
       ) : null}
+      {/* Someone who already knows they want the finished picture should not
+          have to sit through a draft first and then wait a second time. */}
+      {!resultUri && !isBusy ? (
+        <AppPressable style={[styles.secondaryButton, !canGenerate && styles.buttonDisabled]} onPress={() => void run('quality')}
+          disabled={!canGenerate} accessibilityRole="button" accessibilityState={{ disabled: !canGenerate }}>
+          <Sparkles size={17} strokeWidth={1.6} color={colors.text} />
+          <Text style={styles.secondaryButtonText}>{t('Сразу в высоком качестве')}</Text>
+        </AppPressable>
+      ) : null}
       {!resultUri && !isBusy && canGenerate ? (
-        <Text style={styles.hint}>{t('Сначала сделаем быстрый черновик. Понравится — сделаем в высоком качестве.')}</Text>
+        <Text style={styles.hint}>{t('Черновик — чтобы быстро прикинуть, как сидит. Высокое качество — итоговый кадр, он генерируется дольше.')}</Text>
       ) : null}
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
