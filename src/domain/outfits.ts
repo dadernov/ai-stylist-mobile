@@ -3,8 +3,17 @@ import { GeneratedLook } from '../types/looks';
 import { Gender } from '../types/profile';
 import { pickBeauty } from '../constants/beauty';
 
-export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender };
-export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[] };
+export type Precipitation = 'rain' | 'snow' | null;
+export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
+export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null };
+
+/** Open-Meteo WMO code → осадки. 51–67, 80–82, 95–99 дождь; 71–77, 85–86 снег. */
+export function precipitationFromCode(code: number | null | undefined): Precipitation {
+  if (typeof code !== 'number') return null;
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return 'rain';
+  return null;
+}
 
 // Одна таблица знаний о вещах вместо разрозненных списков: и подбор, и советы
 // читают отсюда, поэтому образ не может быть собран по одним правилам, а
@@ -79,8 +88,13 @@ const colors: Record<string, string> = {
   Белый: '#ffffff', Молочный: '#f5f2e8', Кремовый: '#f3ead6', Бежевый: '#c5b39a', Песочный: '#d8c8a8', Черный: '#181818', Чёрный: '#181818',
   Графит: '#393939', Серый: '#8a8a8a', Серебристый: '#c0c0c0', Синий: '#294979', 'Синий деним': '#456a8d', Голубой: '#8abbd5',
   Зеленый: '#44825a', Зелёный: '#44825a', Оливковый: '#83875c', Хаки: '#777c56', Красный: '#b9383e', Розовый: '#dfa1b0', Бордовый: '#73384b',
-  Коричневый: '#82634e', Желтый: '#e2c455', Жёлтый: '#e2c455', Оранжевый: '#d68443', Фиолетовый: '#806296', Лавандовый: '#b4a0c6'
+  Коричневый: '#82634e', Желтый: '#e2c455', Жёлтый: '#e2c455', Оранжевый: '#d68443', Фиолетовый: '#806296', Лавандовый: '#b4a0c6',
+  Карамельный: '#b07a4a', Горчичный: '#c9a23a', Бирюзовый: '#3fa7a3', Пудровый: '#e3c1bd'
 };
+// Вещи, которые в гардеробе работают как база, даже если у цвета есть тон:
+// деним, тёмно-синий, земляные оттенки. Иначе джинсы спорили бы с любым цветным верхом.
+const baseColorNames = new Set(['Синий деним', 'Хаки', 'Оливковый', 'Карамельный', 'Кремовый', 'Пудровый']);
+const baseCategories = new Set(['Джинсы']);
 
 type ColorInfo = { hue: number; saturation: number; lightness: number; neutral: boolean };
 
@@ -95,15 +109,22 @@ function colorInfo(color: string): ColorInfo | null {
   hue = (hue * 60 + 360) % 360;
   // Тёмно-синий костюм или молочная рубашка работают как нейтральные, даже если
   // формально у них есть тон, поэтому нейтральность — про восприятие, не про hue.
-  const neutral = neutralNames.has(color) || saturation < 0.2 || lightness < 0.16 || lightness > 0.93;
+  const navy = hue >= 200 && hue <= 250 && lightness < 0.36;
+  const neutral = neutralNames.has(color) || baseColorNames.has(color) || navy || saturation < 0.2 || lightness < 0.16 || lightness > 0.93;
   return { hue, saturation, lightness, neutral };
+}
+
+/** Цвет вещи с учётом её роли: джинсы любого синего оттенка — база, а не акцент. */
+function itemColor(item: WardrobeItem): ColorInfo | null {
+  const info = colorInfo(item.color);
+  return info && baseCategories.has(item.category) ? { ...info, neutral: true } : info;
 }
 
 const hueDistance = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
 function paletteScore(items: WardrobeItem[]) {
-  const accents = items.map(item => colorInfo(item.color)).filter(info => info && !info.neutral) as ColorInfo[];
-  if (accents.length < 2) return 5;
+  const accents = items.map(itemColor).filter(info => info && !info.neutral) as ColorInfo[];
+  if (accents.length < 2) return accents.length === 1 ? 6 : 5;
   let score = accents.length > 2 ? -6 : 0;
   for (let i = 0; i < accents.length; i++) {
     for (let j = i + 1; j < accents.length; j++) {
@@ -115,6 +136,24 @@ function paletteScore(items: WardrobeItem[]) {
   }
   return score;
 }
+
+// Материал уточняет утепление: шерстяная рубашка теплее хлопковой, льняные брюки легче джинсов.
+const materialWarmth: [RegExp, number][] = [
+  [/пух|down|羽绒/i, 1], [/шерст|кашемир|wool|cashmere|флис|fleece|羊毛|羊绒/i, 1], [/мех|fur|шуба/i, 1],
+  [/лён|льн|linen|亚麻/i, -1], [/шёлк|шелк|silk|丝/i, -0.5], [/сетк|mesh/i, -1],
+];
+function warmthOf(item: WardrobeItem) {
+  const base = describe(item).warmth;
+  const material = item.material || '';
+  const delta = materialWarmth.reduce((sum, [pattern, value]) => sum + (pattern.test(material) ? value : 0), 0);
+  return Math.max(0, Math.min(5, base + delta));
+}
+const isSuede = (item: WardrobeItem) => /замш|suede|nubuck|нубук|麂皮/i.test(item.material || '');
+const openShoes = new Set(['Сандалии', 'Балетки']);
+const lowShoes = new Set(['Кеды', 'Лоферы', 'Туфли', 'Сандалии', 'Балетки']);
+const closedWarmShoes = new Set(['Ботинки', 'Сапоги']);
+const rainLayers = new Set(['Плащ', 'Тренч', 'Куртка', 'Парка', 'Бомбер']);
+const isLight = (item: WardrobeItem) => (itemColor(item)?.lightness ?? 0) > 0.8;
 
 function itemScore(item: WardrobeItem, context: OutfitContext) {
   const garment = describe(item);
@@ -128,11 +167,25 @@ function itemScore(item: WardrobeItem, context: OutfitContext) {
   // Rank the user's actual wardrobe, not assumed clothing preferences by gender.
   if (temperature !== null) {
     const comfort = warmthFor(temperature);
-    score -= Math.abs(garment.warmth - comfort) * (garment.section === 'Верхняя одежда' ? 4 : 2.5);
+    // Под тёплой верхней одеждой верх греет меньше решающего, поэтому штраф мягче.
+    const weight = garment.section === 'Верхняя одежда' ? 4 : garment.section === 'Верх' && temperature < 5 ? 1.5 : 2.5;
+    score -= Math.abs(warmthOf(item) - comfort) * weight;
     if (temperature >= 22 && item.season === 'Зима') score -= 20;
     if (temperature <= 5 && item.season === 'Зима') score += 7;
     if (temperature >= 22 && item.season === 'Лето') score += 5;
   }
+  if (garment.section === 'Обувь') {
+    if (context.precipitation === 'rain') {
+      if (closedWarmShoes.has(item.category)) score += 6;
+      if (openShoes.has(item.category) || isSuede(item)) score -= 18;
+      if (item.category === 'Кеды' || isLight(item)) score -= 5;
+    }
+    if (context.precipitation === 'snow') {
+      if (closedWarmShoes.has(item.category)) score += 10;
+      if (lowShoes.has(item.category) || isSuede(item)) score -= 25;
+    }
+  }
+  if (garment.section === 'Верхняя одежда' && context.precipitation === 'rain' && rainLayers.has(item.category) && !isSuede(item)) score += 6;
   return score;
 }
 
@@ -155,7 +208,7 @@ type Translator = (source: string, vars?: Record<string, string | number>) => st
 const originalText: Translator = (source, vars) => Object.entries(vars || {}).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), source);
 
 function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
-  const known = items.map(item => ({ item, info: colorInfo(item.color) })).filter(entry => entry.info) as { item: WardrobeItem; info: ColorInfo }[];
+  const known = items.map(item => ({ item, info: itemColor(item) })).filter(entry => entry.info) as { item: WardrobeItem; info: ColorInfo }[];
   if (!known.length) return;
   const accents = known.filter(entry => !entry.info.neutral);
   const names = [...new Set(known.map(entry => entry.item.color))];
@@ -218,8 +271,17 @@ function proportionAdvice(top: WardrobeItem | undefined, bottom: WardrobeItem | 
 
 function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, temperature: number, tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
   const comfort = warmthFor(temperature);
-  const tooLight = items.filter(item => describe(item).section !== 'Сумки' && describe(item).warmth <= Math.max(0, comfort - 3));
-  const tooWarm = items.filter(item => describe(item).warmth >= comfort + 3);
+  const warmOuter = Boolean(outer && warmthOf(outer) >= 4);
+  // Под тёплой курткой верх не мёрзнет, а джинсы в -8 — обычная норма; предупреждаем
+  // только о том, что действительно мёрзнет: обувь, открытые ноги, верх без куртки.
+  const tooLight = items.filter(item => {
+    const section = describe(item).section;
+    if (section === 'Сумки' || warmthOf(item) > Math.max(0, comfort - 3)) return false;
+    if (section === 'Верх' && warmOuter) return false;
+    if (section === 'Низ' && temperature > -12 && !['Шорты', 'Юбка'].includes(item.category)) return false;
+    return true;
+  });
+  const tooWarm = items.filter(item => warmthOf(item) >= comfort + 3);
   if (temperature < 12 && !outer) {
     warnings.push(t('На улице {temperature}°C: для выхода может понадобиться дополнительный слой.', { temperature }));
   }
@@ -234,6 +296,21 @@ function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, t
   }
   if (temperature >= 12 && temperature < 18 && !outer) {
     push(tips, 3, t('Для {temperature}°C пригодится лёгкий верхний слой на утро и вечер — днём его можно снять.', { temperature }));
+  }
+}
+
+function precipitationAdvice(outer: WardrobeItem | undefined, shoes: WardrobeItem | undefined, context: OutfitContext, tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
+  if (context.precipitation === 'rain') {
+    if (outer && rainLayers.has(outer.category) && !isSuede(outer)) reasons.push(t('{item} прикроет от дождя.', { item: named(outer) }));
+    else if (!outer && context.event !== 'Спортзал') warnings.push(t('Обещают дождь: добавь плащ, тренч или куртку.'));
+    if (shoes && (openShoes.has(shoes.category) || isSuede(shoes))) warnings.push(t('{item} промокнет под дождём — лучше закрытая обувь.', { item: named(shoes) }));
+    else if (shoes && (shoes.category === 'Кеды' || isLight(shoes))) push(tips, 2, t('В дождь {item} быстро испачкаются; ботинки будут практичнее.', { item: named(shoes) }));
+  }
+  if (context.precipitation === 'snow' && shoes && !closedWarmShoes.has(shoes.category)) {
+    warnings.push(t('В снег {item} промокнут и будут скользить — лучше ботинки или сапоги.', { item: named(shoes) }));
+  }
+  if (context.wind !== null && context.wind !== undefined && context.wind >= 8 && context.temperature !== null && context.temperature < 20 && !outer) {
+    push(tips, 2, t('Ветер {wind} м/с: верхний слой защитит от продувания.', { wind: Math.round(context.wind) }));
   }
 }
 
@@ -276,6 +353,7 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t
   }
   if (context.event === 'Прогулка' && shoes) push(tips, 7, t('Для прогулки проверь удобство {item} и запас места в носке.', { item: named(shoes) }));
   if (context.temperature !== null) weatherAdvice(items, outer, context.temperature, tips, warnings, reasons, t);
+  precipitationAdvice(outer, shoes, context, tips, warnings, reasons, t);
 
   const ordered = tips.map((tip, index) => ({ tip, index }))
     .sort((a, b) => a.tip.rank - b.tip.rank || a.index - b.index)
@@ -284,14 +362,21 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t
 }
 
 export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false, options: RecommendationOptions = {}): GeneratedLook[] {
-  const context = { style, event, temperature, gender };
+  const context: OutfitContext = { style, event, temperature, gender, precipitation: options.precipitation ?? null, wind: options.wind ?? null };
   const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values()).filter(item => !options.excludedIds?.includes(item.id));
   const anchor = wardrobe.find(item => item.id === options.anchorId);
+  const hasWinterShoes = wardrobe.some(item => item.section === 'Обувь' && closedWarmShoes.has(item.category));
+  const hasWarmOuter = wardrobe.some(item => item.section === 'Верхняя одежда' && warmthOf(item) >= 4);
   const eligible = (item: WardrobeItem) => {
     if (item.id === anchor?.id) return true;
     if (event === 'Спортзал') return Boolean(describe(item).sporty) && item.section !== 'Верхняя одежда';
     if (temperature !== null && temperature >= 24 && (item.season === 'Зима' || ['Пуховик', 'Шуба', 'Парка'].includes(item.category))) return false;
     if (temperature !== null && temperature < 5 && ['Шорты', 'Сандалии'].includes(item.category)) return false;
+    if (temperature !== null && temperature < 0 && openShoes.has(item.category)) return false;
+    // В мороз лёгкий плащ вместо пуховика — не вариант, если есть тёплая верхняя одежда.
+    if (temperature !== null && temperature < 0 && item.section === 'Верхняя одежда' && warmthOf(item) < 4 && hasWarmOuter) return false;
+    // В снег низкую обувь не предлагаем, если есть чем её заменить.
+    if (context.precipitation === 'snow' && item.section === 'Обувь' && !closedWarmShoes.has(item.category) && hasWinterShoes) return false;
     return true;
   };
   const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0);
@@ -313,8 +398,16 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       if (top) score += 12;
       if (bottom || (top && isOnePiece(top))) score += 12;
       if (shoe) score += 8;
-      if (layer) score += temperature === null ? -8 : temperature < 12 ? 14 : temperature < 20 ? -4 : -35;
-      else if (temperature !== null && temperature < 8) score -= 10;
+      if (layer) {
+        // 12–17°C — погода лёгкого слоя: тренч, куртка, пиджак; тёплое пальто уже лишнее.
+        const light = warmthOf(layer) <= 3;
+        // Пиджак на деловом событии — часть образа, а не защита от погоды.
+        const tailoring = layer.category === 'Пиджак' && targetFormality(context) >= 4 && (temperature === null || temperature < 27);
+        score += tailoring ? 12 : temperature === null ? -8 : temperature < 12 ? 14 - Math.max(0, warmthFor(temperature) - warmthOf(layer)) * 6 : temperature < 18 ? (light ? 8 : -6) : temperature < 22 ? -4 : -35;
+        if (context.precipitation === 'rain' && temperature !== null && temperature < 24) score += rainLayers.has(layer.category) ? 10 : 4;
+        if ((options.wind ?? 0) >= 8 && temperature !== null && temperature < 20) score += 4;
+      } else if (temperature !== null && temperature < 8) score -= 10;
+      else if (context.precipitation === 'rain' && event !== 'Спортзал') score -= 8;
       if (event === 'Спортзал' && layer) score -= 25;
       const formalities = selection.filter(item => describe(item).section !== 'Сумки').map(item => describe(item).formality);
       // Разнобой по строгости портит образ сильнее, чем неидеальный отдельный
@@ -323,20 +416,31 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       if (top && bottom && describe(top).volume === 3 && describe(bottom).volume === 3) score -= 6;
       const patterned = selection.filter(item => item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)).length;
       score -= Math.max(0, patterned - 1) * 5;
-      candidates.push({ items: selection, score, signature: [top?.id, bottom?.id, shoe?.id].join('|') });
+      candidates.push({ items: selection, score, signature: [top?.id, bottom?.id, shoe?.id, layer?.id].join('|') });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
-  const unique = [...new Map([...candidates].reverse().map(candidate => [candidate.signature, candidate])).values()].sort((a, b) => b.score - a.score);
+  const unique = [...new Map([...candidates].reverse().map(candidate => [candidate.signature, candidate])).values()]
+    .sort((a, b) => b.score - a.score).slice(0, 80);
+  // Не советуем то, что сами же раскритикуем: каждое замечание к образу — штраф.
+  // «Неполный образ» и «нет фото» зависят от гардероба, а не от выбора, их не считаем.
+  for (const candidate of unique) {
+    const { warnings } = getOutfitAdvice(candidate.items, context);
+    candidate.score -= warnings.filter(text => !text.startsWith('Неполный') && !text.startsWith('У части вещей')).length * 14;
+  }
+  unique.sort((a, b) => b.score - a.score);
+  const core = (candidate: { items: WardrobeItem[] }) => candidate.items.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.id);
   const selected: typeof candidates = [];
   while (unique.length && selected.length < 4) {
-    unique.sort((a, b) => {
-      const adjusted = (candidate: typeof a) => candidate.score - Math.max(0, ...selected.map(previous =>
-        candidate.items.filter(item => previous.items.some(other => item.id === other.id)).length / Math.max(1, candidate.items.length) * 18));
-      return adjusted(b) - adjusted(a);
-    });
+    const adjusted = (candidate: typeof unique[number]) => candidate.score - Math.max(0, ...selected.map(previous => {
+      const shared = candidate.items.filter(item => previous.items.some(other => item.id === other.id)).length / Math.max(1, candidate.items.length) * 18;
+      // Тот же верх и низ с другой обувью — это не новый образ, а вариант того же.
+      const sameCore = core(candidate).length > 0 && core(candidate).every(id => core(previous).includes(id)) ? 30 : 0;
+      return shared + sameCore;
+    }));
+    unique.sort((a, b) => adjusted(b) - adjusted(a));
     const next = unique.shift()!;
-    if (selected.length && next.score < selected[0].score - 18) continue;
+    if (selected.length && adjusted(next) < selected[0].score - 32) break;
     selected.push(next);
   }
   const beauty = pickBeauty(event, beautyAdvice);

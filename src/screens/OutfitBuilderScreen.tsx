@@ -33,7 +33,7 @@ import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
-import { buildLooks } from '../domain/outfits';
+import { precipitationFromCode, buildLooks } from '../domain/outfits';
 import { Gender } from '../types/profile';
 
 const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
@@ -386,6 +386,7 @@ export function OutfitBuilderScreen({
   const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
   const [temperature, setTemperature] = useState<number | null>(null);
   const [weatherCode, setWeatherCode] = useState<number | null>(null);
+  const [windSpeed, setWindSpeed] = useState<number | null>(null);
   // Отдельно от отображаемого текста: true только когда получена настоящая
   // погода, а не плейсхолдер загрузки/ошибки — такой текст никогда не должен
   // попасть в сохранённый лук (см. аудит #42).
@@ -448,7 +449,7 @@ export function OutfitBuilderScreen({
       const city = geo[0]?.city || t('твоем городе');
       const url =
         `https://api.open-meteo.com/v1/forecast?latitude=${location.coords.latitude}` +
-        `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&timezone=auto`;
+        `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&wind_speed_unit=ms&timezone=auto`;
       const res = await withTimeout(fetch(url), 8000, 'weather fetch timeout');
       const data = await res.json();
       const temp = data?.current?.temperature_2m;
@@ -457,6 +458,7 @@ export function OutfitBuilderScreen({
       const description = t(weatherCodeMap[code] || 'переменная облачность');
       setTemperature(typeof temp === 'number' ? temp : null);
       setWeatherCode(typeof code === 'number' ? code : null);
+      setWindSpeed(typeof wind === 'number' ? wind : null);
       setWeatherReady(true);
       setWeatherText(
         t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
@@ -491,7 +493,9 @@ export function OutfitBuilderScreen({
     const weatherForLook = weatherReady ? weatherText : '';
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
     setTimeout(() => {
-      const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice);
+      const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice, {
+        precipitation: weatherReady ? precipitationFromCode(weatherCode) : null, wind: weatherReady ? windSpeed : null
+      });
       setIsGenerating(false);
       if (!generated.length) {
         Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));

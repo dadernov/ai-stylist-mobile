@@ -89,3 +89,38 @@ const swapChoices = getOutfitSwaps([shirt, jeans, item('sandals', 'Сандал�
 assert.ok(swapChoices.some(swap => swap.to.id === warmShoes.id));
 assert.equal(getOutfitSwaps([item('sandals', 'Сандалии', 'Обувь')], [warmShoes], { style: 'Кэжуал', event: 'Прогулка', temperature: 0 }, 'sandals').length, 0);
 console.log('PASS: anchor preserved, sport eligibility, explicit weather conflict, excluded garments, concrete swaps');
+
+// --- погода, база гардероба и качество подборки (сентябрь 2026) ---
+{
+  const it = (id, category, section, color, extra = {}) => item(id, category, section, { color, ...extra });
+  const W = [
+    it('tee', 'Футболка', 'Верх', 'Черный'), it('shirt2', 'Рубашка', 'Верх', 'Белый'), it('hoodie', 'Худи', 'Верх', 'Красный'),
+    it('sweater', 'Свитер', 'Верх', 'Бежевый'), it('jeans2', 'Джинсы', 'Низ', 'Синий'), it('pants2', 'Брюки', 'Низ', 'Черный'),
+    it('canvas', 'Кеды', 'Обувь', 'Белый'), it('boots2', 'Ботинки', 'Обувь', 'Черный'), it('loafers2', 'Лоферы', 'Обувь', 'Коричневый'),
+    it('trench', 'Тренч', 'Верхняя одежда', 'Бежевый'), it('puffer2', 'Пуховик', 'Верхняя одежда', 'Черный'), it('blazer2', 'Пиджак', 'Верхняя одежда', 'Синий'),
+  ];
+  // Джинсы — база: красный верх с джинсами не считается конфликтом двух акцентов.
+  const redJeans = advise([W[2], W[4], W[7]], {});
+  assert.ok(!redJeans.tips.some(x => x.includes('близки по тону') || x.includes('выразительное')), 'jeans are a neutral base');
+  // Дождь: верхний слой обязателен, кеды уступают ботинкам.
+  const rain = buildLooks(W, 'Кэжуал', 'Прогулка', '', 15, 'male', false, { precipitation: 'rain' });
+  assert.ok(rain.every(look => look.itemIds.some(id => ['trench', 'blazer2', 'puffer2'].includes(id))), 'rain adds an outer layer');
+  assert.ok(rain.filter(look => look.itemIds.includes('canvas')).length <= 1, 'white canvas shoes are not the default in rain');
+  assert.ok(advise([W[0], W[4], W[6]], { temperature: 15, precipitation: 'rain' }).warnings.some(x => x.includes('дождь')));
+  // Снег: низкой обуви и лёгкого тренча нет, если есть ботинки и пуховик.
+  const snow = buildLooks(W, 'Кэжуал', 'Прогулка', '', -8, 'male', false, { precipitation: 'snow' });
+  assert.ok(snow.length && snow.every(look => look.itemIds.includes('boots2') && look.itemIds.includes('puffer2')));
+  // Разнообразие: образы не отличаются одной лишь обувью.
+  const cores = snow.map(look => look.itemIds.filter(id => ['tee', 'shirt2', 'hoodie', 'sweater', 'jeans2', 'pants2'].includes(id)).sort().join());
+  assert.equal(new Set(cores).size, cores.length, 'each look has its own top and bottom');
+  // Совещание: без кед и с пиджаком; то, что приложение само раскритикует, не предлагается первым.
+  const office = buildLooks(W, 'Офисный', 'Совещание', '', 20);
+  assert.ok(office[0].itemIds.includes('blazer2'), 'blazer is part of a meeting look');
+  assert.ok(office.every(look => !look.itemIds.includes('canvas')));
+  assert.equal(office[0].warnings.length, 0);
+  // Материал уточняет тепло: льняная рубашка в жару не «слишком тёплая», шерстяная — теплее обычной.
+  assert.ok(!advise([it('linen', 'Рубашка', 'Верх', 'Белый', { material: 'лён' }), W[5], W[8]], { temperature: 30 }).warnings.some(x => x.includes('тёплой')));
+  const { precipitationFromCode } = require('../src/domain/outfits.ts');
+  assert.equal(precipitationFromCode(61), 'rain'); assert.equal(precipitationFromCode(73), 'snow'); assert.equal(precipitationFromCode(2), null);
+  console.log('PASS: jeans as base, rain layer and shoes, snow boots, distinct looks, meeting blazer, warning-free top pick, material warmth');
+}

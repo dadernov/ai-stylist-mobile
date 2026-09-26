@@ -677,4 +677,15 @@ export const en: Record<string, string> = {
   "Слишком много запросов. Попробуй позже.": "Too many requests. Try later.",
   "Не удалось выполнить запрос. Попробуй ещё раз.": "Couldn't complete the request. Try again.",
   "Не удалось прочитать выбранное фото. Выбери его ещё раз.": "Couldn't read the selected photo. Choose it again.",
+  // --- Подбор: осадки и ветер ---
+  "Осадки": "Precipitation",
+  "Без осадков": "No precipitation",
+  "Дождь": "Rain",
+  "Снег": "Snow",
+  "{item} прикроет от дождя.": "{item} will keep the rain off.",
+  "Обещают дождь: добавь плащ, тренч или куртку.": "Rain is forecast: add a raincoat, trench coat or jacket.",
+  "{item} промокнет под дождём — лучше закрытая обувь.": "{item} will get wet in the rain — closed shoes are better.",
+  "В дождь {item} быстро испачкаются; ботинки будут практичнее.": "In the rain {item} will get dirty quickly; boots are more practical.",
+  "В снег {item} промокнут и будут скользить — лучше ботинки или сапоги.": "In the snow {item} will get wet and slippery — boots are better.",
+  "Ветер {wind} м/с: верхний слой защитит от продувания.": "Wind {wind} m/s: an outer layer will keep the wind out.",
 };

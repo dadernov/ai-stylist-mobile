@@ -15,7 +15,7 @@ import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { Gender } from '../types/profile';
-import { buildLooks, getOutfitAdvice, getOutfitSwaps, OutfitContext } from '../domain/outfits';
+import { buildLooks, getOutfitAdvice, getOutfitSwaps, OutfitContext, Precipitation } from '../domain/outfits';
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
@@ -32,14 +32,15 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [style, setStyle] = useState('Кэжуал');
   const [anchorId, setAnchorId] = useState('any');
   const [weather, setWeather] = useState('');
+  const [precipitation, setPrecipitation] = useState<Precipitation>(null);
   const [hidden, setHidden] = useState<string[]>([]);
   // Saving a look updates its heart without shuffling the list under the user's finger.
   const [favoriteItemIds] = useState(() => [...new Set(favorites.flatMap(look => look.itemIds))]);
   const temperature = weather.trim() && Number.isFinite(Number(weather.replace(',', '.'))) && Math.abs(Number(weather.replace(',', '.'))) <= 60 ? Number(weather.replace(',', '.')) : null;
   const anchor = items.find(item => item.id === anchorId);
   const looks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    anchorId: anchor?.id, favoriteItemIds
-  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds]);
+    anchorId: anchor?.id, favoriteItemIds, precipitation
+  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation]);
   const visible = looks.filter(look => !hidden.includes(look.id));
   return <FormScrollView contentContainerStyle={styles.content}>
     <ScreenHeader eyebrow={t('Из твоего гардероба')} title={t('Что надеть')} />
@@ -55,6 +56,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
         </View></View>
       </View>
       {weather.trim() && temperature === null ? <Text style={{ color: c.danger }}>{t('Температура от −60 до +60 °C')}</Text> : null}
+      <Text style={styles.label}>{t('Осадки')}</Text>
+      <View style={styles.chips}>{([[null, 'Без осадков'], ['rain', 'Дождь'], ['snow', 'Снег']] as [Precipitation, string][]).map(([value, label]) =>
+        <Chip key={label} label={t(label)} active={precipitation === value} onPress={() => { Keyboard.dismiss(); setPrecipitation(value); setHidden([]); }} />)}</View>
       <Text style={styles.label}>{t('Вокруг какой вещи')}</Text>
       <OptionPicker options={['any', ...items.map(item => item.id)]} value={anchor?.id || 'any'} labels={Object.fromEntries([['any', t('Без привязки к вещи')], ...items.map(item => [item.id, item.name])])}
         onChange={value => { setAnchorId(value); setHidden([]); }} label={t('Основа образа')} />
@@ -64,13 +68,13 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <Text style={styles.heading}>{t(!items.length ? 'Начнём с гардероба' : hidden.length ? 'Все варианты просмотрены' : 'Пока нет подходящих вещей')}</Text>
       <PrimaryButton title={t(hidden.length ? 'Вернуть варианты' : 'К гардеробу')} icon={hidden.length ? RefreshCw : ArrowRight} onPress={hidden.length ? () => setHidden([]) : onWardrobe} />
     </View>}
-    {visible.map((look, index) => <Recommendation key={look.id} look={look} index={index} items={items} anchorId={anchor?.id} beautyAdvice={beautyAdvice}
+    {visible.map((look, index) => <Recommendation key={look.id} look={look} index={index} items={items} anchorId={anchor?.id} beautyAdvice={beautyAdvice} precipitation={precipitation}
       favorites={favorites} onFavorite={onFavorite} onTryOn={onTryOn} onHide={() => setHidden(previous => [...previous, look.id])} />)}
   </FormScrollView>;
 }
 
-function Recommendation({ look, index, items, anchorId, beautyAdvice, favorites, onFavorite, onTryOn, onHide }: {
-  look: GeneratedLook; index: number; items: WardrobeItem[]; anchorId?: string; beautyAdvice: boolean; favorites: GeneratedLook[];
+function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitation, favorites, onFavorite, onTryOn, onHide }: {
+  look: GeneratedLook; index: number; items: WardrobeItem[]; anchorId?: string; beautyAdvice: boolean; precipitation: Precipitation; favorites: GeneratedLook[];
   onFavorite: Props['onFavorite']; onTryOn: Props['onTryOn']; onHide: () => void;
 }) {
   const t = useT();
@@ -80,7 +84,7 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, favorites,
   const [expanded, setExpanded] = useState(false);
   const [replaceId, setReplaceId] = useState<string | null>(null);
   const selection = ids.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
-  const context: OutfitContext = { style: look.style, event: look.event, temperature: look.temperature ?? null };
+  const context: OutfitContext = { style: look.style, event: look.event, temperature: look.temperature ?? null, precipitation };
   const advice = getOutfitAdvice(selection, context, t);
   const swaps = getOutfitSwaps(selection, items, context, anchorId, t);
   const savedId = `${look.id}:${ids.join(',')}`;
