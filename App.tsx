@@ -12,10 +12,11 @@ import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { deleteAccount, readStoredSession, signOut, verifySession, forgetStoredSession, Session } from './src/services/auth';
-import { PRIVACY_URL } from './src/constants/ai';
+import { privacyUrl } from './src/constants/ai';
 import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
-import { LanguageProvider, useT } from './src/constants/i18n';
+import { LanguageProvider, localeFor, useLanguage, useT } from './src/constants/i18n';
+import { LanguageChooser } from './src/components/LanguageChooser';
 import { WardrobeItem } from './src/data/mock';
 import { loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
@@ -168,6 +169,7 @@ function Onboarding({ onClose }: { onClose: () => void }) {
 }
 
 function SessionGate() {
+  const language = useLanguage();
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -215,7 +217,8 @@ function SessionGate() {
       setSession(null);
     } catch (e: any) { setError(e?.message || t('Не удалось удалить аккаунт. Проверь соединение и попробуй ещё раз.')); }
   };
-  if (!ready) return <LoadingScreen />;
+  if (!ready || !language.ready) return <LoadingScreen />;
+  if (!language.chosen) return <LanguageChooser />;
   if (onboarding) return <Onboarding onClose={() => {
     setOnboarding(false);
     void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
@@ -540,7 +543,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
           storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
         }}
         onLogout={onLogout}
-        onOpenPrivacy={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}
+        onOpenPrivacy={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}
         onRevokeAiConsent={() => Alert.alert(t('Отозвать согласие?'), t('ИИ-анализ вещей и примерка будут снова спрашивать разрешение перед отправкой фото.'), [
           { text: t('Отмена'), style: 'cancel' },
           { text: t('Отозвать'), style: 'destructive', onPress: () => { void aiConsent.revoke(); } }

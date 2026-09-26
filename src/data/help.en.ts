@@ -1,0 +1,63 @@
+import { HelpTopic } from './help';
+
+export const HELP_INTRO_EN = 'Your personal wardrobe, combinations from your own clothes and virtual try-on on your photo.';
+export const helpTopicsEn: HelpTopic[] = [
+  { id: 'start', title: 'Getting started', summary: 'From the first item to a finished look', sections: [
+    { title: 'Your digital wardrobe', paragraphs: ['AI Stylist helps you keep track of your clothes, find combinations for the occasion and weather, and see how clothes may look on you. You don\'t need a full outfit to try on a single item.'] },
+    { title: 'Three first steps', paragraphs: ['1. In “Profile”, add a photo for virtual try-on and choose your preferences.', '2. In “Wardrobe”, tap “+” and choose “From gallery” or “Take photo”. Crop the extra space and check the analysis result.', '3. Open an item and tap “Try on”. For several items, go to “Try-on” and choose “Outfit”.'] },
+    { title: 'Good to know', paragraphs: ['The try-on creates an image; it doesn\'t measure your body or the garment. It helps judge the combination and silhouette but doesn\'t guarantee the real size, fit, texture or colour.'] },
+  ] },
+  { id: 'shoes', title: 'How to photograph shoes', summary: 'Angle, background, soles and laces', sections: [
+    { title: 'Place the pair side by side', paragraphs: ['Use a plain matte background. Light shoes stand out better on grey, dark ones on a light background. Remove boxes, bags and other things.', 'A sharp photo of a single shoe is fine if it shows the shape better. Don\'t combine different angles into a collage.'] },
+    { title: 'Shoot at three-quarters', paragraphs: ['Hold the camera slightly above and to the side so the toe, side, laces and sole height are visible. One shoe shouldn\'t hide the other.', 'For boots, show the whole shaft. Leave space around the edges: don\'t crop toes, heels or soles.'] },
+    { title: 'Light and sharpness', paragraphs: ['Soft daylight by a window works well. Avoid flash, harsh shadows, filters, background blur and the ultra-wide camera. Check that small details aren\'t blurred.'] },
+    { title: 'For trying on yourself', paragraphs: ['Your profile photo should show both feet and some floor beneath them. Don\'t hide shoes under long trousers or crop the frame at the ankles.', 'When adding shoes, check the “Shoes” section and the type: sneakers, boots, high boots or another suitable option.'] },
+  ] },
+  { id: 'person', title: 'Try-on photo', summary: 'Full-body person, face and pose', sections: [
+    { title: 'One person in the frame', paragraphs: ['Choose a sharp full-body photo: face, top of the head and both feet fully visible. Leave some background around the body and floor under the feet. A photo without a mirror is usually better: the phone doesn\'t cover the face.'] },
+    { title: 'Neutral pose', paragraphs: ['Stand straight, face the camera and hold your arms slightly away from the body. Don\'t cross arms or legs. Simple clothes without extra volume help the silhouette read clearly.'] },
+    { title: 'Even light', paragraphs: ['Avoid backlight, deep shadows on the face and strong filters. The face should be large and clear enough to check that your appearance is preserved.'] },
+    { title: 'Where to replace the photo', paragraphs: ['Open “Profile” and the “Photo for virtual try-on” block. It is a separate photo, not necessarily your avatar. If it isn\'t set yet, the app may use the avatar.'] },
+  ] },
+  { id: 'garments', title: 'Clothing photos', summary: 'The whole item, including a long hem', sections: [
+    { title: 'One item per photo', paragraphs: ['Lay the item flat or hang it on a hanger against a calm background. Show the front, collar, sleeves and hem. Smooth out folds that hide the shape.'] },
+    { title: 'Raincoats, coats and dresses', paragraphs: ['Photograph the whole garment, from collar to hem. Don\'t fold the bottom or crop the length. Keep belts, lapels and slits visible.', 'Check the item type after analysis: a raincoat should be marked “Raincoat” or “Trench coat”, not a shirt. The category affects how the try-on works.'] },
+    { title: 'Free cropping', paragraphs: ['After choosing from the gallery or taking a photo, drag the edges and corners of the grid. You can also move the whole area. Remove extra background but leave a small margin around the item, then tap “Done”. Analysis starts only after you confirm the crop.'] },
+  ] },
+  { id: 'wardrobe', title: 'Wardrobe and item analysis', summary: 'Adding, correcting and re-analysing', sections: [
+    { title: 'After uploading', paragraphs: ['The analysis suggests type, colour, season and pattern and cuts the item out of the photo. If the type is uncertain, choose the right option before saving.'] },
+    { title: 'Check the details', paragraphs: ['You can correct the category, section, colour, season and pattern, set a name and add size, brand or material. These details help with combinations; the size alone doesn\'t make the try-on accurate.'] },
+    { title: 'If the analysis is wrong', paragraphs: ['In the item details you can edit parameters, analyse again or replace the photo. If the service fails, fill in the details manually. Generation uses the original item photo, even if the wardrobe shows the cut-out version.'] },
+    { title: 'Search and order', paragraphs: ['Search items by name, category or colour and switch sections above the collection. Deleting an item needs confirmation and can\'t be undone with one tap.'] },
+  ] },
+  { id: 'fitting', title: 'One item or an outfit', summary: 'Choosing, generating, comparing and history', sections: [
+    { title: 'Try on a single item', paragraphs: ['Open the item in the wardrobe and tap “Try on”, or choose it in “Single item” mode on the “Try-on” tab. No need to pick the rest of the outfit.'] },
+    { title: 'Build an outfit', paragraphs: ['In “Outfit” mode you can pick one item from each of “Tops”, “Bottoms”, “Shoes” and “Outerwear”. A new item from the same section replaces the previous one. A dress or jumpsuit replaces both top and bottoms.', 'Bags can be kept in the wardrobe and used in look ideas, but virtual try-on for them isn\'t available yet.'] },
+    { title: 'Start the try-on', paragraphs: ['Tap “To the fitting room”, then “Try on”. If available, choose how the top is worn: “Auto”, “Tuck in” or “Untucked”.', 'An internet connection is needed. An outfit is processed layer by layer and can take a few minutes; intermediate results appear as each item is put on. You can switch tabs: the result will appear in “Recent try-ons”. After a restart the app checks jobs that were already sent. No need to start generation again.'] },
+    { title: 'Check the result', paragraphs: ['Compare the original and the result, open the photo larger, and save it to your gallery. “Regenerate” starts a new attempt; earlier variants stay in the history.', 'The app checks the face and frame alignment, restores the background and tries to keep shoes that weren\'t replaced. This reduces distortion, but generation and recognition can still make mistakes.'] },
+  ] },
+  { id: 'ideas', title: 'Look ideas and tips', summary: 'Occasion, style, weather and swaps', sections: [
+    { title: 'From your clothes', paragraphs: ['In “Ideas”, choose an occasion, a style and, if needed, the temperature. You can pick an item to build the look around. Suggestions use your wardrobe, not a fixed preset.'] },
+    { title: 'Why the items match', paragraphs: ['Open “Why it works” to see the explanation and tips on fit, colours and layers. Warnings point out possible mismatches with the weather or occasion.', 'You can swap an item for another from your wardrobe. “Try on this combination” moves the chosen items to the fitting room. The heart saves the idea to favorites.'] },
+    { title: 'Few suitable options', paragraphs: ['Check the categories and seasons of your items, try another occasion or remove the anchor item. The variety of options depends on how full your wardrobe is.', 'The “Try-on” tab also has a “Styling” section with style, occasion and weather for building looks.'] },
+  ] },
+  { id: 'saved', title: 'Saved and favorites', summary: 'Where to find a look after the try-on', sections: [
+    { title: 'Saved try-on', paragraphs: ['In the try-on window, set a name and tap “Save look”. It appears in “Try-on” → “Looks”. If the image hasn\'t been generated yet, only the list of items is saved.'] },
+    { title: 'Favorite ideas', paragraphs: ['The heart in the suggestions adds the combination to the separate “Favorites” tab. An idea can be saved without generating a photo. A saved look from the fitting room can also be added to favorites.'] },
+    { title: 'Generation history', paragraphs: ['All new jobs and results appear automatically in “Try-on” → “History”. There\'s no need to save them manually. Earlier results kept in saved looks and favorites are available here too.', 'Open an item in the wardrobe and tap “Try-on history” to see only its generations. In the history you can change the item filter, open a result larger, go to the items of the look or try them on again.', 'Renaming or deleting an item doesn\'t delete its try-ons. The history is stored on this device separately for each account. Clearing the app or browser data deletes the local history.'] },
+  ] },
+  { id: 'settings', title: 'Profile and preferences', summary: 'Gender, beauty tips, theme, language and account', sections: [
+    { title: 'Recommendations for you', paragraphs: ['On first sign-in the app asks for gender; you can change it in the profile or leave it unspecified. This setting is used when suggesting looks.', 'Makeup and hairstyle tips have their own switch. If you don\'t need them, turn beauty tips off in the profile.'] },
+    { title: 'Personal settings', paragraphs: ['In the profile you can replace the avatar and try-on photo, switch between light and dark themes, choose the interface language (Russian, English or Chinese), withdraw consent to AI photo processing, sign out or permanently delete your account and all its data.'] },
+  ] },
+  { id: 'problems', title: 'If something doesn\'t work', summary: 'Analysis, photo and generation errors', sections: [
+    { title: 'The item isn\'t recognised', paragraphs: ['Check sharpness, lighting and background. The frame should contain one whole item. Analyse again or choose the details manually; there\'s no need to keep uploading the same poor photo.'] },
+    { title: 'Try-on rejected', paragraphs: ['A message about the face, silhouette or alignment means the result didn\'t pass the check. Your original photo isn\'t replaced. Make sure there\'s one person in the frame, the face is visible and the body and shoes aren\'t cropped.'] },
+    { title: 'Hem or shoes are distorted', paragraphs: ['Check the full length and category of the item, and for shoes the visibility of the toe, side and sole. Your legs should be visible in your photo. After fixing the source photos, run a new try-on.', 'Small details, laces, prints and fabric edges can still be distorted. The try-on doesn\'t replace seeing the real item.'] },
+    { title: 'Slow loading or no connection', paragraphs: ['Check your internet connection and wait for the current attempt to finish. If an error message appears, try again later. If you see a limit message, follow the stated time: changing the photo doesn\'t lift the limit.'] },
+  ] },
+  { id: 'data', title: 'Photos and data', summary: 'Storage on the device and processing', sections: [
+    { title: 'What is stored locally', paragraphs: ['The wardrobe, settings and saved looks are stored on this device or in this browser separately for each account. Signing out doesn\'t delete the collection. Signing in doesn\'t sync it to another phone automatically.', 'After an update you may be asked to move your earlier wardrobe. Confirm only if it\'s your data. Declining doesn\'t delete the originals.', 'Deleting the app or clearing browser data can remove the local collection. Keep your original photos separately.'] },
+    { title: 'When photos are sent to the server', paragraphs: ['Before the first upload the app asks for your consent. For analysis, an item photo is sent to the app server. For virtual try-on, your photo and the selected item photos are sent to the FASHN generation service. This is not fully offline processing.', 'Finished results are kept on the server for at most 24 hours so a job can be recovered, and are saved on your device. The server returns a result only to the signed-in owner of the job.', 'Use your own photos or photos you have permission to use. The help is available offline once the app has loaded.'] },
+  ] },
+];

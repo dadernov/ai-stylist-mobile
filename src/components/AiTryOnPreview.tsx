@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
-import { useT } from '../constants/i18n';
+import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
 import * as MediaLibrary from 'expo-media-library';
@@ -46,7 +46,7 @@ const pickBottomGarment = (items: WardrobeItem[]) => items.find((item) => item.s
 const pickShoesGarment = (items: WardrobeItem[]) => items.find((item) => item.section === 'Обувь' && item.imageUri);
 
 const shortDateTime = (timestamp: number) =>
-  new Date(timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  new Date(timestamp).toLocaleString(localeFor(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const mergeMessages = (...messages: Array<string | null | undefined>) =>
   messages.filter(Boolean).join(' · ') || undefined;
@@ -315,7 +315,7 @@ export function AiTryOnPreview({
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
-      {warning ? <Text style={styles.hint}>{warning}</Text> : null}
+      {warning ? <Text style={styles.hint}>{warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
       {topGarment?.imageUri && !['Платье', 'Сарафан', 'Комбинезон'].includes(topGarment.category) && <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
         <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
         <Text style={styles.settingsLabel}>{t('Настройки примерки')}</Text>

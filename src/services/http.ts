@@ -1,5 +1,8 @@
+import { translate } from '../constants/i18n';
+
+// Server and network messages are Russian source strings; show them in the interface language.
 export class ApiError extends Error {
-  constructor(message: string, public status?: number) { super(message); }
+  constructor(message: string, public status?: number) { super(translate(message)); }
 }
 
 export async function fetchJson<T = any>(url: string, init: RequestInit = {}, timeoutMs = 15000): Promise<T> {

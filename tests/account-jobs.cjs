@@ -5,8 +5,9 @@ const Module = require('node:module');
 const crypto = require('node:crypto');
 const ts = require('typescript');
 
-require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: false }
+require.extensions['.ts'] = require.extensions['.tsx'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: false, jsx: ts.JsxEmit.ReactJSX },
+  fileName: filename
 }).outputText, filename);
 
 const values = new Map();
@@ -43,6 +44,8 @@ Module._load = (request, parent, main) => {
   return request in stubs ? stubs[request] : originalLoad(request, parent, main);
 };
 const service = name => require(path.join(__dirname, '../src/services', `${name}.ts`));
+const i18n = require(path.join(__dirname, '../src/constants/i18n.tsx'));
+i18n.setActiveLang('ru');
 const { accountKey, prepareAccountStorage, startWithoutLegacy, loadAccountData } = service('accountStorage');
 const { saveJson } = service('storage');
 const { removeUnusedPhotos, persistPhoto, reanchorPhoto } = service('photos');
@@ -150,6 +153,16 @@ async function run() {
     }) });
     await assert.rejects(() => fetchJson('/api', {}, 10), /долго|время|ответ/i);
   });
+  await test('server and network errors follow the interface language', async () => {
+    const { ApiError } = service('http');
+    try {
+      i18n.setActiveLang('en');
+      assert.equal(new ApiError('Неверный логин или пароль.', 401).message, 'Wrong login or password.');
+      i18n.setActiveLang('zh');
+      assert.equal(new ApiError('Неверный логин или пароль.', 401).message, '登录名或密码错误。');
+      assert.equal(new ApiError('Unknown text').message, 'Unknown text', 'unknown messages pass through');
+    } finally { i18n.setActiveLang('ru'); }
+  });
   await test('try-on context changes with photos and preserves slot identity', async () => {
     assert.equal(await tryOnContext('person', [item]), await tryOnContext('person', [item]));
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('new-person', [item]));
@@ -191,7 +204,8 @@ async function run() {
       for (let i = 0; i < 10 && !seen.some(Boolean); i++) await settle();
       assert.deepEqual(seen.find(Boolean), progress, 'the live stage reaches subscribers');
       assert.equal('progress' in JSON.parse(values.get(accountKey('alice', 'tryOnJobs')))[0], false, 'previews are not written to storage');
-      for (let i = 0; i < 60 && store.getSnapshot().jobs[0].status !== 'succeeded'; i++) await settle();
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline && store.getSnapshot().jobs[0].status !== 'succeeded') await new Promise(resolve => originalTimeout(resolve, 5));
     } finally { global.setTimeout = originalTimeout; }
     assert.equal(store.getSnapshot().jobs[0].status, 'succeeded');
     assert.equal(store.getSnapshot().jobs[0].progress, undefined, 'a finished job carries no stale progress');

@@ -4,6 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, BookOpen, Camera, ChevronRight, Footprints, Heart, Images, LucideIcon, ScanLine, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Wrench, X } from 'lucide-react-native';
 import { helpTopics, HELP_INTRO, HelpTopic } from '../data/help';
 import { helpTopicsZh, HELP_INTRO_ZH } from '../data/help.zh';
+import { helpTopicsEn, HELP_INTRO_EN } from '../data/help.en';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
 import { useLanguage, useT } from '../constants/i18n';
@@ -21,7 +22,7 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { lang } = useLanguage();
-  const topics = lang === 'zh' ? helpTopicsZh : helpTopics;
+  const topics = lang === 'zh' ? helpTopicsZh : lang === 'en' ? helpTopicsEn : helpTopics;
 
   return <Modal visible presentationStyle="fullScreen" animationType="slide" onRequestClose={() => topic ? setTopic(null) : onClose()}>
     {/* Native modals need a provider in their own window to measure system insets. */}
@@ -48,7 +49,7 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
               </AppPressable>
             </> : <>
               <Text accessibilityRole="header" style={styles.title}>{t('AI Стилист')}</Text>
-              <Text style={styles.intro}>{lang === 'zh' ? HELP_INTRO_ZH : HELP_INTRO}</Text>
+              <Text style={styles.intro}>{lang === 'zh' ? HELP_INTRO_ZH : lang === 'en' ? HELP_INTRO_EN : HELP_INTRO}</Text>
               <View style={styles.topics}>
                 {topics.map(item => {
                   const Icon = icons[item.id] || BookOpen;

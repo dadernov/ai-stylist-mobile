@@ -17,7 +17,9 @@
         "NSPhotoLibraryUsageDescription": "Нужен доступ к фото, чтобы добавить вещь в гардероб и выбрать своё фото в полный рост для примерки.",
         "NSLocationWhenInUseUsageDescription": "Геопозиция нужна только для прогноза погоды при подборе образа. Координаты не сохраняются.",
         "ITSAppUsesNonExemptEncryption": false,
-        "NSPhotoLibraryAddUsageDescription": "Нужно разрешение, чтобы сохранить результат примерки в вашу галерею."
+        "NSPhotoLibraryAddUsageDescription": "Нужно разрешение, чтобы сохранить результат примерки в вашу галерею.",
+        "CFBundleDevelopmentRegion": "ru",
+        "CFBundleAllowMixedLocalizations": true
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -162,6 +164,11 @@
         }
       ]
     ],
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "locales": {
+      "ru": "./locales/ru.json",
+      "en": "./locales/en.json",
+      "zh-Hans": "./locales/zh-Hans.json"
+    }
   }
 }

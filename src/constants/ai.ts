@@ -1,3 +1,4 @@
+import { getActiveLang } from './i18n';
 /**
  * Адрес и ключ AI-сервера.
  *
@@ -22,3 +23,6 @@ export const AI_CLIENT_TOKEN = process.env.EXPO_PUBLIC_AI_CLIENT_TOKEN?.trim() |
 
 // Published next to the API so the store listing, the app and the server agree.
 export const PRIVACY_URL = `${AI_BASE_URL}/privacy`;
+
+/** Policy page in the interface language (/privacy, /privacy/en, /privacy/zh). */
+export const privacyUrl = (lang: string = getActiveLang()) => lang === 'en' || lang === 'zh' ? `${PRIVACY_URL}/${lang}` : PRIVACY_URL;

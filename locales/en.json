@@ -1,0 +1,9 @@
+{
+  "ios": {
+    "CFBundleDisplayName": "AI Stylist",
+    "NSPhotoLibraryUsageDescription": "Photo access lets you add items to your wardrobe and choose your full-body photo for try-on.",
+    "NSCameraUsageDescription": "Camera access lets you photograph an item for your wardrobe or yourself for try-on.",
+    "NSPhotoLibraryAddUsageDescription": "Permission is needed to save try-on results to your photo library.",
+    "NSLocationWhenInUseUsageDescription": "Location is used only for the weather forecast when suggesting looks. Coordinates are not stored."
+  }
+}

@@ -4,6 +4,7 @@ import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { readStoredSession, Session } from './auth';
 import { fetchJson } from './http';
+import { translate } from '../constants/i18n';
 
 export type AiResult = {
   dominantColor: string | null;
@@ -123,7 +124,7 @@ const appendPhoto = async (form: FormData, field: string, uri: string) => {
   const extension = png ? 'png' : webp ? 'webp' : 'jpg';
   if (Platform.OS === 'web') {
     const response = await fetch(uri);
-    if (!response.ok) throw new Error(UPLOAD_ERROR);
+    if (!response.ok) throw new Error(translate(UPLOAD_ERROR));
     const blob = await response.blob();
     form.append(field, blob, `${field}.${blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'}`);
     return;
@@ -138,12 +139,12 @@ const appendPhoto = async (form: FormData, field: string, uri: string) => {
         await LegacyFileSystem.writeAsStringAsync(target, uri.split(',')[1] || '', { encoding: LegacyFileSystem.EncodingType.Base64 });
       } else if (/^https?:\/\//i.test(uri)) {
         const download = await LegacyFileSystem.downloadAsync(uri, target);
-        if (download.status < 200 || download.status >= 300) throw new Error(UPLOAD_ERROR);
+        if (download.status < 200 || download.status >= 300) throw new Error(translate(UPLOAD_ERROR));
       } else {
         await LegacyFileSystem.copyAsync({ from: uri, to: target });
       }
     } catch {
-      throw new Error(UPLOAD_ERROR);
+      throw new Error(translate(UPLOAD_ERROR));
     }
     fileUri = target;
   }

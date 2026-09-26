@@ -8,7 +8,7 @@ import { TryOnJob } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
-import { useLanguage, useT } from '../constants/i18n';
+import { localeFor, useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { FormScrollView } from './ui/FormScrollView';
 import { IconButton } from './ui/IconButton';
@@ -46,7 +46,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
   }, [jobs, byId, itemId, t]);
   const filtered = useMemo(() => jobs.filter(job => !itemId || job.itemIds.includes(itemId))
     .sort((a, b) => b.createdAt - a.createdAt), [jobs, itemId]);
-  const date = (job: TryOnJob) => job.createdAt > 0 ? new Date(job.createdAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'ru-RU', {
+  const date = (job: TryOnJob) => job.createdAt > 0 ? new Date(job.createdAt).toLocaleString(localeFor(lang), {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   }) : t('Ранее');
   const status = (job: TryOnJob) => t(job.status === 'succeeded' ? 'Готово' : job.status === 'pending' ? 'Генерируем образ…'

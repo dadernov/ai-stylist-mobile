@@ -4,7 +4,7 @@ import { usePhotoPicker } from '../components/usePhotoPicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
-import { useLanguage, useT } from '../constants/i18n';
+import { LANGUAGES, useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -57,6 +57,7 @@ export function ProfileScreen({
   const { mode, setMode, colors } = useTheme();
   const { lang, setLang } = useLanguage();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [languageOpen, setLanguageOpen] = useState(false);
 
   const { pickPhoto: pickImageFromGallery, cropModal } = usePhotoPicker();
 
@@ -116,6 +117,20 @@ export function ProfileScreen({
       />
 
       {renderPreviewModal()}
+      <Modal transparent animationType="fade" visible={languageOpen} onRequestClose={() => setLanguageOpen(false)}>
+        <AppPressable style={styles.previewBackdrop} onPress={() => setLanguageOpen(false)} accessibilityLabel={t('Закрыть')}>
+          <View style={[styles.languageSheet, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="radiogroup">
+            <Text style={[styles.settingTitle, { marginBottom: 6 }]}>{t('Язык')}</Text>
+            {LANGUAGES.map(item => (
+              <AppPressable key={item.code} haptics accessibilityRole="radio" accessibilityState={{ checked: item.code === lang }}
+                style={[styles.languageOption, item.code === lang && { borderColor: colors.accentGold, backgroundColor: colors.accentGoldSoft }]}
+                onPress={() => { setLang(item.code); setLanguageOpen(false); }}>
+                <Text style={[styles.settingTitle, item.code === lang && { color: colors.accentGold }]}>{item.label}</Text>
+              </AppPressable>
+            ))}
+          </View>
+        </AppPressable>
+      </Modal>
       {cropModal}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -210,9 +225,9 @@ export function ProfileScreen({
         {renderSettingRow({
           emoji: '🌐',
           title: t('Язык'),
-          value: lang === 'ru' ? 'Русский' : '中文',
+          value: LANGUAGES.find(item => item.code === lang)?.label,
           delay: 200,
-          onPress: () => setLang(lang === 'ru' ? 'zh' : 'ru')
+          onPress: () => setLanguageOpen(true)
         })}
 
         {renderSettingRow({
@@ -253,6 +268,8 @@ export function ProfileScreen({
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  languageSheet: { borderRadius: 16, borderWidth: 1, padding: 18, gap: 10 },
+  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14 },
   container: {
     flex: 1
   },

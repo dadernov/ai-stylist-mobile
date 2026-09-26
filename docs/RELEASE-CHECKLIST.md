@@ -82,8 +82,17 @@ eas update --channel production --message "что изменилось"
 
 ## Что вписать в App Store Connect
 
-**URL:** Privacy Policy — `https://62.60.238.183.nip.io/privacy`, Support — `https://62.60.238.183.nip.io/support`
-(после покупки домена заменить на него).
+**Языки.** Приложение на русском, английском и китайском: выбор языка при первом запуске и в профиле,
+системные окна разрешений и название на иконке тоже локализованы. В App Store Connect добавить
+локализации Russian, English (U.S.) и Chinese (Simplified) с описаниями и скриншотами на каждом языке.
+
+**URL для каждой локализации** (после покупки домена заменить адрес):
+
+| Локализация | Privacy Policy | Support |
+|---|---|---|
+| Russian | `https://62.60.238.183.nip.io/privacy` | `https://62.60.238.183.nip.io/support` |
+| English | `https://62.60.238.183.nip.io/privacy/en` | `https://62.60.238.183.nip.io/support/en` |
+| Chinese (Simplified) | `https://62.60.238.183.nip.io/privacy/zh` | `https://62.60.238.183.nip.io/support/zh` |
 
 **App Privacy («Data Used to Track You»: нет, ничего).** «Data Linked to You», цель везде App Functionality:
 - Contact Info → Name (отображаемое имя)
@@ -110,7 +119,7 @@ eas update --channel production --message "что изменилось"
 > separately; account deletion is available in Profile → Delete account and removes all server data.
 > To test: log in with the demo account, open Wardrobe → + to add a garment photo, then open the Fitting room,
 > pick items and tap "Примерить". Generation takes 1–3 minutes; intermediate results are shown as they arrive.
-> The app is in Russian; the language can be switched to Chinese in Profile.
+> The app is available in Russian, English and Chinese; the language is chosen on first launch and can be changed in Profile.
 
 ## Остаётся на тебе / риски
 

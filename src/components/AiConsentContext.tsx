@@ -3,7 +3,7 @@ import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native
 import { ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { PRIVACY_URL } from '../constants/ai';
+import { privacyUrl } from '../constants/ai';
 import { hasAiConsent, saveAiConsent } from '../services/aiConsent';
 import { PrimaryButton } from './ui/PrimaryButton';
 import { AppPressable } from './AppPressable';
@@ -43,7 +43,7 @@ export function AiConsentProvider({ login, children }: { login: string; children
             <ShieldCheck size={28} color={colors.accentGold} />
             <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('Обработка фото нейросетями')}</Text>
             {points.map(point => <Text key={point} style={[styles.point, { color: colors.muted }]}>• {point}</Text>)}
-            <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}>
+            <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}>
               <Text style={[styles.link, { color: colors.accentGold }]}>{t('Политика конфиденциальности')}</Text>
             </AppPressable>
             <PrimaryButton title={t('Согласен, продолжить')} variant="gold" onPress={() => void answer(true)} />

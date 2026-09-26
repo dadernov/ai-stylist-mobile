@@ -1,0 +1,9 @@
+{
+  "ios": {
+    "CFBundleDisplayName": "AI 造型师",
+    "NSPhotoLibraryUsageDescription": "需要访问照片，以便将单品加入衣橱并选择你的全身照进行试穿。",
+    "NSCameraUsageDescription": "需要使用相机，以便为衣橱拍摄单品或为试穿拍摄自己。",
+    "NSPhotoLibraryAddUsageDescription": "需要权限才能将试穿结果保存到你的相册。",
+    "NSLocationWhenInUseUsageDescription": "位置仅用于搭配时的天气预报，不会保存坐标。"
+  }
+}

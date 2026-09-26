@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { ApiError, fetchJson } from './http';
+import { translate } from '../constants/i18n';
 
 /**
  * Вход по логину и паролю. Проверка — на сервере.
@@ -56,7 +57,7 @@ const store = async (session: Session) => {
     // Сессия не записалась — на этом запуске человек внутри, но при следующем
     // придётся войти заново. Молчать об этом нельзя, поэтому пробрасываем выше.
     console.warn('Failed to store session', error);
-    throw new Error('Не удалось сохранить вход. Освободи место на устройстве.');
+    throw new Error(translate('Не удалось сохранить вход. Освободи место на устройстве.'));
   }
 };
 

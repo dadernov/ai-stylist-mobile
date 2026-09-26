@@ -10,7 +10,7 @@ import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { AppPressable } from '../components/AppPressable';
 import { FadeInView } from '../components/ui/FadeInView';
 import { registerAccount, signIn, Session } from '../services/auth';
-import { PRIVACY_URL } from '../constants/ai';
+import { privacyUrl } from '../constants/ai';
 
 type AuthScreenProps = {
   onAuthenticated: (session: Session) => void;
@@ -130,7 +130,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           style={styles.submitButton}
         />
         {busy && <ActivityIndicator color={colors.accentGold} />}
-        {mode === 'register' && <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}>
+        {mode === 'register' && <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}>
           <Text style={styles.legal}>
             {t('Создавая аккаунт, ты принимаешь')} <Text style={styles.legalLink}>{t('политику конфиденциальности')}</Text>.
           </Text>
