@@ -25,6 +25,7 @@ type ProfileScreenProps = {
   onLogout: () => void;
   onDeleteAccount: () => void;
   onOpenPrivacy: () => void;
+  onRevokeAiConsent: () => void;
   gender: Gender;
   beautyAdvice: boolean;
   onGenderChange: (gender: Gender) => void;
@@ -45,6 +46,7 @@ export function ProfileScreen({
   onLogout,
   onDeleteAccount,
   onOpenPrivacy,
+  onRevokeAiConsent,
   gender,
   beautyAdvice,
   onGenderChange,
@@ -219,6 +221,14 @@ export function ProfileScreen({
           hint: t('Какие данные обрабатываются и где'),
           delay: 240,
           onPress: onOpenPrivacy
+        })}
+
+        {renderSettingRow({
+          emoji: '🤖',
+          title: t('Согласие на обработку фото ИИ'),
+          hint: t('Отозвать разрешение на отправку фото нейросетям'),
+          delay: 260,
+          onPress: onRevokeAiConsent
         })}
 
         {renderSettingRow({

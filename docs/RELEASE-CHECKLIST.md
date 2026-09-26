@@ -64,14 +64,66 @@ TestFlight → внутренние тестеры), проверить на р�
 eas update --channel production --message "что изменилось"
 ```
 
-## Ответы для App Privacy в App Store Connect
+## Проверка по правилам App Store (26.09.2026)
 
-- Собираем: **Contact Info → Name** (отображаемое имя), **User Content →
-  Photos or Videos** (фото одежды и фото для примерки), **Identifiers → User ID**
-  (логин), **Usage Data → Product Interaction** (счётчики генераций),
-  **Location → Coarse/Precise Location** (только для погоды, не привязана к аккаунту).
-- Цель: App Functionality. Не используется для трекинга и рекламы.
-- Третьи стороны: FASHN AI (генерация примерки), Open-Meteo (погода).
+| Правило | Статус |
+|---|---|
+| 5.1.1(v) удаление аккаунта в приложении | Готово: Профиль → «Удалить аккаунт», сервер и устройство |
+| 5.1.2(i) согласие перед передачей данных стороннему ИИ | Готово: экран согласия перед первым ИИ-анализом и примеркой, отзыв в профиле |
+| 5.1.1(i) политика в App Store Connect и в приложении | Готово: /privacy, ссылки в профиле, на регистрации и в экране согласия |
+| 5.1.1(ii)/(iii) разрешения только по делу, понятные тексты | Готово: только камера, фото, сохранение в галерею, геопозиция «при использовании»; микрофон, движение и фоновая геопозиция убраны |
+| Манифест приватности (Required Reason APIs) | Готово: `ios.privacyManifests` в app.json |
+| 4.8 Sign in with Apple | Не нужен: вход только по своему логину, без Google/Facebook |
+| 5.1.1(v) регистрация только для функций на аккаунте | Обосновать в заметках для ревью (ниже). Риск средний |
+| 2.1 полнота: демо-аккаунт и работающая генерация | Демо-аккаунт создан. Баланс FASHN перед ревью ≥ 100 кредитов |
+| Экспортный контроль | Готово: `ITSAppUsesNonExemptEncryption = false` (только HTTPS) |
+| Хранение данных = заявленному | Готово: изображения стираются по таймеру через 24 ч, записи через 90 дней, бэкапы без изображений, EXIF не уходит в FASHN |
+| Страница поддержки | Готово: https://62.60.238.183.nip.io/support |
+
+## Что вписать в App Store Connect
+
+**URL:** Privacy Policy — `https://62.60.238.183.nip.io/privacy`, Support — `https://62.60.238.183.nip.io/support`
+(после покупки домена заменить на него).
+
+**App Privacy («Data Used to Track You»: нет, ничего).** «Data Linked to You», цель везде App Functionality:
+- Contact Info → Name (отображаемое имя)
+- Identifiers → User ID (логин)
+- User Content → Photos or Videos (фото вещей и фото для примерки)
+- Usage Data → Product Interaction (счётчики генераций)
+
+«Data Not Linked to You»: Location → Precise Location (только погода, уходит напрямую в Open-Meteo).
+
+**Возрастной рейтинг.** Во всех пунктах «Нет»/«None»; в новых вопросах про ИИ отметить, что приложение
+генерирует изображения пользователя в его же одежде, без чата и без обмена контентом между людьми.
+Ожидаемый результат 4+ (или 9+/13+ по новой шкале — любой вариант приемлем).
+
+**Sign-in required:** да. Демо-аккаунт: логин и пароль лежат на сервере в `/root/appstore-review.txt`
+(доступ только root). В аккаунте уже есть лимит генераций на сегодня.
+
+**Notes for Review (вставить как есть):**
+
+> AI Stylist is a personal wardrobe app. Users add photos of their clothes; our server classifies each item
+> and removes the background. The virtual try-on sends the user's full-body photo and selected garment photos
+> to FASHN AI (fashn.ai) to generate the user wearing the outfit. Before any photo is sent to AI processing
+> the app shows an explicit consent screen (guideline 5.1.2(i)); consent can be withdrawn in Profile.
+> An account is required because AI processing is metered per user and each user's wardrobe is kept
+> separately; account deletion is available in Profile → Delete account and removes all server data.
+> To test: log in with the demo account, open Wardrobe → + to add a garment photo, then open the Fitting room,
+> pick items and tap "Примерить". Generation takes 1–3 minutes; intermediate results are shown as they arrive.
+> The app is in Russian; the language can be switched to Chinese in Profile.
+
+## Остаётся на тебе / риски
+
+1. **Баланс FASHN.** Сейчас его не хватает даже на один образ. Ревьюер, у которого примерка не заработала,
+   отклонит приложение по 2.1. Пополнить минимум до 100 кредитов до отправки.
+2. **Регистрация обязательна для всего приложения.** Apple иногда требует пускать без аккаунта в функции,
+   которым он не нужен (локальный гардероб). Если отклонят по 5.1.1(v) — сделаем гостевой режим:
+   гардероб без входа, аккаунт только для ИИ.
+3. **Закон РФ о персональных данных (152-ФЗ).** Для пользователей из России требуется первичное хранение
+   данных в РФ, уведомление Роскомнадзора и отдельное согласие на трансграничную передачу. Сервер в Австрии,
+   FASHN за рубежом. Apple это не проверяет, но это юридический риск — стоит проконсультироваться
+   с юристом до публичного запуска в России.
+4. **Домен.** Ссылки на политику и API привязаны к IP сервера через nip.io.
 
 ## Проверка перед отправкой на ревью
 

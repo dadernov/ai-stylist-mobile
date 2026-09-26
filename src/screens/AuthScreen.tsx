@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, ThemeColors, TYPE } from '../constants/theme';
@@ -10,6 +10,7 @@ import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { AppPressable } from '../components/AppPressable';
 import { FadeInView } from '../components/ui/FadeInView';
 import { registerAccount, signIn, Session } from '../services/auth';
+import { PRIVACY_URL } from '../constants/ai';
 
 type AuthScreenProps = {
   onAuthenticated: (session: Session) => void;
@@ -129,6 +130,11 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           style={styles.submitButton}
         />
         {busy && <ActivityIndicator color={colors.accentGold} />}
+        {mode === 'register' && <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}>
+          <Text style={styles.legal}>
+            {t('Создавая аккаунт, ты принимаешь')} <Text style={styles.legalLink}>{t('политику конфиденциальности')}</Text>.
+          </Text>
+        </AppPressable>}
 
         <AppPressable
           onPress={() => { setMode(mode === 'register' ? 'signIn' : 'register'); setError(''); }}
@@ -155,5 +161,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   hint: { color: c.muted, fontSize: 12 },
   errorText: { color: c.danger, fontSize: 13 },
   submitButton: { marginTop: 14 },
-  switch: { color: c.accentGold, fontSize: 14, textAlign: 'center', paddingVertical: 12 }
+  switch: { color: c.accentGold, fontSize: 14, textAlign: 'center', paddingVertical: 12 },
+  legal: { color: c.muted, fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  legalLink: { color: c.accentGold, textDecorationLine: 'underline' }
 });

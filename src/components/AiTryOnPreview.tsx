@@ -10,6 +10,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
+import { useAiConsent } from './AiConsentContext';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, Sparkles, X } from 'lucide-react-native';
@@ -70,6 +71,7 @@ export function AiTryOnPreview({
   const t = useT();
   const { colors } = useTheme();
   const { jobs, store, ready: jobsReady, readOnly, error: journalError, login } = useTryOnJobs();
+  const aiConsent = useAiConsent();
   const [context, setContext] = useState<string | null>(null);
   const contextPhotos = JSON.stringify([modelUri, items.map(i => [i.id, i.imageUri, i.sourceImageUri, i.section, i.category])]);
   useEffect(() => {
@@ -234,6 +236,7 @@ export function AiTryOnPreview({
   // redoes every layer: the user disliked the result, and any layer may be why.
   const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
+    if (!(await aiConsent.ensure())) return;
     setLoading(true);
     setError(null);
     setWarning(null);

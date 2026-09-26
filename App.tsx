@@ -31,6 +31,7 @@ import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { AppDialogProvider } from './src/components/AppDialog';
+import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
@@ -219,7 +220,7 @@ function SessionGate() {
     setOnboarding(false);
     void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
   }} />;
-  if (session) return <TryOnJobsProvider key={session.login} session={session}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></TryOnJobsProvider>;
+  if (session) return <TryOnJobsProvider key={session.login} session={session}><AiConsentProvider login={session.login}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></TryOnJobsProvider>;
   return <SafeAreaView style={styles.container}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
     {claim ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 20, maxWidth: 480, width: '100%', alignSelf: 'center' }}>
@@ -235,6 +236,7 @@ function SessionGate() {
 }
 
 function AppContent({ session, onLogout, onDeleteAccount, accountError }: { session: Session; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {
+  const aiConsent = useAiConsent();
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -539,6 +541,10 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         }}
         onLogout={onLogout}
         onOpenPrivacy={() => { void Linking.openURL(PRIVACY_URL).catch(() => {}); }}
+        onRevokeAiConsent={() => Alert.alert(t('Отозвать согласие?'), t('ИИ-анализ вещей и примерка будут снова спрашивать разрешение перед отправкой фото.'), [
+          { text: t('Отмена'), style: 'cancel' },
+          { text: t('Отозвать'), style: 'destructive', onPress: () => { void aiConsent.revoke(); } }
+        ])}
         onDeleteAccount={() => Alert.alert(t('Удалить аккаунт?'), t('Аккаунт, история примерок на сервере и все данные приложения на этом устройстве будут удалены. Это действие нельзя отменить.'), [
           { text: t('Отмена'), style: 'cancel' },
           { text: t('Удалить'), style: 'destructive', onPress: onDeleteAccount }

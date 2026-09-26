@@ -21,6 +21,12 @@ for name, source in SOURCES.items():
     raw = folder / f'{name}.sqlite3'
     with sqlite3.connect(source) as src, sqlite3.connect(raw) as dst:
         src.backup(dst)
+    if name == 'quota':
+        # Backups hold accounting only: try-on images never leave the 24 h window.
+        with sqlite3.connect(raw) as copy:
+            copy.execute("UPDATE tryon_jobs SET result=NULL")
+            copy.commit()
+            copy.execute("VACUUM")
     with open(raw, 'rb') as inp, gzip.open(f'{raw}.gz', 'wb') as out:
         shutil.copyfileobj(inp, out)
     raw.unlink()

@@ -43,6 +43,31 @@ class ReleaseGuards(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(denied.exception.status_code, 401)
         self.assertFalse((await app.auth_delete_account(login='masha'))['deleted'], 'a second call is harmless')
 
+    def test_retention_sweep_drops_images_after_a_day_and_tombstones_after_90_days(self):
+        import time
+        jobs.start('masha', 'fresh', 'fp', 1); jobs.finish('masha', 'fresh', {'outputUrl': 'data:image/png;base64,AA'})
+        jobs.start('masha', 'old', 'fp', 1); jobs.finish('masha', 'old', {'outputUrl': 'data:image/png;base64,BB'})
+        now = time.time()
+        self.assertEqual(jobs.expire(now + 2 * 3600)[0], 0)
+        jobs.expire(now + 25 * 3600)
+        self.assertEqual(jobs.get('masha', 'old')['result']['status'], 'expired', 'image removed, tombstone kept')
+        jobs.expire(now + 91 * 86400)
+        self.assertIsNone(jobs.get('masha', 'old'))
+
+    def test_provider_inputs_never_carry_exif_location(self):
+        import base64
+        from io import BytesIO
+        from PIL import Image
+        image = Image.new('RGB', (64, 128), 'red')
+        exif = Image.Exif(); exif[0x8825] = {2: (55.0, 45.0, 0.0)}
+        buffer = BytesIO(); image.save(buffer, format='JPEG', exif=exif.tobytes())
+        for url in (app._prepare_tryon_image_data_url(buffer.getvalue(), 'image/jpeg', 2048, 90),
+                    app._prepare_provider_frame(buffer.getvalue(), 2048, 90)):
+            sent = Image.open(BytesIO(base64.b64decode(url.split(',', 1)[1])))
+            self.assertNotIn(0x8825, sent.getexif())
+        with self.assertRaises(ValueError):
+            app._prepare_tryon_image_data_url(b'not an image', 'image/jpeg', 2048, 90)
+
     def test_per_account_throttle_is_independent_of_ip(self):
         for _ in range(3):
             access.throttle('masha', 'tryon', 3)

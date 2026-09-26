@@ -20,6 +20,7 @@ import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
 import { DragHandle } from '../components/DragHandle';
+import { useAiConsent } from '../components/AiConsentContext';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -271,6 +272,7 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
 
 export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, initialDetailId }: WardrobeScreenProps) {
   const Alert = useAppDialog();
+  const aiConsent = useAiConsent();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
@@ -396,6 +398,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
 
   const applyAi = async (photoUri: string, sectionHint?: string) => {
     const requestId = ++analysisRequestRef.current;
+    if (!(await aiConsent.ensure())) {
+      if (analysisRequestRef.current === requestId) setAnalysisError(t('ИИ-анализ не запускался: нужно согласие на обработку фото. Заполни поля вручную или нажми «AI-анализ».'));
+      return;
+    }
     try {
       setAnalyzing(true);
       setAnalysis(null); setAnalysisError('');

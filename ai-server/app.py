@@ -54,7 +54,20 @@ except Exception:
 @asynccontextmanager
 async def lifespan(_app):
     await asyncio.to_thread(jobs.recover_interrupted)
-    yield
+
+    async def retention():
+        while True:
+            try:
+                await asyncio.to_thread(jobs.expire)
+            except Exception as exc:
+                print(f'Retention sweep failed: {type(exc).__name__}', flush=True)
+            await asyncio.sleep(1800)
+
+    sweeper = asyncio.create_task(retention())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -165,8 +178,9 @@ def _prepare_tryon_image_data_url(content: bytes, mime_type: str, max_side: int,
         return _bytes_to_data_url(buff.getvalue(), "image/jpeg")
     except ValueError:
         raise
-    except Exception:
-        return _bytes_to_data_url(content, mime_type)
+    except Exception as exc:
+        # Never forward the original bytes: they may carry EXIF location tags.
+        raise ValueError('Не удалось прочитать фото вещи. Выбери другое фото.') from exc
 
 
 async def _load_image_from_url_or_data_url(client: httpx.AsyncClient, source: str):

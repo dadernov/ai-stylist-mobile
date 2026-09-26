@@ -129,6 +129,25 @@ def finish(owner, job_id, result):
                        ('succeeded' if result.get('outputUrl') else 'failed', encoded, time.time(), owner, job_id))
 
 
+RESULT_TTL_SECONDS = 24 * 3600
+TOMBSTONE_TTL_SECONDS = 90 * 86400
+
+
+def expire(now=None):
+    """Enforce the retention promised in the privacy policy on a timer, not only
+    when another job finishes: images after 24 h, job tombstones after 90 days."""
+    now = time.time() if now is None else now
+    with access._DB_LOCK:
+        db = _database()
+        with db:
+            images = db.execute("UPDATE tryon_jobs SET result=NULL WHERE status!='running' AND result IS NOT NULL AND updated<?",
+                                (now - RESULT_TTL_SECONDS,)).rowcount
+            tombstones = db.execute("DELETE FROM tryon_jobs WHERE status!='running' AND updated<?",
+                                    (now - TOMBSTONE_TTL_SECONDS,)).rowcount
+            db.execute("DELETE FROM usage WHERE day<?", (time.strftime('%Y-%m-%d', time.gmtime(now - TOMBSTONE_TTL_SECONDS)),))
+    return images, tombstones
+
+
 def purge_owner(owner):
     """Account deletion: stored results and usage rows of this owner go away."""
     with access._DB_LOCK:
