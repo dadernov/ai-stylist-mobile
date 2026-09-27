@@ -1,4 +1,4 @@
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View, Platform, Share } from 'react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
@@ -6,14 +6,13 @@ import { useThemedStyles } from '../constants/ThemeContext';
 import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
-import * as MediaLibrary from 'expo-media-library';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, Sparkles, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, Sparkles, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
@@ -152,10 +151,29 @@ export function AiTryOnPreview({
 
   useEffect(() => { setSaveState('idle'); setSaveMessage(null); }, [resultUri]);
 
+  // Поделиться — сразу в мессенджер или сторис, без сохранения в галерею.
+  const shareResult = async () => {
+    if (!resultUri) return;
+    try {
+      const fileUri = isRemoteUri(resultUri) || resultUri.startsWith('data:')
+        ? (await cacheTryOnImage(resultUri, `share-${Date.now()}`, login)).imageUri : resultUri;
+      await Share.share(Platform.OS === 'ios' ? { url: fileUri } : { message: fileUri, url: fileUri });
+    } catch { /* The share sheet was dismissed or unavailable. */ }
+  };
+
   const saveToGallery = async () => {
     if (!resultUri || saveState === 'saving' || isBusy) return;
     setSaveState('saving'); setSaveMessage(null);
     try {
+      if (Platform.OS === 'web') {
+        // В браузере галереи нет: сохраняем файлом.
+        const link = document.createElement('a');
+        link.href = resultUri; link.download = `ai-stylist-${Date.now()}.png`; link.click();
+        setSaveState('saved'); setSaveMessage(t('Сохранено в галерею в полном качестве'));
+        return;
+      }
+      // Модуль галереи нативный: грузим его только когда он нужен, иначе веб-сборка падает при старте.
+      const MediaLibrary = require('expo-media-library') as typeof import('expo-media-library');
       const permission = await MediaLibrary.requestPermissionsAsync(true);
       if (!permission.granted) throw new Error(t('Нет доступа к галерее. Разреши сохранение фото в настройках.'));
       // The gallery gets the stored full-size PNG, never a downscaled preview.
@@ -303,15 +321,18 @@ export function AiTryOnPreview({
         </AppPressable>
       ) : null}
       {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
-      {resultUri && !isBusy ? (
-        <AppPressable style={styles.secondaryButton} onPress={saveToGallery} disabled={saveState === 'saving'}
+      {resultUri && !isBusy ? (<View style={styles.resultActions}>
+        <AppPressable style={[styles.secondaryButton, { flex: 1 }]} onPress={saveToGallery} disabled={saveState === 'saving'}
           accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
           {saveState === 'saving' ? <ActivityIndicator size="small" color={colors.text} />
             : saveState === 'saved' ? <Check size={17} strokeWidth={1.8} color={colors.text} /> : <Download size={17} strokeWidth={1.6} color={colors.text} />}
           <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею'
             : isDraft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')}</Text>
         </AppPressable>
-      ) : null}
+        {Platform.OS !== 'web' ? <AppPressable style={styles.shareButton} onPress={() => { void shareResult(); }} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
+          <Share2 size={17} strokeWidth={1.6} color={colors.text} />
+        </AppPressable> : null}
+      </View>) : null}
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
@@ -533,6 +554,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '700'
   },
+  resultActions: { flexDirection: 'row', gap: 8 },
+  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
   secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -15,7 +15,7 @@ import { deleteAccount, readStoredSession, signOut, verifySession, forgetStoredS
 import { privacyUrl } from './src/constants/ai';
 import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
-import { LanguageProvider, localeFor, useLanguage, useT } from './src/constants/i18n';
+import { LanguageProvider, localeFor, translate, useLanguage, useT } from './src/constants/i18n';
 import { LanguageChooser } from './src/components/LanguageChooser';
 import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
@@ -368,7 +368,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         console.warn(`Failed to save ${key}`, error);
         if (reportedSaveFailures.current.has(key)) return;
         reportedSaveFailures.current.add(key);
-        showToast(`Не удалось сохранить ${label}. Освободи место на устройстве.`);
+        showToast(translate('Не удалось сохранить {label}. Освободи место на устройстве.', { label: translate(label) }));
       });
   };
 
@@ -452,7 +452,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   }, []);
 
   const showToast = (message: string) => {
-    setToastMessage(message);
+    // Russian source strings are keys; translated text passes through unchanged.
+    setToastMessage(translate(message));
     toastAnim.stopAnimation();
     toastAnim.setValue(0);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
@@ -485,6 +486,10 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
           gender={gender || 'unspecified'}
           beautyAdvice={beautyAdvice}
           onProfile={() => setActiveTab('profile')}
+          onModelChange={uri => {
+            setModelUri(uri);
+            storeProfilePhoto(uri, stored => setModelUri(current => (current === uri ? stored : current)));
+          }}
           onWardrobe={() => { setWardrobeDetailId(undefined); setActiveTab('wardrobe'); }}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
@@ -522,13 +527,14 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
           items={items}
           onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
           onGoToBuilder={() => setActiveTab('builder')}
+          onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }}
         />
       );
     return (
       <ProfileScreen
         displayName={displayName}
         contact={session?.login || ''}
-        authMethod={'Логин и пароль'}
+        authMethod={t('Логин и пароль')}
         avatarUri={avatarUri}
         modelUri={modelUri}
         favoritesCount={favoriteLooks.length}

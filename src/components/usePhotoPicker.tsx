@@ -1,5 +1,6 @@
+import { translate } from '../constants/i18n';
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform } from 'react-native';
+import { Keyboard, Platform, Linking } from 'react-native';
 import { useAppDialog } from './AppDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -27,7 +28,7 @@ export function usePhotoPicker() {
     try {
       if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
-        if (!permission.granted) { Alert.alert('Нет доступа к камере', 'Разреши доступ в настройках устройства.'); stopPicking(); return null; }
+        if (!permission.granted) { Alert.alert(translate('Нет доступа к камере'), translate('Разреши доступ в настройках устройства.'), [{ text: translate('Отмена'), style: 'cancel' }, { text: translate('Открыть настройки'), onPress: () => { void Linking.openSettings().catch(() => {}); } }]); stopPicking(); return null; }
       }
       const options: ImagePicker.ImagePickerOptions = { allowsEditing: false, quality: 1, mediaTypes: ['images'],
         preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible };
@@ -45,7 +46,7 @@ export function usePhotoPicker() {
       }
       if (cropPhoto.width <= 0 || cropPhoto.height <= 0) throw new Error('Invalid photo dimensions');
       return await new Promise<string | null>(done => { resolve.current = done; setPhoto(cropPhoto); setVisible(true); });
-    } catch { stopPicking(); Alert.alert('Не удалось открыть фото', 'Попробуй выбрать изображение ещё раз.'); return null; }
+    } catch { stopPicking(); Alert.alert(translate('Не удалось открыть фото'), translate('Попробуй выбрать изображение ещё раз.')); return null; }
   };
   return { pickPhoto, isPicking, cropModal: photo ? <PhotoCropper key={photo.uri} photo={photo} visible={visible} onDismiss={() => { if (Platform.OS === 'ios') complete(); }} onClose={() => finish(null)} onDone={finish} /> : null };
 }

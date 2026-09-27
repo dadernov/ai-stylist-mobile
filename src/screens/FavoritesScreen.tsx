@@ -1,3 +1,4 @@
+import { ArrowUpRight } from 'lucide-react-native';
 import { FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
 import { useAppDialog } from '../components/AppDialog';
 import { memo, useCallback, useState } from 'react';
@@ -5,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { LookPreview } from '../components/LookPreview';
@@ -21,6 +23,7 @@ type FavoritesScreenProps = {
   items: WardrobeItem[];
   onRemove: (id: string) => void;
   onGoToBuilder?: () => void;
+  onTryOn?: (itemIds: string[]) => void;
 };
 
 // Дата в нейтральном числовом формате (без локале-зависимых названий месяцев).
@@ -38,12 +41,13 @@ type FavoriteLookCardProps = {
   itemsById: Record<string, WardrobeItem>;
   onRemove: (id: string) => void;
   onPreview: (uri: string) => void;
+  onTryOn?: (itemIds: string[]) => void;
 };
 
 // Мемоизировано по той же причине, что и карточка вещи в гардеробе: без этого
 // каждая карточка (с примеркой и превью-картинкой) перерисовывалась при любом
 // несвязанном обновлении экрана.
-const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview, beautyAdvice }: FavoriteLookCardProps) {
+const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview, onTryOn, beautyAdvice }: FavoriteLookCardProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
@@ -56,7 +60,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
     <FadeInView delay={Math.min(index, 6) * 60}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{look.title}</Text>
+          <Text style={styles.cardTitle}>{look.title.split(' + ').map(part => t(part)).join(' + ')}</Text>
           <AppPressable style={styles.deleteButton} haptics onPress={() => onRemove(look.id)}>
             <Text style={styles.deleteText}>{t('Удалить')}</Text>
           </AppPressable>
@@ -79,10 +83,12 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
             <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />
           </AppPressable>
         ) : (
-          <View style={styles.generatedPlaceholder}>
+          onTryOn ? null : <View style={styles.generatedPlaceholder}>
             <Text style={styles.generatedPlaceholderText}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
           </View>
         )}
+        {onTryOn ? <PrimaryButton title={t(tryOnUri ? 'Примерить снова' : 'Примерить на себе')} icon={ArrowUpRight} variant={tryOnUri ? 'ghost' : 'gold'}
+          onPress={() => onTryOn(look.itemIds.filter(id => itemsById[id]))} /> : null}
 
         {beautyAdvice && (look.makeup || look.hair) ? (
           <View style={styles.beautyBlock}>
@@ -116,7 +122,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
   );
 });
 
-export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, beautyAdvice }: FavoritesScreenProps) {
+export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn, beautyAdvice }: FavoritesScreenProps) {
   const Alert = useAppDialog();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
@@ -152,7 +158,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, beautyA
         windowSize={7}
         removeClippedSubviews
         renderItem={({ item, index }) => (
-          <FavoriteLookCard look={item} index={index} itemsById={itemsById} onRemove={handleRemove} onPreview={setPreviewUri} beautyAdvice={beautyAdvice} />
+          <FavoriteLookCard look={item} index={index} itemsById={itemsById} onRemove={handleRemove} onPreview={setPreviewUri} onTryOn={onTryOn} beautyAdvice={beautyAdvice} />
         )}
         ListEmptyComponent={
           <EmptyState

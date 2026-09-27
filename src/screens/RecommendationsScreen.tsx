@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { ArrowRight, ArrowRightLeft, Check, ChevronDown, ChevronUp, Heart, Lightbulb, MapPin, RefreshCw, Thermometer } from 'lucide-react-native';
+import { Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ArrowRight, ArrowRightLeft, Check, ChevronDown, ChevronUp, Heart, Lightbulb, MapPin, RefreshCw, SlidersHorizontal, Thermometer } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { FormScrollView } from '../components/ui/FormScrollView';
@@ -35,6 +35,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [anchorId, setAnchorId] = useState('any');
   const [weather, setWeather] = useState('');
   const [precipitationChoice, setPrecipitationChoice] = useState<PrecipitationChoice>('auto');
+  // Погода подставляется сама, поэтому уточнения свёрнуты: образы видны без прокрутки.
+  const [tuning, setTuning] = useState(false);
   const { weather: live, error: weatherError, loading: weatherLoading, reload } = useWeather();
   const [hidden, setHidden] = useState<string[]>([]);
   // Saving a look updates its heart without shuffling the list under the user's finger.
@@ -62,11 +64,23 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} keyboardShouldPersistTaps="handled">
         {STYLES.map(value => <Chip key={value} label={t(value)} active={style === value} onPress={() => { Keyboard.dismiss(); setStyle(value); setHidden([]); }} />)}
       </ScrollView>
+      <AppPressable accessibilityRole="button" accessibilityState={{ expanded: tuning }} onPress={() => { Keyboard.dismiss(); setTuning(value => !value); }} style={[styles.weatherRow, { backgroundColor: c.surface }]}>
+        <SlidersHorizontal size={16} color={c.muted} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.label}>{t('Погода и основа образа')}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{[temperature === null ? t('Погода не указана.').replace(/\.$/, '') : `${temperature}°C`,
+        precipitation === 'rain' ? t('дождь') : precipitation === 'snow' ? t('снег') : t('без осадков'),
+        anchor ? anchor.name : t('Без привязки к вещи')].join(' · ')}</Text>
+        </View>
+        {tuning ? <ChevronUp size={16} color={c.muted} /> : <ChevronDown size={16} color={c.muted} />}
+      </AppPressable>
+      {tuning ? <View style={{ gap: 12 }}>
       <Text style={styles.label}>{t('Погода')}</Text>
       <View style={[styles.weatherRow, { backgroundColor: c.surface }]}>
         <MapPin size={16} color={c.muted} />
         <Text style={[styles.muted, { flex: 1 }]}>{liveText}</Text>
-        {!weatherLoading ? <AppPressable accessibilityRole="button" accessibilityLabel={t('Обновить погоду')} onPress={() => { void reload(); }}><RefreshCw size={16} color={c.accentGold} /></AppPressable> : null}
+        {weatherError === 'permission' ? <AppPressable accessibilityRole="button" onPress={() => { void Linking.openSettings().catch(() => {}); }}><Text style={[styles.label, { color: c.accentGold }]}>{t('Открыть настройки')}</Text></AppPressable>
+          : !weatherLoading ? <AppPressable accessibilityRole="button" accessibilityLabel={t('Обновить погоду')} onPress={() => { void reload(); }}><RefreshCw size={16} color={c.accentGold} /></AppPressable> : null}
       </View>
       <View style={styles.controlRow}>
         <View style={{ width: 132, gap: 8 }}><View style={[styles.temperature, { backgroundColor: c.surface }]}>
@@ -84,10 +98,14 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <Text style={styles.label}>{t('Вокруг какой вещи')}</Text>
       <OptionPicker options={['any', ...items.map(item => item.id)]} value={anchor?.id || 'any'} labels={Object.fromEntries([['any', t('Без привязки к вещи')], ...items.map(item => [item.id, item.name])])}
         onChange={value => { setAnchorId(value); setHidden([]); }} label={t('Основа образа')} />
+      </View> : null}
     </View>
     {gaps.length && items.length ? <View style={[styles.gaps, { backgroundColor: c.surface }]}>
       <Lightbulb size={18} color={c.accentGold} />
-      <Text style={[styles.body, { flex: 1 }]}>{t('Для точного подбора под «{event}» не хватает: {items}.', { event: t(event).toLocaleLowerCase(), items: gaps.slice(0, 4).join(', ') })}</Text>
+      <View style={{ flex: 1, gap: 8 }}>
+        <Text style={styles.body}>{t('Для точного подбора под «{event}» не хватает: {items}.', { event: t(event).toLocaleLowerCase(), items: gaps.slice(0, 4).join(', ') })}</Text>
+        <AppPressable accessibilityRole="button" onPress={onWardrobe}><Text style={[styles.label, { color: c.accentGold }]}>{t('Добавить вещи')} →</Text></AppPressable>
+      </View>
     </View> : null}
     <View style={styles.sectionHeading}><Text style={styles.heading}>{t('Твои сочетания')}</Text><Text style={styles.count}>{String(visible.length).padStart(2, '0')}</Text></View>
     {!visible.length && <View style={styles.empty}>

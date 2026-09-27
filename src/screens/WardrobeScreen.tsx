@@ -339,7 +339,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
   const openPhotoSources = () => { if (!isPicking) { Keyboard.dismiss(); setPhotoSourceOpen(true); } };
   const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !photoSourceOpen && !searchFocused && !Alert.visible;
 
+  const lastSource = useRef<PhotoSource>('gallery');
   const handleAddItem = async (source: PhotoSource) => {
+    lastSource.current = source;
     const photo = await requestPhoto(source);
     if (!photo) return;
     setDraftPhoto(photo);
@@ -369,7 +371,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
     setDraftName(suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }));
   }, [draftCategory, draftColor, draftPattern]);
 
-  const handleSaveItem = () => {
+  const handleSaveItem = (addAnother = false) => {
     if (!draftPhoto || isAnalyzing || !draftCategory || !categoryConfirmed) return;
     const resolvedSection = draftSection || getSectionByCategory(draftCategory);
     const newItem: WardrobeItem = {
@@ -389,6 +391,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
     closeDraft();
+    // Гардероб обычно заполняют пачкой: сразу следующая вещь из того же источника.
+    if (addAnother && !draftExistingId) setTimeout(() => { void handleAddItem(lastSource.current); }, 350);
   };
 
   const handleRetake = async () => {
@@ -754,12 +758,18 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                 />
                 <PrimaryButton
                   title={t('Сохранить')}
-                  onPress={handleSaveItem}
+                  onPress={() => handleSaveItem()}
                   variant="gold"
                   size="lg"
                   disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
                   style={styles.modalSave}
                 />
+                {!draftExistingId ? <PrimaryButton
+                  title={t('Сохранить и добавить ещё')}
+                  onPress={() => handleSaveItem(true)}
+                  variant="ghost"
+                  disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
+                /> : null}
                 <PrimaryButton
                   title={t('Отмена')}
                   onPress={closeDraft}

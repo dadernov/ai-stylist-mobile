@@ -1,3 +1,4 @@
+import { usePhotoPicker } from './usePhotoPicker';
 import { useMemo, useState } from 'react';
 import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { ArrowUpRight, Check, Layers2, Pencil, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
@@ -19,6 +20,7 @@ type Props = {
   items: WardrobeItem[];
   modelUri?: string;
   onProfile: () => void;
+  onModelChange?: (uri: string) => void;
   onWardrobe: () => void;
   onSave: (look: SavedLook) => void;
   onOpenHistory: () => void;
@@ -29,7 +31,14 @@ type Props = {
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
-export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds }: Props) {
+  // Фото для примерки выбирается прямо здесь, без перехода в профиль.
+  const { pickPhoto, cropModal } = usePhotoPicker();
+  const pickModel = async () => {
+    if (!onModelChange) { onProfile(); return; }
+    const uri = await pickPhoto();
+    if (uri) onModelChange(uri);
+  };
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const { colors } = useTheme();
@@ -68,7 +77,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, on
           <Text style={styles.heading}>{t('Моё фото')}</Text>
           <Text style={styles.muted}>{t(modelUri ? 'Из профиля' : 'Фото ещё не добавлено')}</Text>
         </View>
-        <IconButton icon={modelUri ? Pencil : ArrowUpRight} label={t(modelUri ? 'Заменить фото' : 'Добавить фото')} onPress={onProfile} />
+        <IconButton icon={modelUri ? Pencil : ArrowUpRight} label={t(modelUri ? 'Заменить фото' : 'Добавить фото')} onPress={() => { void pickModel(); }} />
       </View>
       <View style={styles.modes} accessibilityRole="tablist">
         {(['single', 'outfit'] as const).map(value => (
@@ -125,6 +134,7 @@ export function FittingRoom({ items, modelUri, onProfile, onWardrobe, onSave, on
       {!items.length && <PrimaryButton title={t('Добавить вещи')} onPress={onWardrobe} variant="ghost" />}
       <RecentTryOns onSave={onSave} onOpenHistory={onOpenHistory} />
       {selection.length > 0 && <FittingSession key={sessionKey} items={selection} modelUri={modelUri} onSave={onSave} visible={previewOpen} onClose={() => setPreviewOpen(false)} />}
+      {cropModal}
     </View>
   );
 }

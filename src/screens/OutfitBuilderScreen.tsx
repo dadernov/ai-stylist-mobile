@@ -1,15 +1,4 @@
-import {
-  Animated,
-  Image,
-  Keyboard,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from 'react-native';
+import { Animated, Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
@@ -106,6 +95,7 @@ type OutfitBuilderProps = {
   onFavoriteAdd: (look: GeneratedLook) => void;
   favoriteLookIds?: Set<string>;
   onProfile: () => void;
+  onModelChange?: (uri: string) => void;
   onWardrobe: () => void;
   initialItemId?: string;
   initialItemIds?: string[];
@@ -365,6 +355,7 @@ export function OutfitBuilderScreen({
   onFavoriteAdd,
   favoriteLookIds,
   onProfile,
+  onModelChange,
   onWardrobe,
   initialItemId,
   initialItemIds,
@@ -457,7 +448,7 @@ export function OutfitBuilderScreen({
 
   const handleSaveGeneratedLook = useCallback(
     (look: GeneratedLook) => {
-      const name = look.title || t('Лук {n}', { n: savedLooks.length + 1 });
+      const name = (look.title && look.title.split(' + ').map(part => t(part)).join(' + ')) || t('Лук {n}', { n: savedLooks.length + 1 });
       const newLook: SavedLook = {
         id: Date.now().toString(),
         name,
@@ -708,7 +699,7 @@ export function OutfitBuilderScreen({
       <FormScrollView style={activeTab === 'history' && { display: 'none' }} contentContainerStyle={styles.pageContent}>
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
           <FittingRoom key={repeatSelection?.key || 0} items={items} modelUri={modelUri}
-            initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onWardrobe={onWardrobe}
+            initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onModelChange={onModelChange} onWardrobe={onWardrobe}
             onOpenHistory={() => { setHistoryItemId(undefined); setActiveTab('history'); }}
             onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])} />
         </View>
@@ -768,8 +759,8 @@ export function OutfitBuilderScreen({
                 <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
                 <Text style={styles.weatherText}>{weatherText}</Text>
                 {!weatherReady && !weatherLoading ? (
-                  <AppPressable haptics onPress={() => { void loadWeather(); }} style={styles.weatherRetry}>
-                    <Text style={styles.weatherRetryText}>{t('Повторить')}</Text>
+                  <AppPressable haptics onPress={() => { if (weatherError === 'permission') void Linking.openSettings().catch(() => {}); else void loadWeather(); }} style={styles.weatherRetry}>
+                    <Text style={styles.weatherRetryText}>{t(weatherError === 'permission' ? 'Открыть настройки' : 'Повторить')}</Text>
                   </AppPressable>
                 ) : null}
               </View>
