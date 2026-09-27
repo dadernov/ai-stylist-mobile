@@ -26,5 +26,10 @@ export const beautyMap: Record<string, BeautyTip> = {
   }
 };
 
+// Новые события берут советы близкого по характеру события.
+const beautyAlias: Record<string, string> = {
+  Работа: 'Совещание', Собеседование: 'Совещание', Учёба: 'Прогулка', Ресторан: 'Свидание', Театр: 'Вечеринка',
+  Концерт: 'Вечеринка', Свадьба: 'Вечеринка', Путешествие: 'Прогулка', Дома: 'Спортзал', Пляж: 'Спортзал',
+};
 export const pickBeauty = (event: string, enabled = false): BeautyTip =>
-  enabled ? beautyMap[event] || beautyMap['Прогулка'] : { makeup: '', hair: '' };
+  enabled ? beautyMap[event] || beautyMap[beautyAlias[event]] || beautyMap['Прогулка'] : { makeup: '', hair: '' };

@@ -75,8 +75,52 @@ const named = (item: WardrobeItem) => `«${item.name}»`;
 const list = (items: WardrobeItem[]) => items.map(named).join(', ');
 
 // Событие задаёт целевую строгость образа, стиль её уточняет.
-const eventFormality: Record<string, number> = { Совещание: 4.5, Вечеринка: 4, Свидание: 3.5, Прогулка: 2.5, Спортзал: 1 };
-const styleFormality: Record<string, number> = { Офисный: 4.5, Классика: 4.5, Минимализм: 3.5, Романтичный: 3.5, Бохо: 2.5, Кэжуал: 2.5, 'Спорт-шик': 1.5 };
+export const EVENTS = ['Прогулка', 'Работа', 'Совещание', 'Собеседование', 'Учёба', 'Свидание', 'Ресторан', 'Театр', 'Вечеринка',
+  'Концерт', 'Свадьба', 'Путешествие', 'Дома', 'Пляж', 'Спортзал'];
+export const STYLES = ['Кэжуал', 'Смарт-кэжуал', 'Минимализм', 'Классика', 'Офисный', 'Old money', 'Романтичный', 'Бохо',
+  'Стритвир', 'Спорт-шик', 'Гранж', 'Преппи'];
+const eventFormality: Record<string, number> = {
+  Прогулка: 2.5, Работа: 3.8, Совещание: 4.5, Собеседование: 4.6, Учёба: 2.6, Свидание: 3.5, Ресторан: 3.6, Театр: 4.2,
+  Вечеринка: 4, Концерт: 2.2, Свадьба: 4.5, Путешествие: 2, Дома: 1.5, Пляж: 1.2, Спортзал: 1,
+};
+const styleFormality: Record<string, number> = {
+  Кэжуал: 2.5, 'Смарт-кэжуал': 3.3, Минимализм: 3.5, Классика: 4.5, Офисный: 4.5, 'Old money': 4, Романтичный: 3.5,
+  Бохо: 2.5, Стритвир: 1.8, 'Спорт-шик': 1.5, Гранж: 2, Преппи: 3.5,
+};
+// Что делает вещь «своей» для стиля: категории, узоры, палитра.
+type StyleRule = { categories: string[]; patterns?: string[]; colors?: string[]; plainOnly?: boolean; neutralPalette?: boolean };
+const styleRules: Record<string, StyleRule> = {
+  Кэжуал: { categories: ['Футболка', 'Лонгслив', 'Свитшот', 'Худи', 'Джинсы', 'Кеды', 'Кроссовки', 'Куртка', 'Бомбер', 'Рубашка'] },
+  'Смарт-кэжуал': { categories: ['Рубашка', 'Поло', 'Свитер', 'Водолазка', 'Брюки', 'Джинсы', 'Лоферы', 'Ботинки', 'Пиджак', 'Тренч', 'Кардиган'] },
+  Минимализм: { categories: [], plainOnly: true, neutralPalette: true },
+  Классика: { categories: ['Рубашка', 'Блуза', 'Брюки', 'Пиджак', 'Пальто', 'Туфли', 'Лоферы', 'Юбка', 'Тренч', 'Водолазка', 'Платье'] },
+  Офисный: { categories: ['Рубашка', 'Блуза', 'Брюки', 'Пиджак', 'Лоферы', 'Туфли', 'Водолазка', 'Юбка', 'Жилет', 'Кардиган'] },
+  'Old money': { categories: ['Поло', 'Рубашка', 'Свитер', 'Кардиган', 'Брюки', 'Лоферы', 'Тренч', 'Пальто', 'Пиджак', 'Юбка'], neutralPalette: true },
+  Романтичный: { categories: ['Блуза', 'Платье', 'Юбка', 'Балетки', 'Кардиган', 'Сарафан'], patterns: ['Цветочный', 'Горох'], colors: ['Розовый', 'Пудровый', 'Лавандовый', 'Молочный', 'Кремовый'] },
+  Бохо: { categories: ['Кардиган', 'Сарафан', 'Юбка', 'Сандалии', 'Рубашка', 'Джинсы', 'Платье'], patterns: ['Цветочный'], colors: ['Песочный', 'Карамельный', 'Оливковый', 'Горчичный', 'Бежевый'] },
+  Стритвир: { categories: ['Худи', 'Свитшот', 'Футболка', 'Джоггеры', 'Кроссовки', 'Бомбер', 'Джинсы', 'Кеды', 'Парка'] },
+  'Спорт-шик': { categories: ['Худи', 'Свитшот', 'Кроссовки', 'Джоггеры', 'Леггинсы', 'Бомбер', 'Футболка', 'Лонгслив'] },
+  Гранж: { categories: ['Ботинки', 'Куртка', 'Джинсы', 'Футболка', 'Рубашка', 'Сапоги'], patterns: ['Клетка'], colors: ['Черный', 'Чёрный', 'Графит', 'Бордовый', 'Хаки'] },
+  Преппи: { categories: ['Поло', 'Рубашка', 'Кардиган', 'Свитер', 'Юбка', 'Лоферы', 'Брюки', 'Пиджак'], patterns: ['Клетка', 'Полоска'] },
+};
+// События с особыми требованиями к вещам сверх строгости.
+const eventBonus: Record<string, { good?: string[]; bad?: string[] }> = {
+  Пляж: { good: ['Шорты', 'Сандалии', 'Сарафан', 'Футболка', 'Майка', 'Топ', 'Рубашка'], bad: ['Ботинки', 'Сапоги', 'Пиджак', 'Брюки', 'Свитер', 'Водолазка', 'Джинсы', 'Джоггеры', 'Лоферы', 'Туфли'] },
+  Путешествие: { good: ['Кроссовки', 'Кеды', 'Джинсы', 'Джоггеры', 'Свитшот', 'Худи', 'Лонгслив', 'Куртка'], bad: ['Туфли', 'Балетки', 'Пиджак'] },
+  Дома: { good: ['Футболка', 'Худи', 'Свитшот', 'Джоггеры', 'Леггинсы', 'Шорты', 'Лонгслив'], bad: ['Пиджак', 'Туфли', 'Пальто'] },
+  Концерт: { good: ['Футболка', 'Джинсы', 'Кеды', 'Ботинки', 'Куртка', 'Кроссовки'], bad: ['Туфли', 'Балетки'] },
+  Собеседование: { good: ['Рубашка', 'Блуза', 'Брюки', 'Пиджак', 'Лоферы', 'Туфли'], bad: ['Шорты', 'Худи', 'Джоггеры', 'Майка', 'Сандалии'] },
+};
+export function styleFit(item: WardrobeItem, style: string) {
+  const rule = styleRules[style];
+  if (!rule) return false;
+  const info = colorInfo(item.color);
+  if (rule.plainOnly && item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)) return false;
+  if (rule.categories.includes(item.category)) return !rule.neutralPalette || !info || info.neutral;
+  if (rule.patterns?.includes(item.pattern)) return true;
+  if (rule.colors?.includes(item.color)) return true;
+  return Boolean(rule.plainOnly && rule.neutralPalette && info?.neutral);
+}
 
 function targetFormality(context: OutfitContext) {
   const values = [eventFormality[context.event], styleFormality[context.style]].filter(value => value !== undefined);
@@ -161,9 +205,11 @@ function itemScore(item: WardrobeItem, context: OutfitContext) {
   let score = item.imageUri ? 2 : 0;
   score -= Math.abs(garment.formality - targetFormality(context)) * 3;
   if (event === 'Спортзал') score += garment.sporty ? 12 : -35;
-  if (context.style === 'Минимализм') score += item.pattern === 'Однотонный' ? 5 : -3;
-  if (context.style === 'Бохо' && ['Кардиган', 'Джинсы', 'Сандалии', 'Юбка', 'Рубашка'].includes(item.category)) score += 4;
-  if (context.style === 'Романтичный' && ['Блуза', 'Платье', 'Юбка', 'Балетки', 'Кардиган'].includes(item.category)) score += 4;
+  if (styleRules[context.style]) score += styleFit(item, context.style) ? 5 : -1;
+  const special = eventBonus[event];
+  if (special?.good?.includes(item.category)) score += 6;
+  if (special?.bad?.includes(item.category)) score -= 12;
+  if (event === 'Собеседование' && item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)) score -= 3;
   // Rank the user's actual wardrobe, not assumed clothing preferences by gender.
   if (temperature !== null) {
     const comfort = warmthFor(temperature);
@@ -361,6 +407,129 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t
   return { reasons: reasons.slice(0, 3), tips: ordered.slice(0, 3), warnings, tuckMode };
 }
 
+export type CriterionKey = 'set' | 'occasion' | 'style' | 'weather' | 'colors';
+export type CriterionStatus = 'good' | 'ok' | 'bad' | 'unknown';
+export type Criterion = { key: CriterionKey; status: CriterionStatus; note: string; value: number };
+export const CRITERION_LABELS: Record<CriterionKey, string> = { set: 'Комплект', occasion: 'Событие', style: 'Стиль', weather: 'Погода', colors: 'Цвета' };
+const WEIGHTS: Record<CriterionKey, number> = { set: 20, occasion: 25, weather: 25, style: 15, colors: 15 };
+const clamp01 = (value: number) => Math.max(0.1, Math.min(1, value));
+// Плавная оценка вместо «да/нет»: иначе почти всё получает 100% и цифра ничего не говорит.
+const statusOf = (value: number): CriterionStatus => value >= 0.8 ? 'good' : value >= 0.5 ? 'ok' : 'bad';
+
+/**
+ * Проверяемая оценка образа: пять понятных критериев и процент совпадения.
+ * Каждый критерий считается по тем же правилам, что и подбор, поэтому
+ * «почему подходит» и порядок образов не могут разойтись.
+ */
+export function evaluateLook(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
+  const wearables = items.filter(item => describe(item).section !== 'Сумки');
+  const top = items.find(item => item.section === 'Верх');
+  const bottom = items.find(item => item.section === 'Низ');
+  const shoes = items.find(item => item.section === 'Обувь');
+  const outer = items.find(item => item.section === 'Верхняя одежда');
+  const onePiece = items.some(isOnePiece);
+  const event = context.event ? t(context.event).toLocaleLowerCase() : '';
+  const criteria: Criterion[] = [];
+
+  const missing = [!top && t('Верх').toLocaleLowerCase(), !bottom && !onePiece && t('Низ').toLocaleLowerCase(), !shoes && t('Обувь').toLocaleLowerCase()].filter(Boolean) as string[];
+  const setValue = !missing.length ? 1 : missing.length === 1 && !shoes ? 0.6 : 0.2;
+  criteria.push({ key: 'set', status: statusOf(setValue), value: setValue,
+    note: missing.length ? t('Не хватает: {items}.', { items: missing.join(', ') }) : t('Верх, низ и обувь на месте.') });
+
+  if (context.event === 'Спортзал') {
+    const casual = wearables.filter(item => !describe(item).sporty);
+    const value = !casual.length ? 1 : casual.length === 1 ? 0.55 : 0.2;
+    criteria.push({ key: 'occasion', status: statusOf(value), value,
+      note: casual.length ? t('Для тренировки не подходит: {items}.', { items: list(casual) }) : t('Всё спортивное — удобно тренироваться.') });
+  } else if (wearables.length) {
+    const target = targetFormality(context);
+    const values = wearables.map(item => describe(item).formality);
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const spread = Math.max(...values) - Math.min(...values);
+    const diff = average - target;
+    const special = eventBonus[context.event];
+    const unsuitable = special?.bad ? wearables.filter(item => special.bad!.includes(item.category)) : [];
+    const value = unsuitable.length ? 0.2 : clamp01(1 - Math.max(0, Math.abs(diff) - 0.3) * 0.35 - Math.max(0, spread - 1) * 0.12);
+    const status = statusOf(value);
+    const note = unsuitable.length ? t('Для «{event}» не подходит: {items}.', { event, items: list(unsuitable) })
+      : status === 'good' ? t('Строгость как раз для «{event}».', { event })
+      : spread >= 3 ? t('Вещи из разных регистров: строгая и подчёркнуто простая.')
+      : diff < 0 ? t('Проще, чем обычно носят на «{event}».', { event }) : t('Строже, чем нужно для «{event}».', { event });
+    criteria.push({ key: 'occasion', status, note, value });
+  }
+
+  if (styleRules[context.style] && wearables.length) {
+    const matching = wearables.filter(item => styleFit(item, context.style));
+    const share = matching.length / wearables.length;
+    const value = clamp01(0.25 + 0.75 * share);
+    criteria.push({ key: 'style', status: statusOf(value), value,
+      note: t('{count} из {total} вещей в стиле «{style}».', { count: matching.length, total: wearables.length, style: t(context.style) }) });
+  }
+
+  if (context.temperature === null && !context.precipitation) {
+    criteria.push({ key: 'weather', status: 'unknown', note: t('Погода не указана.'), value: 0 });
+  } else {
+    const warnings: string[] = []; const reasons: string[] = []; const tips: Tip[] = [];
+    if (context.temperature !== null) weatherAdvice(items, outer, context.temperature, tips, warnings, reasons, t);
+    precipitationAdvice(outer, shoes, context, tips, warnings, reasons, t);
+    const conditions = [context.temperature !== null ? `${Math.round(context.temperature)}°C` : '',
+      context.precipitation === 'rain' ? t('дождь') : context.precipitation === 'snow' ? t('снег') : ''].filter(Boolean).join(', ');
+    // Замечания — серьёзно, советы про погоду (кеды в дождь, ветер) — слегка.
+    const mild = tips.filter(tip => tip.rank <= 3).length;
+    const value = clamp01(1 - warnings.length * 0.35 - mild * 0.12);
+    criteria.push({ key: 'weather', status: statusOf(value), value,
+      note: warnings.length ? warnings[0] : mild ? tips[0].text : t('Подходит для погоды: {conditions}.', { conditions }) });
+  }
+
+  const known = items.map(itemColor).filter(Boolean) as ColorInfo[];
+  if (known.length >= 2) {
+    const palette = paletteScore(items);
+    const patterned = items.filter(item => item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)).length;
+    const accents = known.filter(info => !info.neutral).length;
+    let value = palette >= 5 ? 1 : palette >= 3 ? 0.9 : palette >= 0 ? 0.68 : palette >= -4 ? 0.45 : 0.25;
+    if (patterned > 1) value = Math.min(value, 0.6);
+    const status = statusOf(value);
+    const note = patterned > 1 ? t('Несколько принтов сразу — смело, но шумно.')
+      : status === 'bad' ? t('Цвета спорят между собой.')
+      : accents === 0 ? t('Спокойная нейтральная палитра.')
+      : accents === 1 ? t('Один цветной акцент на нейтральной базе.') : t('Цвета поддерживают друг друга.');
+    criteria.push({ key: 'colors', status, note, value });
+  }
+
+  const scored = criteria.filter(criterion => criterion.status !== 'unknown');
+  const weight = scored.reduce((sum, criterion) => sum + WEIGHTS[criterion.key], 0);
+  let percent = weight ? Math.round(scored.reduce((sum, criterion) => sum + WEIGHTS[criterion.key] * criterion.value, 0) / weight * 100) : 0;
+  // Провал по главному не компенсируется красивыми цветами: образ не к месту
+  // не бывает «хорошим», а неполный или не по погоде — лучше чем «с оговорками».
+  const failed = (key: CriterionKey) => criteria.some(criterion => criterion.key === key && criterion.status === 'bad');
+  if (failed('occasion')) percent = Math.min(percent, 45);
+  if (failed('set') || failed('weather')) percent = Math.min(percent, 60);
+  return { percent, criteria };
+}
+
+/** Каких вещей в гардеробе не хватает, чтобы подбор под этот контекст был точным. */
+export function wardrobeGaps(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
+  const has = (predicate: (item: WardrobeItem) => boolean) => items.some(predicate);
+  const gaps: string[] = [];
+  if (!has(item => item.section === 'Верх')) gaps.push(t('верха'));
+  if (!has(item => item.section === 'Низ' || isOnePiece(item))) gaps.push(t('брюк, юбки или платья'));
+  if (!has(item => item.section === 'Обувь')) gaps.push(t('обуви'));
+  if (context.event === 'Спортзал') {
+    if (!has(item => item.section === 'Верх' && Boolean(describe(item).sporty))) gaps.push(t('спортивного верха'));
+    if (!has(item => item.section === 'Низ' && Boolean(describe(item).sporty))) gaps.push(t('спортивного низа'));
+    if (!has(item => item.section === 'Обувь' && Boolean(describe(item).sporty))) gaps.push(t('кроссовок'));
+  } else if (targetFormality(context) >= 4) {
+    if (!has(item => item.section === 'Верх' && describe(item).formality >= 4)) gaps.push(t('рубашки или блузы'));
+    if (!has(item => (item.section === 'Низ' || isOnePiece(item)) && describe(item).formality >= 4)) gaps.push(t('брюк, юбки или платья построже'));
+    if (!has(item => item.section === 'Обувь' && describe(item).formality >= 4)) gaps.push(t('строгой обуви (лоферы, туфли)'));
+  }
+  if (context.temperature !== null && context.temperature < 5 && !has(item => item.section === 'Верхняя одежда' && warmthOf(item) >= 4)) gaps.push(t('тёплой верхней одежды'));
+  if (((context.temperature !== null && context.temperature < 0) || context.precipitation === 'snow') && !has(item => closedWarmShoes.has(item.category))) gaps.push(t('ботинок или сапог'));
+  if (context.precipitation === 'rain' && !has(item => rainLayers.has(item.category))) gaps.push(t('плаща или куртки'));
+  if (styleRules[context.style] && !has(item => styleFit(item, context.style))) gaps.push(t('вещей в стиле «{style}»', { style: t(context.style) }));
+  return [...new Set(gaps)];
+}
+
 export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false, options: RecommendationOptions = {}): GeneratedLook[] {
   const context: OutfitContext = { style, event, temperature, gender, precipitation: options.precipitation ?? null, wind: options.wind ?? null };
   const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values()).filter(item => !options.excludedIds?.includes(item.id));
@@ -448,13 +617,16 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     const selection = [...candidate.items];
     if (bags.length && (anchor?.section === 'Сумки' || (event !== 'Спортзал' && itemScore(bags[0], context) >= -4))) selection.push(bags[0]);
     const advice = getOutfitAdvice(selection, context);
+    const match = evaluateLook(selection, context);
     return {
       id: `idea-${style}-${event}-${temperature}-${selection.map(item => item.id).join('-')}`, title: selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.category).join(' + ') || `Образ ${index + 1}`,
       itemIds: selection.map(item => item.id), weather, style, event, temperature,
       fitReasons: advice.reasons, stylingTips: advice.tips, warnings: advice.warnings,
-      tuckMode: advice.tuckMode, makeup: beauty.makeup, hair: beauty.hair
+      tuckMode: advice.tuckMode, makeup: beauty.makeup, hair: beauty.hair,
+      matchPercent: match.percent, fitScore: match.percent
     };
-  });
+  }).sort((a, b) => b.matchPercent - a.matchPercent)
+    .filter((look, index, all) => index === 0 || look.matchPercent >= Math.max(45, all[0].matchPercent - 30));
 }
 
 export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem[], context: OutfitContext, anchorId?: string, t: Translator = originalText) {

@@ -11,7 +11,6 @@ import {
   View
 } from 'react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
@@ -33,11 +32,14 @@ import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
-import { precipitationFromCode, buildLooks } from '../domain/outfits';
+import { buildLooks, evaluateLook, EVENTS, STYLES } from '../domain/outfits';
+import { describeWeatherCode } from '../services/weather';
+import { useWeather } from '../components/useWeather';
+import { MatchSummary } from '../components/MatchSummary';
 import { Gender } from '../types/profile';
 
-const stylePresets = ['Кэжуал', 'Спорт-шик', 'Романтичный', 'Бохо', 'Минимализм', 'Офисный'];
-const events = ['Свидание', 'Прогулка', 'Совещание', 'Вечеринка', 'Спортзал'];
+const stylePresets = STYLES;
+const events = EVENTS;
 
 // Эмодзи-акценты для чипов и слотов ручного конструктора (декор, не контент).
 const styleIcons: Record<string, string> = {
@@ -46,7 +48,13 @@ const styleIcons: Record<string, string> = {
   'Романтичный': '🌸',
   'Бохо': '🌾',
   'Минимализм': '🤍',
-  'Офисный': '💼'
+  'Офисный': '💼',
+  'Смарт-кэжуал': '👔',
+  'Классика': '🎩',
+  'Old money': '🥂',
+  'Стритвир': '🧢',
+  'Гранж': '🎸',
+  'Преппи': '📚'
 };
 
 const eventIcons: Record<string, string> = {
@@ -54,7 +62,17 @@ const eventIcons: Record<string, string> = {
   'Прогулка': '🚶',
   'Совещание': '💼',
   'Вечеринка': '🎉',
-  'Спортзал': '🏋️'
+  'Спортзал': '🏋️',
+  'Работа': '🗂️',
+  'Собеседование': '🤝',
+  'Учёба': '🎓',
+  'Ресторан': '🍽️',
+  'Театр': '🎭',
+  'Концерт': '🎤',
+  'Свадьба': '💍',
+  'Путешествие': '✈️',
+  'Дома': '🏠',
+  'Пляж': '🏖️'
 };
 
 const slotEmojis: Record<string, string> = {
@@ -109,27 +127,8 @@ const mergeTryOnHistory = (nextItem: TryOnHistoryItem, history: TryOnHistoryItem
   ].slice(0, 8);
 };
 
-const weatherCodeMap: Record<number, string> = {
-  0: 'ясно',
-  1: 'переменная облачность',
-  2: 'облачно',
-  3: 'пасмурно',
-  45: 'туман',
-  48: 'изморозь',
-  51: 'морось',
-  61: 'дождь',
-  71: 'снег',
-  80: 'ливень',
-  95: 'гроза'
-};
 
-// Гонка геолокации/fetch без таймаута вешает «Определяем погоду…» навсегда
-// (see аудит #35). Оборачиваем любой промис жёстким пределом ожидания.
-const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(message)), ms))
-  ]);
+
 
 // Чистая функция без зависимостей от состояния экрана — вынесена из компонента,
 // чтобы карточка сохранённого лука могла мемоизироваться (см. SavedLookCard).
@@ -156,7 +155,7 @@ const renderFitBadge = (score: number | undefined, styles: ReturnType<typeof mak
   if (typeof score !== 'number') return null;
   return (
     <View style={styles.fitBadge}>
-      <Text style={styles.fitBadgeText}>✦ {Math.round(score)}</Text>
+      <Text style={styles.fitBadgeText}>✦ {Math.round(score)}%</Text>
     </View>
   );
 };
@@ -222,7 +221,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.title}</Text>
-            {renderFitBadge(look.fitScore, styles)}
+            {renderFitBadge(look.matchPercent, styles)}
           </View>
           <View style={styles.lookActions}>
             <AppPressable haptics style={styles.actionSoft} onPress={() => onSaveToLooks(look)}>
@@ -257,6 +256,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
             • {item.name}
           </Text>
         ))}
+        {look.event ? <MatchSummary {...evaluateLook(lookItems, { style: look.style, event: look.event, temperature: look.temperature ?? null }, t)} detailed /> : null}
         {renderFitReasons(look.fitReasons, styles, t)}
         {look.stylingTips?.length ? <View style={styles.beautyBlock}>
           <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
@@ -313,7 +313,7 @@ const SavedLookCard = memo(function SavedLookCard({
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.name}</Text>
-            {renderFitBadge(look.fitScore, styles)}
+            
           </View>
           <View style={styles.lookActions}>
             <AppPressable haptics style={styles.actionSoft} onPress={() => onEdit(look)}>
@@ -383,15 +383,16 @@ export function OutfitBuilderScreen({
   const [repeatSelection, setRepeatSelection] = useState<{ ids: string[]; key: number }>();
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
-  const [weatherText, setWeatherText] = useState(translate('Определяем погоду…'));
-  const [temperature, setTemperature] = useState<number | null>(null);
-  const [weatherCode, setWeatherCode] = useState<number | null>(null);
-  const [windSpeed, setWindSpeed] = useState<number | null>(null);
-  // Отдельно от отображаемого текста: true только когда получена настоящая
-  // погода, а не плейсхолдер загрузки/ошибки — такой текст никогда не должен
-  // попасть в сохранённый лук (см. аудит #42).
-  const [weatherReady, setWeatherReady] = useState(false);
-  const [weatherLoading, setWeatherLoading] = useState(true);
+  const { weather: liveWeather, error: weatherError, loading: weatherLoading, reload: loadWeather } = useWeather(activeTab === 'builder');
+  const weatherReady = Boolean(liveWeather);
+  const temperature = liveWeather ? liveWeather.temperature : null;
+  const weatherCode = liveWeather?.code ?? null;
+  const weatherText = liveWeather
+    ? t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
+      temp: Math.round(liveWeather.temperature), description: t(describeWeatherCode(liveWeather.code)),
+      wind: liveWeather.wind === null ? '--' : Math.round(liveWeather.wind), city: liveWeather.city || t('твоем городе') })
+    : weatherLoading ? t('Определяем погоду…')
+    : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.') : t('Не удалось получить погоду. Проверь интернет.');
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -426,59 +427,7 @@ export function OutfitBuilderScreen({
     () => Object.fromEntries(items.map((item) => [item.id, item])),
     [items]
   );
-  const loadWeather = useCallback(async () => {
-    setWeatherLoading(true);
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        setWeatherReady(false);
-        setWeatherText(t('Разреши доступ к геолокации, чтобы узнать погоду.'));
-        return;
-      }
-      const location = await withTimeout(Location.getCurrentPositionAsync({}), 12000, 'geolocation timeout');
-      // Геокодинг — только для названия города в тексте; если он не ответил,
-      // погоду всё равно показываем по координатам, а не проваливаем весь запрос.
-      const geo = await withTimeout(
-        Location.reverseGeocodeAsync({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude
-        }),
-        8000,
-        'geocode timeout'
-      ).catch(() => []);
-      const city = geo[0]?.city || t('твоем городе');
-      const url =
-        `https://api.open-meteo.com/v1/forecast?latitude=${location.coords.latitude}` +
-        `&longitude=${location.coords.longitude}&current=temperature_2m,weathercode,wind_speed_10m&wind_speed_unit=ms&timezone=auto`;
-      const res = await withTimeout(fetch(url), 8000, 'weather fetch timeout');
-      const data = await res.json();
-      const temp = data?.current?.temperature_2m;
-      const code = data?.current?.weathercode;
-      const wind = data?.current?.wind_speed_10m;
-      const description = t(weatherCodeMap[code] || 'переменная облачность');
-      setTemperature(typeof temp === 'number' ? temp : null);
-      setWeatherCode(typeof code === 'number' ? code : null);
-      setWindSpeed(typeof wind === 'number' ? wind : null);
-      setWeatherReady(true);
-      setWeatherText(
-        t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
-          temp: temp ?? '--',
-          description,
-          wind: wind ?? '--',
-          city
-        })
-      );
-    } catch (error) {
-      setWeatherReady(false);
-      setWeatherText(t('Не удалось получить погоду. Проверь интернет.'));
-    } finally {
-      setWeatherLoading(false);
-    }
-  }, [t]);
 
-  useEffect(() => {
-    if (activeTab === 'builder' && !weatherReady) loadWeather();
-  }, [activeTab]);
 
   const handleGenerateLooks = () => {
     if (isGenerating) return;
@@ -494,7 +443,7 @@ export function OutfitBuilderScreen({
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
     setTimeout(() => {
       const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice, {
-        precipitation: weatherReady ? precipitationFromCode(weatherCode) : null, wind: weatherReady ? windSpeed : null
+        precipitation: liveWeather?.precipitation ?? null, wind: liveWeather?.wind ?? null
       });
       setIsGenerating(false);
       if (!generated.length) {
@@ -819,7 +768,7 @@ export function OutfitBuilderScreen({
                 <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
                 <Text style={styles.weatherText}>{weatherText}</Text>
                 {!weatherReady && !weatherLoading ? (
-                  <AppPressable haptics onPress={loadWeather} style={styles.weatherRetry}>
+                  <AppPressable haptics onPress={() => { void loadWeather(); }} style={styles.weatherRetry}>
                     <Text style={styles.weatherRetryText}>{t('Повторить')}</Text>
                   </AppPressable>
                 ) : null}

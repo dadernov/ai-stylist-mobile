@@ -16,6 +16,11 @@ const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).forEach(entry =
 });
 walk(path.join(root, 'src')); files.push(path.join(root, 'App.tsx'));
 const keys = new Set();
+// Keys built from data rather than literal t('…') calls: occasions, styles, criteria and verdicts.
+const outfitsSource = fs.readFileSync(path.join(root, 'src/domain/outfits.ts'), 'utf8');
+for (const block of outfitsSource.matchAll(/export const (?:EVENTS|STYLES) = \[([^\]]*)\]/g)) for (const m of block[1].matchAll(/'([^']+)'/g)) keys.add(m[1]);
+for (const m of outfitsSource.split('CRITERION_LABELS')[1].split('\n')[0].matchAll(/: '([^']+)'/g)) keys.add(m[1]);
+['Отлично подходит', 'Хорошо подходит', 'Подходит с оговорками', 'Слабое совпадение'].forEach(key => keys.add(key));
 const pattern = /\b(?:t|translate)\(\s*(['"])((?:\\.|(?!\1).)*)\1/g;
 for (const file of files) for (const match of fs.readFileSync(file, 'utf8').matchAll(pattern)) keys.add(match[2].replace(/\\'/g, "'"));
 const placeholders = text => new Set([...text.matchAll(/\{\w+\}/g)].map(m => m[0]));

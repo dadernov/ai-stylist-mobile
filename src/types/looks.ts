@@ -11,6 +11,8 @@ export type GeneratedLook = {
   stylingTips?: string[];
   warnings?: string[];
   fitScore?: number;
+  /** Процент совпадения по пяти критериям (evaluateLook). */
+  matchPercent?: number;
   fitReasons?: string[];
   tuckMode?: 'auto' | 'tucked' | 'untucked';
   tryOnImageUri?: string;

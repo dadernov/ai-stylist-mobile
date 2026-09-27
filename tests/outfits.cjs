@@ -124,3 +124,36 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.equal(precipitationFromCode(61), 'rain'); assert.equal(precipitationFromCode(73), 'snow'); assert.equal(precipitationFromCode(2), null);
   console.log('PASS: jeans as base, rain layer and shoes, snow boots, distinct looks, meeting blazer, warning-free top pick, material warmth');
 }
+
+// --- понятная оценка: проценты, критерии, пробелы гардероба ---
+{
+  const { evaluateLook, wardrobeGaps, EVENTS, STYLES } = require('../src/domain/outfits.ts');
+  const it = (id, category, section, color, extra = {}) => item(id, category, section, { color, ...extra });
+  const shirtW = it('s', 'Рубашка', 'Верх', 'Белый'), pantsB = it('p', 'Брюки', 'Низ', 'Черный'), loafersB = it('l', 'Лоферы', 'Обувь', 'Коричневый');
+  const hoodieR = it('h', 'Худи', 'Верх', 'Красный'), jeansB = it('j', 'Джинсы', 'Низ', 'Синий'), canvasW = it('c', 'Кеды', 'Обувь', 'Белый');
+  const interview = { style: 'Классика', event: 'Собеседование', temperature: 18 };
+  const strong = evaluateLook([shirtW, pantsB, loafersB], interview);
+  const weak = evaluateLook([hoodieR, jeansB, canvasW], interview);
+  assert.ok(strong.percent >= 85 && weak.percent < 60, `strong ${strong.percent} vs weak ${weak.percent}`);
+  assert.deepEqual(strong.criteria.map(c => c.key), ['set', 'occasion', 'style', 'weather', 'colors']);
+  assert.equal(weak.criteria.find(c => c.key === 'occasion').status, 'bad');
+  assert.ok(weak.criteria.find(c => c.key === 'occasion').note.includes(hoodieR.name), 'the note names the offending item');
+  const noWeather = evaluateLook([shirtW, pantsB, loafersB], { style: 'Классика', event: 'Собеседование', temperature: null });
+  assert.equal(noWeather.criteria.find(c => c.key === 'weather').status, 'unknown', 'unknown weather does not count against the look');
+  const rainy = evaluateLook([hoodieR, jeansB, canvasW], { style: 'Кэжуал', event: 'Прогулка', temperature: 12, precipitation: 'rain' });
+  assert.notEqual(rainy.criteria.find(c => c.key === 'weather').status, 'good');
+  // Пробелы гардероба называют конкретные вещи.
+  const gaps = wardrobeGaps([hoodieR, jeansB, canvasW], { ...interview, temperature: 2, precipitation: 'rain' });
+  for (const expected of ['рубашки или блузы', 'строгой обуви (лоферы, туфли)', 'тёплой верхней одежды', 'плаща или куртки']) assert.ok(gaps.includes(expected), expected);
+  assert.deepEqual(wardrobeGaps([shirtW, pantsB, loafersB], interview), []);
+  // Каждое новое событие и стиль собирают образ без ошибок.
+  const wardrobe = [shirtW, pantsB, loafersB, hoodieR, jeansB, canvasW, it('t', 'Футболка', 'Верх', 'Черный'), it('sh', 'Шорты', 'Низ', 'Бежевый'), it('sn', 'Сандалии', 'Обувь', 'Коричневый')];
+  for (const event of EVENTS) for (const style of STYLES) {
+    const looks = buildLooks(wardrobe, style, event, '', 20);
+    assert.ok(looks.length, `${style}/${event}`);
+    assert.ok(looks.every((look, index) => index === 0 || look.matchPercent <= looks[index - 1].matchPercent), 'looks are ordered by match');
+  }
+  const beach = buildLooks(wardrobe, 'Кэжуал', 'Пляж', '', 30)[0];
+  assert.ok(beach.itemIds.includes('sh') && !beach.itemIds.includes('j'), 'beach picks shorts, not jeans');
+  console.log('PASS: match percent separates strong and weak looks, criteria name the problem, gaps are concrete, all occasions × styles');
+}
