@@ -5,6 +5,7 @@ three-piece final is 12 credits, about 76 RUB at 84 RUB/$. The editors below
 take the photo and every garment in one request for a few cents per look:
 
     key             model on fal                           price per look
+    seedream-5-lite ByteDance Seedream 5.0 Lite edit       $0.035 flat, up to 9 garments
     bria-tryon      Bria FIBO-Edit 1.5 virtual try-on      $0.04 flat, up to 3 garments
     seedream-4.5    ByteDance Seedream 4.5 edit            $0.04 flat, up to 9 garments
     seedream-4      ByteDance Seedream 4.0 edit            $0.03 flat
@@ -48,16 +49,22 @@ class Model(NamedTuple):
     flat_usd: float = 0.0
     usd_per_mp: float = 0.0
     inputs_billed: bool = False
+    # Seedream 5.0 Lite takes no seed; an unknown field may fail the request.
+    seeded: bool = True
 
 
 MODELS = {model.key: model for model in (
+    Model('seedream-5-lite', 'fal-ai/bytedance/seedream/v5/lite/edit', 'seedream', 9, flat_usd=0.035, seeded=False),
     Model('bria-tryon', 'bria/fibo-edit-1.5/virtual-try-on', 'bria', 3, flat_usd=0.04),
     Model('seedream-4.5', 'fal-ai/bytedance/seedream/v4.5/edit', 'seedream', 9, flat_usd=0.04),
     Model('seedream-4', 'fal-ai/bytedance/seedream/v4/edit', 'seedream', 9, flat_usd=0.03),
     Model('flux2-klein-9b', 'fal-ai/flux-2/klein/9b/edit', 'flux2', 3, usd_per_mp=0.011, inputs_billed=True),
     Model('qwen-edit-2511', 'fal-ai/qwen-image-edit-2511', 'qwen', 2, usd_per_mp=0.03),
 )}
-DEFAULT_MODEL = 'seedream-4.5'
+# The newest Seedream is also the cheapest, and it is the one measured against a
+# specialised try-on model (Tstars-Tryon, arXiv 2604.19748): 9.30 vs 9.37 of 10
+# on one garment, 8.91 vs 9.17 on a whole outfit.
+DEFAULT_MODEL = 'seedream-5-lite'
 
 
 def enabled():
@@ -126,8 +133,10 @@ def payload(model, person_url, garment_urls, prompt, seed):
         if prompt:
             body['instruction'] = prompt
         return body
-    body = {'prompt': prompt, 'image_urls': [person_url, *garment_urls], 'num_images': 1, 'seed': seed,
+    body = {'prompt': prompt, 'image_urls': [person_url, *garment_urls], 'num_images': 1,
             'enable_safety_checker': safety}
+    if model.seeded:
+        body['seed'] = seed
     size = output_size(model)
     if size:
         body['image_size'] = size

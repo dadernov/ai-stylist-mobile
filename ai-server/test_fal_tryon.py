@@ -104,6 +104,16 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.get('timeout'), result)
         self.assertIn(('PUT', 'https://queue.fal.run/app/requests/req-1/cancel'), [(m, u) for m, u, _ in calls])
 
+    async def test_seedream_5_lite_is_not_sent_a_seed_it_does_not_take(self):
+        client, calls = queue([{'status': 'COMPLETED'}], {'images': [{'url': 'https://fal.media/out.png'}]})
+        result = await self.run_look(client, model='seedream-5-lite')
+        self.assertEqual(result['costUsd'], 0.035)
+        method, url, body = calls[0]
+        self.assertEqual(url, 'https://queue.fal.run/fal-ai/bytedance/seedream/v5/lite/edit')
+        sent = json.loads(body)
+        self.assertNotIn('seed', sent)
+        self.assertEqual((sent['image_size'], len(sent['image_urls'])), ('auto_2K', 3))
+
     async def test_bria_gets_its_own_fields_and_a_single_image(self):
         client, calls = queue([{'status': 'COMPLETED'}], {'image': {'url': 'https://fal.media/bria.png'}})
         result = await self.run_look(client, model='bria-tryon')
@@ -216,7 +226,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(self.generate.await_count, 1)
         self.assertEqual(result['outputUrl'], 'data:image/png;base64,protected', 'only the locked frame is returned')
-        self.assertEqual(result['modelUsed'], 'fal:seedream-4.5')
+        self.assertEqual(result['modelUsed'], f'fal:{fal_tryon.DEFAULT_MODEL}')
         self.assertEqual(result['creditsCharged'], 1)
         self.assertEqual(access.spent_today('masha'), 1)
         self.assertEqual([step['step'] for step in result['steps']], ['outfit'])
@@ -224,7 +234,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
     async def test_the_photo_comes_first_then_garments_in_prompt_order(self):
         await self.look()
         _client, model, person_url, garment_urls, prompt, _seed = self.generate.await_args.args
-        self.assertEqual(model.key, 'seedream-4.5')
+        self.assertEqual(model.key, fal_tryon.DEFAULT_MODEL)
         self.assertTrue(person_url.startswith('data:image/jpeg'))
         self.assertEqual(len(garment_urls), 4)
         for index, name in enumerate(('top: a t-shirt', 'lower-body garment', 'outerwear: a trench coat', 'pair of shoes'), start=2):
