@@ -17,6 +17,7 @@ import { RADII, SERIF, SHADOWS, TYPE, ThemeColors } from './src/constants/theme'
 import { ThemeProvider, useTheme, useThemedStyles } from './src/constants/ThemeContext';
 import { LanguageProvider, localeFor, useLanguage, useT } from './src/constants/i18n';
 import { LanguageChooser } from './src/components/LanguageChooser';
+import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
 import { loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
@@ -307,7 +308,12 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         setAvatarUri(profile.avatarUri); setModelUri(profile.modelUri);
         setGender(profile.gender); setBeautyAdvice(profile.beautyAdvice === true);
       }
-      const cleanedItems = data.items.filter(item => !isLegacyDefaultItem(item));
+      // Вещи с заглушкой вместо имени («Новая вещь…», голая категория) получают имя по анализу.
+      const cleanedItems = data.items.filter(item => !isLegacyDefaultItem(item)).map(item => {
+        if (!isAutoItemName(item.name, item.category)) return item;
+        const name = suggestItemName(item);
+        return name && name !== item.name ? { ...item, name } : item;
+      });
       setItems(cleanedItems); setFavoriteLooks(data.favorites); setLastLooks(data.looks); setSavedLooks(data.saved);
       if (data.context) setLastContext(data.context);
       if (data.failed.size) {

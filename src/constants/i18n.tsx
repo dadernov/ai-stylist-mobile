@@ -45,6 +45,12 @@ export function getActiveLang(): Lang {
 
 export const localeFor = (lang: Lang = activeLang) => LANGUAGES.find(item => item.code === lang)?.locale || 'ru-RU';
 
+/** Перевод на указанный язык, независимо от текущего языка интерфейса. */
+export function translateIn(lang: Lang, source: string) {
+  const dictionary = DICTIONARIES[lang];
+  return dictionary ? dictionary[source] ?? source : source;
+}
+
 export function translate(source: string, vars?: Record<string, string | number>): string {
   const dictionary = DICTIONARIES[activeLang];
   let out = dictionary ? dictionary[source] ?? source : source;

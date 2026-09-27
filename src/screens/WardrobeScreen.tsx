@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions
 } from 'react-native';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { usePhotoPicker } from '../components/usePhotoPicker';
 import { PhotoSourcePicker, PhotoSource } from '../components/PhotoSourcePicker';
 import { useAppDialog } from '../components/AppDialog';
@@ -20,6 +20,7 @@ import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
 import { DragHandle } from '../components/DragHandle';
+import { isAutoItemName, suggestItemName } from '../domain/itemName';
 import { useAiConsent } from '../components/AiConsentContext';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -361,12 +362,19 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
     void applyAi(photo, activeFilter === 'Все' ? undefined : activeFilter);
   };
 
+  // Пока человек не ввёл имя сам, поле показывает то, что определил анализ,
+  // и меняется вместе с цветом, типом и узором.
+  useEffect(() => {
+    if (manualFields.current.has('name')) return;
+    setDraftName(suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }));
+  }, [draftCategory, draftColor, draftPattern]);
+
   const handleSaveItem = () => {
     if (!draftPhoto || isAnalyzing || !draftCategory || !categoryConfirmed) return;
     const resolvedSection = draftSection || getSectionByCategory(draftCategory);
     const newItem: WardrobeItem = {
       id: draftExistingId || Date.now().toString(),
-      name: draftName.trim() || draftCategory,
+      name: draftName.trim() || suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }) || t(draftCategory),
       category: draftCategory || 'Не определено',
       color: draftColor || 'Не определено',
       season: draftSeason || 'Не определено',
@@ -506,6 +514,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
     setDraftName(item.name); setDraftSize(item.size || ''); setDraftStore(item.store || ''); setDraftMaterial(item.material || '');
     setDraftCategory(''); setDraftColor(''); setDraftSeason(''); setDraftPattern(''); setDraftPalette([]);
     setDraftSection(item.section); setCategoryConfirmed(false); manualFields.current.clear();
+    // Имя, придуманное человеком, анализ не перезаписывает; автоимя обновится.
+    if (!isAutoItemName(item.name, item.category)) manualFields.current.add('name');
     setModalVisible(true); void applyAi(photo);
   };
 
@@ -699,7 +709,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                 <AtelierInput
                   placeholder={t('Например, Белая футболка')}
                   value={draftName}
-                  onChangeText={setDraftName}
+                  onChangeText={value => { manualFields.current.add('name'); setDraftName(value); }}
                 />
                 <PrimaryButton
                   title={t('AI-анализ')}

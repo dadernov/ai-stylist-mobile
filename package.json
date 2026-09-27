@@ -18,7 +18,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/i18n-coverage.cjs && node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/modal-safe-area.cjs"
+    "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/modal-safe-area.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
