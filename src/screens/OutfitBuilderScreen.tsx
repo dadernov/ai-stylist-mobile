@@ -379,9 +379,11 @@ export function OutfitBuilderScreen({
   const temperature = liveWeather ? liveWeather.temperature : null;
   const weatherCode = liveWeather?.code ?? null;
   const weatherText = liveWeather
-    ? t('Сейчас {temp}°C, {description}, ветер {wind} м/с ({city})', {
-      temp: Math.round(liveWeather.temperature), description: t(describeWeatherCode(liveWeather.code)),
-      wind: liveWeather.wind === null ? '--' : Math.round(liveWeather.wind), city: liveWeather.city || t('твоем городе') })
+    ? (liveWeather.wind === null
+      ? t('Сейчас {temp}°C, {description}', { temp: Math.round(liveWeather.temperature), description: t(describeWeatherCode(liveWeather.code)) })
+      : t('Сейчас {temp}°C, {description}, ветер {wind} м/с', {
+        temp: Math.round(liveWeather.temperature), description: t(describeWeatherCode(liveWeather.code)), wind: Math.round(liveWeather.wind) }))
+      + (liveWeather.city ? ` · ${liveWeather.city}` : '')
     : weatherLoading ? t('Определяем погоду…')
     : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.') : t('Не удалось получить погоду. Проверь интернет.');
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
@@ -434,7 +436,7 @@ export function OutfitBuilderScreen({
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
     setTimeout(() => {
       const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice, {
-        precipitation: liveWeather?.precipitation ?? null, wind: liveWeather?.wind ?? null
+        precipitation: liveWeather?.precipitation ?? null, wind: liveWeather?.wind ?? null, t
       });
       setIsGenerating(false);
       if (!generated.length) {
@@ -676,7 +678,7 @@ export function OutfitBuilderScreen({
               ]}
             />
           ) : null}
-          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Режим примерки')} accessibilityState={{ selected: activeTab === 'fitting' }} style={styles.segmentTab} onPress={() => setActiveTab('fitting')}>
+          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Примерка')} accessibilityState={{ selected: activeTab === 'fitting' }} style={styles.segmentTab} onPress={() => setActiveTab('fitting')}>
             <Text style={[styles.segmentText, activeTab === 'fitting' && styles.segmentTextActive]}>{t('Примерка')}</Text>
           </AppPressable>
           <AppPressable haptics accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'builder' }} style={styles.segmentTab} onPress={() => setActiveTab('builder')}>
@@ -684,7 +686,7 @@ export function OutfitBuilderScreen({
               {t('Подбор')}
             </Text>
           </AppPressable>
-          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Сохранённое')} accessibilityState={{ selected: activeTab === 'looks' }} style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
+          <AppPressable haptics accessibilityRole="tab" accessibilityLabel={t('Образы')} accessibilityState={{ selected: activeTab === 'looks' }} style={styles.segmentTab} onPress={() => setActiveTab('looks')}>
             <Text style={[styles.segmentText, activeTab === 'looks' && styles.segmentTextActive]}>{t('Образы')}</Text>
           </AppPressable>
           <AppPressable haptics accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'history' }} style={styles.segmentTab} onPress={() => setActiveTab('history')}>

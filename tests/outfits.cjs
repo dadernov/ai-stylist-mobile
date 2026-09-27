@@ -157,3 +157,25 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.ok(beach.itemIds.includes('sh') && !beach.itemIds.includes('j'), 'beach picks shorts, not jeans');
   console.log('PASS: match percent separates strong and weak looks, criteria name the problem, gaps are concrete, all occasions × styles');
 }
+
+{
+  // Сгенерированный лук хранит готовый текст с подставленными значениями — перевести его
+  // потом уже нельзя, поэтому язык интерфейса передаётся в buildLooks.
+  require.extensions['.tsx'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX }, fileName: filename }).outputText, filename);
+  const Module = require('node:module');
+  const load = Module._load;
+  Module._load = (request, parent, main) => request === '@react-native-async-storage/async-storage' ? { default: { getItem: async () => null, setItem: async () => {} } } : load(request, parent, main);
+  const i18n = require('../src/constants/i18n.tsx');
+  const coat = item('coat', 'Пальто', 'Верхняя одежда', { season: 'Зима' });
+  const check = (lang, expectTitle) => {
+    i18n.setActiveLang(lang);
+    const look = buildLooks([shirt, jeans, shoes, coat], 'Кэжуал', 'Прогулка', '', 5, 'male', false, { t: i18n.translate })[0];
+    assert.equal(look.title, expectTitle);
+    for (const text of [...look.fitReasons, ...look.stylingTips, ...look.warnings]) assert.ok(!/[А-Яа-яЁё]{3}/.test(text.replace(/(Рубашка|Джинсы|Кеды|Пальто) \w+/g, '')), `${lang}: ${text}`);
+  };
+  check('en', 'Shirt + Jeans');
+  check('zh', `${i18n.translateIn('zh', 'Рубашка')} + ${i18n.translateIn('zh', 'Джинсы')}`);
+  i18n.setActiveLang('ru');
+  console.log('PASS: generated looks are written in the interface language');
+}
