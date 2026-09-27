@@ -41,6 +41,8 @@ for f in $(cd "$SRC_DIR" && ls *.py | grep -v '^test_') requirements.txt README.
   [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP_DIR/$f"
 done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"
+# Сравнение моделей примерки перед переключением (README, «Дешёвая примерка»).
+mkdir -p "$APP_DIR/tools" && cp "$SRC_DIR"/tools/*.py "$APP_DIR/tools/"
 
 # 3. venv + зависимости
 # Venv помнит путь к интерпретатору, которым создан. Если тот жил во временном

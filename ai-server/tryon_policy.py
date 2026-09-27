@@ -117,3 +117,62 @@ def composite_slot(slot, category=''):
     if slot == 'top' and category in ONE_PIECE:
         return 'one_piece'
     return slot
+
+
+# A general image editor sees the photo and every garment at once (fal_tryon).
+# One instruction names each image by its position and carries the same rules
+# as the single-garment prompts above.
+LOOK_NAMES = {'top': 'top', 'bottom': 'lower-body garment', 'outer': 'outerwear', 'shoes': 'pair of shoes'}
+LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same canvas, framing, camera angle and zoom, '
+                 'pose, face, expression, hair, skin, body shape, hands and background. '
+                 'Do not crop, zoom, move, slim or retouch the person. ')
+
+
+def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None):
+    """`slots` in the order their images follow the photo; `names` maps a category to an English noun."""
+    names = names or {}
+    described = []
+    for index, slot in enumerate(slots, start=2):
+        category = top_category if slot == 'top' else outer_category if slot == 'outer' else ''
+        noun = 'one-piece garment' if slot == 'top' and category in ONE_PIECE else names.get(category, '')
+        described.append(f'image {index} is the {LOOK_NAMES[slot]}' + (f': {noun}' if noun else ''))
+    text = ('Virtual try-on. Image 1 is a full-length photo of a person. '
+            f'Dress this person in the outfit from the other images: {"; ".join(described)}. '
+            'Replace the matching original clothes completely and reproduce every reference garment faithfully: '
+            'exact colour, print, lettering, fabric, cut, length and fit. '
+            'Ignore backgrounds, hangers, mannequins and people in the garment images. '
+            f'{LOOK_IDENTITY}')
+    if 'top' in slots and top_category in ONE_PIECE:
+        text += 'Show the complete one-piece garment down to its hem; do not cut it off at the waist. '
+    elif 'top' in slots:
+        text += 'Use only the new neckline and sleeves; no collar, cuffs or hem of the old top may remain. '
+        text += fit_instruction(tuck)
+    if 'bottom' in slots:
+        text += TROUSERS
+    if 'outer' in slots:
+        if 'top' in slots:
+            text += 'Wear the outerwear fully open and unfastened, with the new top and its print clearly visible. '
+        else:
+            text += 'Match the open or closed state of the outerwear reference. '
+        text += 'Do not tuck the outerwear. '
+        if outer_category in LONG_OUTER:
+            text += 'It is a long garment: keep its full length below the hips and never shorten it. '
+    if 'shoes' in slots:
+        text += 'Put the reference shoes on both feet, keeping each foot at its original position. '
+    else:
+        text += FOOTWEAR + ' '
+    return text + 'The result is a photorealistic photo with the lighting and colours of image 1.'
+
+
+def bria_instruction(slots, top_category='', outer_category='', tuck='auto'):
+    """Extra direction for Bria's try-on, which has its own base instruction."""
+    parts = []
+    if 'top' in slots and top_category not in ONE_PIECE:
+        parts.append(fit_instruction(tuck))
+    if 'outer' in slots:
+        if 'top' in slots:
+            parts.append('Wear the outerwear open over the top.')
+        if outer_category in LONG_OUTER:
+            parts.append('Keep the full length of the long outerwear.')
+    parts.append('Keep the face, pose, framing and background unchanged.')
+    return ' '.join(part.strip() for part in parts if part.strip())

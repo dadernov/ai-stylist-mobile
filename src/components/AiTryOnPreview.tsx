@@ -125,12 +125,14 @@ export function AiTryOnPreview({
     return garment?.name || (section ? t(section) : stage);
   };
   const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
+  // 'outfit' is a whole look in one provider call: there are no layers to count.
   const busyLabel = !progress ? t('Генерируем образ…')
     : progress.stage === 'composite' ? t('Восстанавливаем лицо и фон…')
+    : progress.stage === 'outfit' ? t('Надеваем весь образ…')
     : progress.stage ? t('Надеваем: {name} ({step} из {total})…', { name: stageLabel(progress.stage), step: String(progress.done.length + 1), total: String(progress.total) })
     : t('Генерируем образ…');
   const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
-  const intermediateHint = !progress ? null
+  const intermediateHint = !progress || progress.stage === 'outfit' ? null
     : progress.pending.length || (progress.stage && progress.stage !== 'composite')
       ? t('Уже надето: {done}. Осталось: {pending}. Лицо и фон восстановятся в финальной версии.', {
         done: listStages(progress.done) || '—', pending: listStages([...(progress.stage && progress.stage !== 'composite' ? [progress.stage] : []), ...progress.pending]) })

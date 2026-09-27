@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
-from clothing_analysis import get_classifier, extract_palette, CATEGORIES
+from clothing_analysis import get_classifier, extract_palette, CATEGORIES, SHORT_NAMES
 import tryon_composite
 import face_guard
 import footwear_guard
@@ -31,6 +31,7 @@ import tryon_frame
 import tryon_debug
 import access
 import accounts
+import fal_tryon
 import fashn_credits
 import jobs
 import stage_cache
@@ -605,6 +606,28 @@ def _reason_to_skip_top(outer_category: str, look_model_name: str):
     if "max" not in look_model_name:
         return "в быстром режиме виден только верхний слой"
     return ""
+
+
+# English nouns for the look prompt of a general editor, from the classifier.
+_CATEGORY_NOUNS = {name: noun for (name, _section, _description), noun in zip(CATEGORIES, SHORT_NAMES)}
+# Inputs for fal: the model sees about 1 MP anyway, and a smaller request
+# travels faster than the 2048 px frames FASHN is sent.
+FAL_PERSON_SIDE = 1344
+FAL_GARMENT_SIDE = 1024
+FAL_JPEG_QUALITY = 92
+
+
+async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed):
+    """One call for the whole look: the photo first, then each garment."""
+    slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
+    person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY)
+    garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
+                                            FAL_GARMENT_SIDE, FAL_JPEG_QUALITY) for slot in slots]
+    if model.family == 'bria':
+        prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
+    else:
+        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS)
+    return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed)
 
 
 def _look_strategy():
@@ -1206,10 +1229,11 @@ async def tryon_generate_look(
     device: str = Depends(access.require_account)
 ):
     try:
+        use_fal = fal_tryon.enabled()
         token = os.getenv("FASHN_API_KEY", "").strip()
-        if not token:
+        if not use_fal and not token:
             return {"error": "FASHN_API_KEY is not set"}
-        if not token.isascii():
+        if not use_fal and not token.isascii():
             return {"error": "FASHN_API_KEY contains non-ASCII symbols. Set the real API key (latin letters/numbers only)."}
         # A draft (fast 1k, 1 credit per layer) unless the app asks for the
         # final (quality 2k, 4 credits). The app names them 'fast'/'quality'.
@@ -1235,6 +1259,11 @@ async def tryon_generate_look(
 
         if not any((top_content, bottom_content, shoes_content, outer_content)):
             return {"error": "Выбери хотя бы одну вещь для примерки."}
+        # With TRYON_PROVIDER=fal the whole look is one call to a general editor
+        # (fal_tryon); otherwise FASHN dresses one garment per call.
+        fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content) if content)) if use_fal else None
+        if fal_model:
+            look_model_name = f'fal:{fal_model.key}'
 
         cache_key = _cache_key_for_tryon_look(
             person_content,
@@ -1260,22 +1289,23 @@ async def tryon_generate_look(
             ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
             ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
         ] if content}
-        stage_total = 1 if _look_strategy() == 'collage' else len(garments)
+        stage_total = 1 if fal_model or _look_strategy() == 'collage' else len(garments)
         # Layers shared with an earlier look of this person are taken from the
         # layer cache instead of being paid for again. `fresh` is set by the app
         # when the same garments are generated once more: the user wants a new
         # variant, and any of the layers may be the one they disliked.
-        chain_keys = _layer_chain_keys(profile, person_content, garments, top_category.strip(), outer_category.strip(),
-                                       tuck_mode_normalized, tryon_max_side, tryon_jpeg_quality)
+        chain_keys = [] if fal_model else _layer_chain_keys(profile, person_content, garments, top_category.strip(), outer_category.strip(),
+                                                           tuck_mode_normalized, tryon_max_side, tryon_jpeg_quality)
         reuse = (fresh if isinstance(fresh, str) else '').strip().lower() not in ('1', 'true', 'yes', 'on')
         reused_depth, reused_frame = await asyncio.to_thread(stage_cache.lookup, device, chain_keys) if chain_keys and reuse else (0, None)
-        # The budget is reserved in credits for exactly the layers that will run.
-        cost = (stage_total - reused_depth) * profile.credits
+        # The budget is reserved in credits for exactly the layers that will run;
+        # a fal look is one call and takes TRYON_FAL_UNITS.
+        cost = fal_tryon.units() if fal_model else (stage_total - reused_depth) * profile.credits
 
         async def _generate_look():
             started = time.monotonic()
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
-            stages = await asyncio.to_thread(
+            stages = [('outfit', None, None)] if fal_model else await asyncio.to_thread(
                 _plan_stages, garments, top_category.strip(), outer_category.strip(), tuck_mode_normalized,
                 tryon_max_side, tryon_jpeg_quality
             )
@@ -1310,11 +1340,28 @@ async def tryon_generate_look(
                     preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, reused_image)
                 except Exception as exc:
                     print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
-            else:
+            elif not fal_model:
                 current_model = await asyncio.to_thread(_prepare_provider_frame, person_content, tryon_max_side, tryon_jpeg_quality)
 
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-                for index in range(reused_depth, len(stages)):
+                if fal_model:
+                    await publish([], stage='outfit')
+                    jobs.attempt(device, job_id, cost)
+                    step_started = time.monotonic()
+                    result = await _run_fal_look(client, fal_model, person_content, garments, top_category.strip(),
+                                                 outer_category.strip(), tuck_mode_normalized, seed)
+                    elapsed = round(time.monotonic() - step_started, 2)
+                    steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
+                    print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
+                          f'usd={result.get("costUsd")}; error={result.get("error")}', flush=True)
+                    if result.get('error') or not result.get('outputUrl'):
+                        return {'error': fal_tryon.user_error(result), 'steps': steps}
+                    current_model = result['outputUrl']
+                    try:
+                        last_frame = await _load_image_from_url_or_data_url(client, current_model)
+                    except Exception as exc:
+                        print(f'Try-on frame unavailable: {type(exc).__name__}', flush=True)
+                for index in range(reused_depth, 0 if fal_model else len(stages)):
                     step_name, reference, prompt = stages[index]
                     step_started = time.monotonic()
                     await publish(names[:index], stage=step_name, preview_url=preview_url)
@@ -1393,7 +1440,7 @@ async def tryon_generate_look(
                 "timings": timings,
                 "identityLocked": warning is None,
                 "layersReused": reused_depth,
-                "creditsCharged": (len(stages) - reused_depth) * profile.credits,
+                "creditsCharged": cost if fal_model else (len(stages) - reused_depth) * profile.credits,
             }
             if warning:
                 response["warning"] = warning
@@ -1418,7 +1465,7 @@ async def tryon_generate_look(
             return result
 
         access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 6))
-        if not await asyncio.to_thread(fashn_credits.sufficient, token, cost):
+        if not fal_model and not await asyncio.to_thread(fashn_credits.sufficient, token, cost):
             return {"error": fashn_credits.ERROR}
         async with _TRYON_LOOK_LOCK:
             created, job = await asyncio.to_thread(jobs.start, device, job_id, cache_key, cost)
