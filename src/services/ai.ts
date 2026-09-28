@@ -256,7 +256,7 @@ export async function analyzeTryOnGenerateLook(
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
   form.append('tuck_mode', tuckMode);
-  // 'fast' is a cheap draft (1 credit per garment), 'quality' the final (4).
+  // The app always asks for 'quality'; 'fast' drafts remain only in older history.
   form.append('quality_mode', qualityMode);
   if (fresh) form.append('fresh', 'true');
   if (requestId) { form.append('request_id', requestId); form.append('async_mode', 'true'); }

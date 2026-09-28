@@ -12,7 +12,7 @@ import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, Sparkles, X, Share2 } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
@@ -251,9 +251,7 @@ export function AiTryOnPreview({
     setWarning(result.warning || null); setShowOriginal(false);
     onGenerated?.({ ...result, tuckMode: result.tuckMode || 'auto', qualityMode: result.qualityMode || 'quality' });
   }, [jobs, context]);
-  // A try-on starts as a draft (one credit per garment). The final costs four
-  // times more and is made only when the user wants to keep the look. `fresh`
-  // redoes every layer: the user disliked the result, and any layer may be why.
+  // `fresh` asks for a new variant of the same look: the user disliked the result.
   const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
     if (!(await aiConsent.ensure())) return;
@@ -419,45 +417,18 @@ export function AiTryOnPreview({
           </ScrollView>
         </View>
       ) : null}
-      {resultUri && isDraft && !isBusy ? (
-        <Text style={styles.hint}>{t('Это быстрый черновик: лицо и фон твои, но ткань и детали упрощены. Понравилось — сделай в высоком качестве.')}</Text>
-      ) : null}
+      {/* One button: every try-on is the full-quality look (one call, one price).
+          Drafts made earlier stay labelled in the history. */}
       <AppPressable
         style={[styles.button, (!canGenerate || isBusy) && styles.buttonDisabled]}
-        onPress={() => void (!resultUri ? run('fast') : isDraft ? run('quality') : run('quality', true))}
+        onPress={() => void run('quality', Boolean(resultUri))}
         disabled={!canGenerate || isBusy}
         accessibilityRole="button"
         accessibilityState={{ disabled: !canGenerate || isBusy, busy: isBusy }}
       >
         {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
-        <Text style={styles.buttonText}>
-          {isBusy
-            ? busyLabel
-            : !resultUri
-              ? t('Быстрый черновик')
-              : isDraft
-                ? t('Сделать в высоком качестве')
-                : t('Перегенерировать')}
-        </Text>
+        <Text style={styles.buttonText}>{isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
       </AppPressable>
-      {resultUri && isDraft && !isBusy ? (
-        <AppPressable style={styles.linkButton} onPress={() => void run('fast', true)} disabled={!canGenerate}
-          accessibilityRole="button" accessibilityState={{ disabled: !canGenerate }}>
-          <Text style={styles.linkText}>{t('Другой вариант черновика')}</Text>
-        </AppPressable>
-      ) : null}
-      {/* Someone who already knows they want the finished picture should not
-          have to sit through a draft first and then wait a second time. */}
-      {!resultUri && !isBusy ? (
-        <AppPressable style={[styles.secondaryButton, !canGenerate && styles.buttonDisabled]} onPress={() => void run('quality')}
-          disabled={!canGenerate} accessibilityRole="button" accessibilityState={{ disabled: !canGenerate }}>
-          <Sparkles size={17} strokeWidth={1.6} color={colors.text} />
-          <Text style={styles.secondaryButtonText}>{t('Сразу в высоком качестве')}</Text>
-        </AppPressable>
-      ) : null}
-      {!resultUri && !isBusy && canGenerate ? (
-        <Text style={styles.hint}>{t('Черновик — чтобы быстро прикинуть, как сидит. Высокое качество — итоговый кадр, он генерируется дольше.')}</Text>
-      ) : null}
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>
@@ -569,15 +540,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     minHeight: 46,
     paddingVertical: 11,
     backgroundColor: c.card
-  },
-  linkButton: {
-    alignSelf: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12
-  },
-  linkText: {
-    color: c.accentGold,
-    fontSize: 14
   },
   secondaryButtonText: {
     color: c.text,
