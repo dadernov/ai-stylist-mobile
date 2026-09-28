@@ -36,7 +36,9 @@ export function AiConsentProvider({ login, children }: { login: string; children
   ];
   return <Context.Provider value={value}>
     {children}
-    <Modal transparent visible={open} animationType="fade" onRequestClose={() => void answer(false)}>
+    {/* Mounted only while asking: consent is requested from inside other modals
+        (try-on, item editor), and a modal created later is presented on top of them. */}
+    {open ? <Modal transparent visible animationType="fade" onRequestClose={() => void answer(false)}>
       <View style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityViewIsModal>
           <ScrollView contentContainerStyle={{ gap: 14 }}>
@@ -51,7 +53,7 @@ export function AiConsentProvider({ login, children }: { login: string; children
           </ScrollView>
         </View>
       </View>
-    </Modal>
+    </Modal> : null}
   </Context.Provider>;
 }
 
