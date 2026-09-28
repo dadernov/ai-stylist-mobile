@@ -242,6 +242,28 @@ def _unlocked_output_url(original_content: bytes, frame: Image.Image):
     return _bytes_to_data_url(buff.getvalue(), 'image/png')
 
 
+def _face_restored_output_url(frame: Image.Image, prepared):
+    """After a rejected lock: the generator's frame with the photo's own face, or None.
+
+    The lock needs the whole scene in place; a general editor often returns the
+    head slightly resized, so the face alone is carried over instead
+    (face_guard.transplant_face). None when even the face does not fit.
+    """
+    try:
+        original, _cutout, faces, _labels = prepared
+        restored = face_guard.transplant_face(original, frame.convert('RGB').resize(original.size, Image.Resampling.LANCZOS), faces[0])
+    except face_guard.AlignmentError as exc:
+        print(f'Try-on face restore rejected: {exc}', flush=True)
+        return None
+    except Exception as exc:
+        # Paid work is never lost to the restore: the caller shows the frame.
+        print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
+        return None
+    buff = BytesIO()
+    restored.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
+    return _bytes_to_data_url(buff.getvalue(), 'image/png')
+
+
 def _stage_preview_url(prepared, generated_image: Image.Image, max_height: int = 1024):
     """A small provider frame in the photo's coordinates for the progress view.
 
@@ -621,13 +643,15 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     """One call for the whole look: the photo first, then each garment."""
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
     person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY)
+    decoded = _data_url_to_bytes(person_url)
+    frame_size = Image.open(BytesIO(decoded[0])).size if decoded else None
     garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
                                             FAL_GARMENT_SIDE, FAL_JPEG_QUALITY) for slot in slots]
     if model.family == 'bria':
         prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
     else:
         prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS)
-    return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed)
+    return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
 def _look_strategy():
@@ -1403,6 +1427,8 @@ async def tryon_generate_look(
 
             composite_started = time.monotonic()
             warning = None
+            locked = True
+            face_restored = False
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
                 try:
                     locked_output_url = await _face_locked_output_url(
@@ -1412,17 +1438,25 @@ async def tryon_generate_look(
                 except AlignmentRejected as exc:
                     if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
                         raise
-                    # The credits are spent and every stage kept the person; show
-                    # the provider's frame with an explicit note rather than an
-                    # error, and let the user decide whether to regenerate.
-                    locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
-                    warning = UNLOCKED_WARNING
-                    print('Try-on composite: unlocked-fallback', flush=True)
+                    locked = False
+                    # The scene moved, but the face alone may still fit: the
+                    # user then sees their own face on the generator's frame.
+                    restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity)
+                    if restored:
+                        locked_output_url, face_restored = restored, True
+                        print('Try-on composite: face-restored', flush=True)
+                    else:
+                        # The credits are spent; show the provider's frame with an
+                        # explicit note rather than an error, and let the user
+                        # decide whether to regenerate.
+                        locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
+                        warning = UNLOCKED_WARNING
+                        print('Try-on composite: unlocked-fallback', flush=True)
             timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
             # Only a look that passed the identity lock may seed later looks: a
             # frame that could not be aligned would carry its defect into every
             # look built on top of it.
-            if warning is None and fresh_frames:
+            if locked and fresh_frames:
                 try:
                     for index, data in fresh_frames:
                         await asyncio.to_thread(stage_cache.store, device, chain_keys[index], data)
@@ -1438,7 +1472,8 @@ async def tryon_generate_look(
                 "qualityModeUsed": quality_mode_normalized,
                 "modelUsed": look_model_name,
                 "timings": timings,
-                "identityLocked": warning is None,
+                "identityLocked": locked,
+                "faceRestored": face_restored,
                 "layersReused": reused_depth,
                 "creditsCharged": cost if fal_model else (len(stages) - reused_depth) * profile.credits,
             }

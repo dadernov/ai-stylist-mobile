@@ -18,7 +18,7 @@
 <main>
 <p class="langs"><a href="/privacy">Русский</a> · <b>English</b> · <a href="/privacy/zh">中文</a></p>
 <h1>Privacy Policy</h1>
-<p class="meta">AI Stylist app for iOS. Version of 26 September 2026. If versions differ, the Russian text prevails.</p>
+<p class="meta">AI Stylist app for iOS. Version of 28 September 2026. If versions differ, the Russian text prevails.</p>
 
 <h2>1. Who processes your data</h2>
 <p>The app and its server are run by an individual developer (the data controller). For any questions about your data, or requests to access, correct or delete it: <a href="mailto:mrbdigital@proton.me">mrbdigital@proton.me</a>. We reply within 30 days.</p>
@@ -28,7 +28,7 @@
 <tr><th>Data</th><th>Purpose</th><th>Where and how long</th></tr>
 <tr><td>Login, display name, password hash (the password itself is not stored)</td><td>Signing in, a separate wardrobe and generation limit per user</td><td>Server, while the account exists</td></tr>
 <tr><td>Clothing photos</td><td>Detect the item type and colour, remove the background</td><td>Processed in server memory, never written to disk. The last few results stay in memory until the server restarts</td></tr>
-<tr><td>Your full-body photo and photos of the selected items</td><td>Virtual try-on</td><td>Sent to FASHN AI for the duration of the generation. The finished image is kept on our server for no more than 24 hours, then deleted automatically</td></tr>
+<tr><td>Your full-body photo and photos of the selected items</td><td>Virtual try-on</td><td>Sent to the fal.ai generation service for the duration of the generation (FASHN AI in fallback mode). fal.ai does not store the request and deletes its copy of the finished image after an hour. The finished image is kept on our server for no more than 24 hours, then deleted automatically</td></tr>
 <tr><td>Try-on job records without images (ID, time, status) and daily counters</td><td>Preventing double charges and the daily limit</td><td>Server, up to 90 days</td></tr>
 <tr><td>Location (only with permission)</td><td>Weather forecast when suggesting looks</td><td>Sent by the app directly to Open-Meteo; never reaches our server and is not stored</td></tr>
 <tr><td>Technical logs: IP address, time and path of requests</td><td>Security and abuse prevention</td><td>Server, up to 14 days</td></tr>
@@ -36,14 +36,15 @@
 <p>Your wardrobe, saved looks, favorites, try-on history and saved results are stored only on your device.</p>
 
 <h2>3. Your face in photos</h2>
-<p>To keep the generator from distorting your face and background, the server locates the face with a local model and restores the original pixels of the head and background after generation. We don't create biometric templates, don't identify people and don't store facial data. Photo metadata (including EXIF location tags) is removed before photos are sent to FASHN AI.</p>
+<p>To keep the generator from distorting your face and background, the server locates the face with a local model and restores the original pixels of the head and background after generation. We don't create biometric templates, don't identify people and don't store facial data. Photo metadata (including EXIF location tags) is removed before photos are sent to the generation service.</p>
 
 <h2>4. Consent</h2>
 <p>Before photos are sent to AI processing for the first time, the app explains where they go and asks for your consent. Without it, AI analysis and try-on don't run; everything else works. You can withdraw consent in Profile → “Consent to AI photo processing”. Upload only your own photos or photos of people who agreed to it.</p>
 
 <h2>5. Who receives data</h2>
 <ul>
-  <li><b>FASHN AI</b> (fashn.ai) — try-on photos, only during generation. Their terms: <a href="https://fashn.ai/privacy-policy">fashn.ai/privacy-policy</a>.</li>
+  <li><b>fal.ai</b> (Features &amp; Labels, Inc., USA) — try-on photos, only during generation. The image is created by ByteDance's Seedream model; the request may be processed on ByteDance (BytePlus) servers. Their terms: <a href="https://fal.ai/legal/privacy-policy">fal.ai/legal/privacy-policy</a>, <a href="https://www.byteplus.com/en/legal/privacy-policy">byteplus.com/en/legal/privacy-policy</a>.</li>
+  <li><b>FASHN AI</b> (fashn.ai) — fallback generation service, same photos and retention. Their terms: <a href="https://fashn.ai/privacy-policy">fashn.ai/privacy-policy</a>.</li>
   <li><b>Open-Meteo</b> (open-meteo.com) — coordinates for the weather forecast, directly from the app.</li>
   <li><b>The hosting provider</b> of the app server (data centre in Austria, EU) — technical hosting.</li>
 </ul>

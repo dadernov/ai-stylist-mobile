@@ -95,8 +95,15 @@ async def run_one(client, case, model, out, lock):
                                                        generated_image=frame)
             _save_data_url(locked, out / f'{model.key}-locked.png')
             record['locked'] = f'{model.key}-locked.png'
-        except app.AlignmentRejected:
-            record['lock'] = 'rejected: the person moved, the app would show the raw frame with a warning'
+        except app.AlignmentRejected as exc:
+            # The app then carries the photo's own face over to the frame.
+            restored = await asyncio.to_thread(app._face_restored_output_url, exc.frame, prepared) if exc.frame else None
+            if restored:
+                _save_data_url(restored, out / f'{model.key}-locked.png')
+                record['locked'] = f'{model.key}-locked.png'
+                record['lock'] = 'face restored: the scene moved, the face is the photo\'s own'
+            else:
+                record['lock'] = 'rejected: the app would show the raw frame with a warning'
         except ValueError as exc:
             record['lock'] = f'failed: {exc}'
     return record
@@ -124,7 +131,7 @@ def write_page(out, cases, models, records):
     page = f'''<!doctype html><meta charset="utf-8"><title>Try-on comparison</title>
 <style>body{{font:14px system-ui;margin:16px}}table{{border-collapse:collapse}}td{{vertical-align:top;border:1px solid #ddd;padding:8px}}
 img{{height:420px;margin:4px}}.inputs img{{height:120px}}figure{{margin:0;display:inline-block;text-align:center}}.note{{color:#a33}}</style>
-<p>Left of each pair: the editor's frame. Right: what the app shows after the identity lock.</p>
+<p>Left of each pair: the editor's frame. Right: what the app shows after the identity lock or, when the scene moved, with the photo's own face restored.</p>
 <table>{"".join(rows)}</table>'''
     (out / 'index.html').write_text(page, encoding='utf-8')
 

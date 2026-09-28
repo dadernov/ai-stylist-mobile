@@ -268,6 +268,74 @@ def fallback_alignment(source_face, generated_face, size):
     return identity
 
 
+def _similarity(source, target):
+    """Least-squares rotation, uniform scale and shift taking `source` points onto `target`."""
+    a, b = source - source.mean(axis=0), target - target.mean(axis=0)
+    denominator = np.sum(a*a)
+    if denominator < 1e-8:
+        raise AlignmentError('degenerate-landmarks')
+    real = np.sum(a*b) / denominator
+    imaginary = np.sum(a[:, 0]*b[:, 1] - a[:, 1]*b[:, 0]) / denominator
+    rotation = np.array([[real, -imaginary], [imaginary, real]])
+    return np.column_stack((rotation, target.mean(axis=0) - rotation @ source.mean(axis=0)))
+
+
+def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face):
+    """Put the photo's own face into a frame whose head moved or resized a little.
+
+    A general image editor redraws the whole picture: the head comes back ~10%
+    larger or a few pixels off, and the lock that restores face and background
+    together must refuse such a frame. The face alone can still be restored:
+    the photo's face is mapped onto the generated head by one similarity
+    transform of the eyes, nose and mouth and blended over a soft ellipse; the
+    hair, body and background stay the generator's. A head that turned or
+    changed its expression is refused, because the old face would not fit it.
+    """
+    if generated.size != original.size:
+        raise AlignmentError('size-mismatch')
+    faces = detect_faces(generated)
+    if not faces:
+        x, y, w, h = source_face.box
+        region = (max(0, int(x - 1.5 * w)), max(0, int(y - h)),
+                  min(original.width, int(x + 2.5 * w)), min(original.height, int(y + 2 * h)))
+        faces = detect_faces(generated, region=region)
+    if len(faces) != 1:
+        raise AlignmentError('face-not-found' if not faces else 'multiple-faces')
+    source = np.asarray(source_face.landmarks, dtype=np.float64)
+    target = np.asarray(faces[0].landmarks, dtype=np.float64)
+    if source.shape != (5, 2) or target.shape != (5, 2) or not np.isfinite([source, target]).all():
+        raise AlignmentError('invalid-landmarks')
+    matrix = _similarity(source, target)
+    scale = np.hypot(matrix[0, 0], matrix[1, 0])
+    angle = abs(np.degrees(np.arctan2(matrix[1, 0], matrix[0, 0])))
+    x, y, width, height = source_face.box
+    residual = np.linalg.norm(source @ matrix[:, :2].T + matrix[:, 2] - target, axis=1).max()
+    # Measured on Seedream frames: scale .87-1.10, residual under 3% of the face
+    # width. A turned head or another expression moves the landmarks apart.
+    if not .8 <= scale <= 1.25 or angle > 10 or residual > max(3., width * .05):
+        raise AlignmentError('face-transplant-mismatch')
+    mask = Image.new('L', original.size, 0)
+    centre_x, centre_y = x + width / 2, y + height * .56
+    ImageDraw.Draw(mask).ellipse((centre_x - width * .44, centre_y - height * .56,
+                                  centre_x + width * .44, centre_y + height * .5), fill=255)
+    alpha = cv2.GaussianBlur(np.asarray(mask, np.float32) / 255, (0, 0), max(2., width * .07))
+    alpha = cv2.warpAffine(alpha, matrix, generated.size, flags=cv2.INTER_LINEAR)
+    face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
+                          flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    frame = np.asarray(generated.convert('RGB'))
+    core = alpha > .6
+    if not core.any():
+        raise AlignmentError('face-transplant-mismatch')
+    # The generator relights the scene slightly; match the mean colour of the
+    # face to its new surroundings so the ellipse does not read as a patch.
+    face_lab = cv2.cvtColor(face, cv2.COLOR_RGB2LAB).astype(np.float32)
+    frame_lab = cv2.cvtColor(frame, cv2.COLOR_RGB2LAB).astype(np.float32)
+    face_lab += np.clip(frame_lab[core].mean(axis=0) - face_lab[core].mean(axis=0), -12, 12)
+    face = cv2.cvtColor(face_lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
+    blended = frame * (1 - alpha[..., None]) + face * alpha[..., None]
+    return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
+
+
 def align_to_source(original: Image.Image, generated: Image.Image, source_face: Face,
                     source_labels=None, return_coverage=False):
     if generated.size != original.size:

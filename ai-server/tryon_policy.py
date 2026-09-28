@@ -125,7 +125,9 @@ def composite_slot(slot, category=''):
 LOOK_NAMES = {'top': 'top', 'bottom': 'lower-body garment', 'outer': 'outerwear', 'shoes': 'pair of shoes'}
 LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same canvas, framing, camera angle and zoom, '
                  'pose, face, expression, hair, skin, body shape, hands and background. '
-                 'Do not crop, zoom, move, slim or retouch the person. ')
+                 'Image 1 is the exact canvas of the result: the head, face and body keep exactly the same position, '
+                 'size and angle in the frame, so the result can be laid over image 1 pixel for pixel. '
+                 'Do not crop, zoom, move, turn, slim or retouch the person. ')
 
 
 def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None):

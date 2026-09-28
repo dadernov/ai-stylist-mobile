@@ -190,7 +190,7 @@ export const en: Record<string, string> = {
   "Не удалось удалить аккаунт. Проверь соединение и попробуй ещё раз.": "Couldn't delete the account. Check your connection and try again.",
   "Обработка фото нейросетями": "Photo processing by AI",
   "Фото вещей отправляются на сервер приложения: нейросеть определяет тип, цвет и вырезает фон. Снимок не сохраняется после ответа.": "Photos of items are sent to the app's server: a neural network detects the type and colour and removes the background. The photo isn't kept after the response.",
-  "Для примерки твоё фото в полный рост и фото выбранных вещей передаются партнёру FASHN AI, который генерирует изображение. Результат хранится на нашем сервере не дольше 24 часов.": "For try-ons, your full-body photo and the selected item photos are sent to our partner FASHN AI, which generates the image. The result is stored on our server for no more than 24 hours.",
+  "Для примерки твоё фото в полный рост и фото выбранных вещей передаются сервису fal.ai (США), где изображение создаёт нейросеть Seedream компании ByteDance. fal.ai не сохраняет фото, результат хранится на нашем сервере не дольше 24 часов.": "For try-ons, your full-body photo and the selected item photos are sent to fal.ai (USA), where ByteDance's Seedream model creates the image. fal.ai doesn't keep the photos, and the result stays on our server for no more than 24 hours.",
   "Загружай только свои фото или фото людей, которые на это согласились.": "Upload only your own photos or photos of people who agreed to it.",
   "Данные не используются для рекламы и не продаются. Согласие можно отозвать в профиле.": "Data isn't used for advertising and isn't sold. You can withdraw consent in your profile.",
   "Согласен, продолжить": "I agree, continue",

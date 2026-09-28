@@ -18,6 +18,7 @@ The provider is a server setting (TRYON_PROVIDER=fal with FAL_KEY) and can be
 switched back to FASHN without an app release.
 """
 import asyncio
+import json
 import math
 import os
 import time
@@ -104,12 +105,21 @@ def units():
         return 1
 
 
-def output_size(model):
+def _fit(frame_size, megapixels):
+    """The frame's aspect at about `megapixels`, in multiples of 16."""
+    width, height = frame_size
+    scale = (megapixels * MEGAPIXEL / (width * height)) ** .5
+    fitted = [max(16, int(side * scale) // 16 * 16) for side in (width, height)]
+    return {'width': fitted[0], 'height': fitted[1]}
+
+
+def output_size(model, frame_size=None):
+    """An output with the photo's own aspect, so the identity lock maps it back 1:1."""
     if model.family in ('flux2', 'qwen'):
-        return dict(CANVAS_1MP)
+        return _fit(frame_size, 1) if frame_size else dict(CANVAS_1MP)
     if model.key == 'seedream-4':
-        return dict(CANVAS_2MP)
-    # Seedream 4.5 takes only large custom sizes; its preset follows the photo.
+        return _fit(frame_size, 2) if frame_size else dict(CANVAS_2MP)
+    # Seedream 4.5 and 5.0 take only large custom sizes; their preset follows the photo.
     return 'auto_2K' if model.family == 'seedream' else None
 
 
@@ -125,7 +135,7 @@ def estimate_usd(model, garment_count):
     return round(model.usd_per_mp * megapixels, 4)
 
 
-def payload(model, person_url, garment_urls, prompt, seed):
+def payload(model, person_url, garment_urls, prompt, seed, frame_size=None):
     safety = os.getenv('TRYON_FAL_SAFETY', 'true').strip().lower() not in ('0', 'false', 'no', 'off')
     if model.family == 'bria':
         # Bria has its own try-on instruction; ours is appended to it.
@@ -137,7 +147,7 @@ def payload(model, person_url, garment_urls, prompt, seed):
             'enable_safety_checker': safety}
     if model.seeded:
         body['seed'] = seed
-    size = output_size(model)
+    size = output_size(model, frame_size)
     if size:
         body['image_size'] = size
     if model.family == 'seedream':
@@ -168,11 +178,21 @@ def _failure(response, stage):
     return result
 
 
+def privacy_headers():
+    """By default fal keeps request payloads for 30 days and generated files
+    forever at a public URL. Neither may happen to a user's photo: payloads are
+    not stored, and the result expires shortly after the server fetched it."""
+    lifetime = max(300, int(os.getenv('TRYON_FAL_MEDIA_TTL_SECONDS', '3600')))
+    return {'X-Fal-Store-IO': '0',
+            'X-Fal-Object-Lifecycle-Preference': json.dumps({'expiration_duration_seconds': lifetime})}
+
+
 def _now():
     return time.monotonic()
 
 
-async def generate(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0):
+async def generate(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0,
+                   frame_size=None):
     """Submit one look to the fal queue and wait for its image URL.
 
     Returns {'status': 'succeeded', 'outputUrl', 'costUsd', 'model'} or
@@ -180,9 +200,9 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
     """
     max_wait_seconds = max_wait_seconds or int(os.getenv('TRYON_FAL_MAX_WAIT_SECONDS', '180'))
     headers = {'Authorization': f'Key {api_key()}', 'Content-Type': 'application/json'}
-    body = payload(model, person_url, garment_urls, prompt, seed)
+    body = payload(model, person_url, garment_urls, prompt, seed, frame_size)
     try:
-        submitted = await client.post(f'{QUEUE_URL}/{model.endpoint}', headers=headers, json=body)
+        submitted = await client.post(f'{QUEUE_URL}/{model.endpoint}', headers={**headers, **privacy_headers()}, json=body)
     except httpx.HTTPError as exc:
         return {'error': f'fal submit failed: {type(exc).__name__}'}
     if submitted.status_code >= 400:

@@ -68,6 +68,16 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent['image_urls']), 3)
         self.assertEqual((sent['num_images'], sent['max_images'], sent['seed']), (1, 1, 7))
 
+    async def test_photos_are_not_kept_by_fal(self):
+        seen = []
+
+        def handler(request):
+            seen.append(dict(request.headers))
+            return httpx.Response(500, text='down')
+        await self.run_look(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+        self.assertEqual(seen[0]['x-fal-store-io'], '0')
+        self.assertEqual(json.loads(seen[0]['x-fal-object-lifecycle-preference']), {'expiration_duration_seconds': 3600})
+
     async def test_the_key_is_sent_as_fal_expects(self):
         seen = []
 
@@ -156,6 +166,16 @@ class Choice(unittest.TestCase):
         self.assertEqual(fal_tryon.estimate_usd(fal_tryon.MODELS['flux2-klein-9b'], 3), 0.055)
         self.assertEqual(fal_tryon.estimate_usd(fal_tryon.MODELS['flux2-klein-9b'], 2), 0.044)
         self.assertEqual(fal_tryon.estimate_usd(fal_tryon.MODELS['qwen-edit-2511'], 2), 0.03)
+
+    def test_the_output_follows_the_photo_it_was_sent(self):
+        klein = fal_tryon.MODELS['flux2-klein-9b']
+        for frame in ((1600, 2400), (1600, 2000), (1143, 2048)):
+            with self.subTest(frame=frame):
+                size = fal_tryon.output_size(klein, frame)
+                self.assertAlmostEqual(size['width'] / size['height'], frame[0] / frame[1], delta=.02)
+                self.assertLessEqual(size['width'] * size['height'], fal_tryon.MEGAPIXEL, 'billed as one megapixel')
+                self.assertEqual((size['width'] % 16, size['height'] % 16), (0, 0))
+        self.assertEqual(fal_tryon.output_size(fal_tryon.MODELS['seedream-5-lite'], (1600, 2400)), 'auto_2K')
 
     def test_the_output_keeps_the_provider_canvas(self):
         for model in fal_tryon.MODELS.values():
@@ -258,6 +278,26 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['error'], fal_tryon.BALANCE_ERROR)
         self.protect.assert_not_awaited()
+
+    async def test_a_moved_scene_still_gets_the_users_own_face(self):
+        frame = Image.new('RGB', (64, 128))
+        with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
+                patch.object(app, '_face_restored_output_url', return_value='data:image/png;base64,restored') as restore:
+            result = await self.look()
+        self.assertEqual(result['outputUrl'], 'data:image/png;base64,restored')
+        self.assertNotIn('warning', result, 'the face is the photo\'s own: nothing to warn about')
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (False, True))
+        self.assertIs(restore.call_args.args[0], frame)
+
+    async def test_when_even_the_face_does_not_fit_the_frame_comes_with_a_warning(self):
+        frame = Image.new('RGB', (64, 128))
+        with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
+                patch.object(app, '_face_restored_output_url', return_value=None), \
+                patch.object(app, '_unlocked_output_url', return_value='data:image/png;base64,unlocked'):
+            result = await self.look()
+        self.assertEqual(result['outputUrl'], 'data:image/png;base64,unlocked')
+        self.assertEqual(result['warning'], app.UNLOCKED_WARNING)
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (False, False))
 
     async def test_bria_is_sent_its_short_instruction(self):
         with patch.dict(os.environ, {'TRYON_FAL_MODEL': 'bria-tryon'}):

@@ -349,3 +349,49 @@ class RepaintedFaceTolerance(unittest.TestCase):
         zoomed = face_guard.Face(source.box, (source.landmarks - source.landmarks.mean(axis=0)) * 1.1 + source.landmarks.mean(axis=0))
         with self.assertRaisesRegex(face_guard.AlignmentError, 'uncertain-scene-registration'):
             face_guard.fallback_alignment(source, zoomed, (1143, 2048))
+
+
+class FaceTransplant(unittest.TestCase):
+    """The photo's own face on a generated frame whose head moved or resized a little."""
+
+    def scene(self):
+        original = np.full((800, 400, 3), 40, np.uint8)
+        original[64:114, 180:220] = (200, 150, 120)  # the face box of face()
+        return Image.fromarray(original), Image.new('RGB', (400, 800), (30, 160, 60))
+
+    def moved(self, scale=1.1, shift=(12., 20.), points=None):
+        source = face()
+        points = source.landmarks if points is None else points
+        centre = source.landmarks.mean(axis=0)
+        return face_guard.Face(source.box, (points - centre) * scale + centre + shift)
+
+    def test_the_face_follows_a_resized_and_shifted_head(self):
+        original, generated = self.scene()
+        target = self.moved()
+        with patch.object(face_guard, 'detect_faces', return_value=[target]):
+            result = np.asarray(face_guard.transplant_face(original, generated, face()))
+        centre = target.landmarks.mean(axis=0).round().astype(int)
+        pixel = result[centre[1], centre[0]].astype(int)
+        self.assertGreater(pixel[0], 150, f'face colour expected at the new head position, got {pixel}')
+        np.testing.assert_array_equal(result[700, 50], [30, 160, 60], 'hair, body and background stay the generator\'s')
+        np.testing.assert_array_equal(result[20, 380], [30, 160, 60])
+
+    def test_a_turned_head_or_other_expression_is_refused(self):
+        original, generated = self.scene()
+        points = face().landmarks.copy()
+        points[2] += (9, 0)  # the nose swings sideways: the head turned
+        with patch.object(face_guard, 'detect_faces', return_value=[self.moved(1., (0, 0), points)]), \
+                self.assertRaises(face_guard.AlignmentError):
+            face_guard.transplant_face(original, generated, face())
+
+    def test_a_much_larger_head_is_refused(self):
+        original, generated = self.scene()
+        with patch.object(face_guard, 'detect_faces', return_value=[self.moved(1.5, (0, 0))]), \
+                self.assertRaises(face_guard.AlignmentError):
+            face_guard.transplant_face(original, generated, face())
+
+    def test_no_face_or_two_faces_are_refused(self):
+        original, generated = self.scene()
+        for detections in ([], [face(), face(offset=(90, 0))]):
+            with patch.object(face_guard, 'detect_faces', return_value=detections), self.assertRaises(face_guard.AlignmentError):
+                face_guard.transplant_face(original, generated, face())
