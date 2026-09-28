@@ -279,9 +279,33 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['error'], fal_tryon.BALANCE_ERROR)
         self.protect.assert_not_awaited()
 
+    async def test_by_default_only_the_face_comes_from_the_photo(self):
+        # Pasting the photo's floor back around a re-rendered body leaves seams;
+        # the editor's scene is kept and only the face is restored.
+        with patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
+            result = await self.look()
+        self.assertEqual(result['outputUrl'], 'data:image/png;base64,face')
+        self.protect.assert_not_awaited()
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (False, True))
+        self.assertNotIn('warning', result)
+        self.assertEqual(face_only.call_count, 1)
+
+    async def test_when_the_face_does_not_fit_the_full_lock_is_tried(self):
+        with patch.object(app, '_face_only_output_url', return_value=None):
+            result = await self.look()
+        self.assertEqual(result['outputUrl'], 'data:image/png;base64,protected')
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (True, False))
+
+    async def test_scene_restore_can_be_brought_back(self):
+        with patch.dict(os.environ, {'TRYON_FAL_RESTORE': 'scene'}), \
+                patch.object(app, '_face_only_output_url', side_effect=AssertionError('face-only must be skipped')):
+            result = await self.look()
+        self.assertEqual(result['outputUrl'], 'data:image/png;base64,protected')
+
     async def test_a_moved_scene_still_gets_the_users_own_face(self):
         frame = Image.new('RGB', (64, 128))
-        with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
+        with patch.object(app, '_face_only_output_url', return_value=None), \
+                patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
                 patch.object(app, '_face_restored_output_url', return_value='data:image/png;base64,restored') as restore:
             result = await self.look()
         self.assertEqual(result['outputUrl'], 'data:image/png;base64,restored')
@@ -291,7 +315,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
 
     async def test_when_even_the_face_does_not_fit_the_frame_comes_with_a_warning(self):
         frame = Image.new('RGB', (64, 128))
-        with patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
+        with patch.object(app, '_face_only_output_url', return_value=None), \
+                patch.object(app, '_face_locked_output_url', AsyncMock(side_effect=app.AlignmentRejected('moved', frame))), \
                 patch.object(app, '_face_restored_output_url', return_value=None), \
                 patch.object(app, '_unlocked_output_url', return_value='data:image/png;base64,unlocked'):
             result = await self.look()

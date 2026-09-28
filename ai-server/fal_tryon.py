@@ -97,6 +97,18 @@ def model_for(profile_name, garment_count):
     return model
 
 
+def face_only():
+    """Restore only the face from the photo, keep the editor's whole scene.
+
+    A general editor redraws the room faithfully but relit and a few pixels
+    off. Pasting the photo's floor and furniture back around the body then
+    shows as a seam: a dark arc between the feet, a doubled slipper. So by
+    default only the face comes from the photo; TRYON_FAL_RESTORE=scene brings
+    back the full lock that also restores the background.
+    """
+    return os.getenv('TRYON_FAL_RESTORE', 'face').strip().lower() != 'scene'
+
+
 def units():
     """What one look takes from the daily budgets, which count FASHN credits."""
     try:

@@ -242,6 +242,23 @@ def _unlocked_output_url(original_content: bytes, frame: Image.Image):
     return _bytes_to_data_url(buff.getvalue(), 'image/png')
 
 
+def _source_framed(prepared, generated_image: Image.Image):
+    """A provider frame in the photo's coordinates (the padded canvas cropped away)."""
+    original = prepared[0]
+    padded, box = tryon_frame.pad(original)
+    return tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
+
+
+def _face_only_output_url(generated_image: Image.Image, prepared):
+    """The editor's whole frame with the photo's own face, or None to fall back to the full lock."""
+    try:
+        framed = _source_framed(prepared, generated_image)
+    except Exception as exc:
+        print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
+        return None
+    return _face_restored_output_url(framed, prepared)
+
+
 def _face_restored_output_url(frame: Image.Image, prepared):
     """After a rejected lock: the generator's frame with the photo's own face, or None.
 
@@ -1430,28 +1447,36 @@ async def tryon_generate_look(
             locked = True
             face_restored = False
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
-                try:
-                    locked_output_url = await _face_locked_output_url(
-                        output_client, person_content, current_model, changed_slots, prepared_identity,
-                        debug_context=(device, job_id), generated_image=last_frame,
-                    )
-                except AlignmentRejected as exc:
-                    if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
-                        raise
-                    locked = False
-                    # The scene moved, but the face alone may still fit: the
-                    # user then sees their own face on the generator's frame.
-                    restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity)
+                if fal_model and fal_tryon.face_only():
+                    # The editor's scene is kept whole; only the face is the photo's.
+                    frame = last_frame or await _load_image_from_url_or_data_url(output_client, current_model)
+                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity) if frame is not None else None
                     if restored:
-                        locked_output_url, face_restored = restored, True
+                        locked_output_url, face_restored, locked = restored, True, False
                         print('Try-on composite: face-restored', flush=True)
-                    else:
-                        # The credits are spent; show the provider's frame with an
-                        # explicit note rather than an error, and let the user
-                        # decide whether to regenerate.
-                        locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
-                        warning = UNLOCKED_WARNING
-                        print('Try-on composite: unlocked-fallback', flush=True)
+                if not face_restored:
+                    try:
+                        locked_output_url = await _face_locked_output_url(
+                            output_client, person_content, current_model, changed_slots, prepared_identity,
+                            debug_context=(device, job_id), generated_image=last_frame,
+                        )
+                    except AlignmentRejected as exc:
+                        if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
+                            raise
+                        locked = False
+                        # The scene moved, but the face alone may still fit: the
+                        # user then sees their own face on the generator's frame.
+                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity)
+                        if restored:
+                            locked_output_url, face_restored = restored, True
+                            print('Try-on composite: face-restored', flush=True)
+                        else:
+                            # The credits are spent; show the provider's frame with an
+                            # explicit note rather than an error, and let the user
+                            # decide whether to regenerate.
+                            locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
+                            warning = UNLOCKED_WARNING
+                            print('Try-on composite: unlocked-fallback', flush=True)
             timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
             # Only a look that passed the identity lock may seed later looks: a
             # frame that could not be aligned would carry its defect into every
