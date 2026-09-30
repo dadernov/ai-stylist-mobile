@@ -29,10 +29,10 @@ import httpx
 QUEUE_URL = 'https://queue.fal.run'
 # The order garments follow the photo in, inner to outer and top to bottom:
 # the prompt names each image by this position.
-# A second top or outer layer (`top2`, `outer2`) is worn over the first one.
+# Further tops or outer layers (`top2`..`top4`, `outer2`) are worn over the first one.
 # Upper layers follow the bottom from the inside out: an editor ignored a
 # "second top" placed right after the first, but layers outerwear reliably.
-LOOK_ORDER = ('top', 'bottom', 'top2', 'outer', 'outer2', 'shoes')
+LOOK_ORDER = ('top', 'bottom', 'top2', 'top3', 'top4', 'outer', 'outer2', 'shoes')
 BALANCE_ERROR = 'Примерочная временно недоступна: закончился баланс генерации. Попробуй позже.'
 BLOCKED_ERROR = 'Генератор отклонил фото. Попробуй другое фото или другие вещи.'
 TIMEOUT_ERROR = 'Генерация заняла слишком много времени. Попробуй ещё раз.'
@@ -116,7 +116,7 @@ def face_only():
 
 
 # Layers worn over the base top, from the inside out.
-UPPER_LAYERS = ('top2', 'outer', 'outer2')
+UPPER_LAYERS = ('top2', 'top3', 'top4', 'outer', 'outer2')
 
 
 def layer_pass(slots):

@@ -1276,9 +1276,11 @@ async def tryon_generate_look(
     bottom_file: UploadFile | None = File(None),
     shoes_file: UploadFile | None = File(None),
     outer_file: UploadFile | None = File(None),
-    # A second layer worn over the first top or the first outerwear.
+    # Further layers worn over the first top or the first outerwear.
     top2_file: UploadFile | None = File(None),
     outer2_file: UploadFile | None = File(None),
+    top3_file: UploadFile | None = File(None),
+    top4_file: UploadFile | None = File(None),
     tuck_mode: str = Form("auto"),
     compare_mode: str = Form("false"),
     quality_mode: str = Form("quality"),
@@ -1286,6 +1288,8 @@ async def tryon_generate_look(
     outer_category: str = Form(""),
     top2_category: str = Form(""),
     outer2_category: str = Form(""),
+    top3_category: str = Form(""),
+    top4_category: str = Form(""),
     request_id: str = Form(""),
     async_mode: str = Form("false"),
     fresh: str = Form("false"),
@@ -1323,21 +1327,33 @@ async def tryon_generate_look(
         # Over HTTP the value is Starlette's UploadFile, not FastAPI's subclass.
         top2_content, top2_mime = await read_upload(top2_file if isinstance(top2_file, StarletteUploadFile) else None, "top2_file")
         outer2_content, outer2_mime = await read_upload(outer2_file if isinstance(outer2_file, StarletteUploadFile) else None, "outer2_file")
+        top3_content, top3_mime = await read_upload(top3_file if isinstance(top3_file, StarletteUploadFile) else None, "top3_file")
+        top4_content, top4_mime = await read_upload(top4_file if isinstance(top4_file, StarletteUploadFile) else None, "top4_file")
         top2_category = top2_category if isinstance(top2_category, str) else ''
         outer2_category = outer2_category if isinstance(outer2_category, str) else ''
-        if top_content and top2_content and tryon_policy.inner_first(top_category.strip(), top2_category.strip()):
-            # A T-shirt picked after a long-sleeve still goes under it.
-            (top_content, top_mime, top_category), (top2_content, top2_mime, top2_category) = \
-                (top2_content, top2_mime, top2_category), (top_content, top_mime, top_category)
-        layered = bool(top2_content or outer2_content)
+        top3_category = top3_category if isinstance(top3_category, str) else ''
+        top4_category = top4_category if isinstance(top4_category, str) else ''
+        # Layers go on in their natural order, whatever order they were picked
+        # in: a T-shirt picked after a long-sleeve still goes under it.
+        (top_content, top_mime, top_category), (top2_content, top2_mime, top2_category), \
+            (top3_content, top3_mime, top3_category), (top4_content, top4_mime, top4_category) = tryon_policy.natural_layers(
+                [(top_content, top_mime, top_category), (top2_content, top2_mime, top2_category),
+                 (top3_content, top3_mime, top3_category), (top4_content, top4_mime, top4_category)], tryon_policy.TOP_LAYER_ORDER)
+        (outer_content, outer_mime, outer_category), (outer2_content, outer2_mime, outer2_category) = tryon_policy.natural_layers(
+            [(outer_content, outer_mime, outer_category), (outer2_content, outer2_mime, outer2_category)], tryon_policy.OUTER_LAYER_ORDER)
+        upper_count = sum(1 for content in (top_content, top2_content, top3_content, top4_content, outer_content, outer2_content) if content)
+        layered = bool(top2_content or outer2_content or top3_content or top4_content)
 
-        if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content)):
+        if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content, top3_content, top4_content)):
             return {"error": "Выбери хотя бы одну вещь для примерки."}
+        if upper_count > tryon_policy.MAX_UPPER_LAYERS:
+            return {"error": f"Можно надеть не больше {tryon_policy.MAX_UPPER_LAYERS} слоёв верха."}
         # With TRYON_PROVIDER=fal the whole look is one call to a general editor
         # (fal_tryon); otherwise FASHN dresses one garment per call.
         if layered and not use_fal:
             return {"error": "Многослойные образы доступны только в новой примерке."}
-        fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content) if content)) if use_fal else None
+        fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content,
+                                                                            top2_content, outer2_content, top3_content, top4_content) if content)) if use_fal else None
         if fal_model:
             look_model_name = f'fal:{fal_model.key}'
 
@@ -1357,6 +1373,9 @@ async def tryon_generate_look(
             + (f"|{top2_category.strip()}|{outer2_category.strip()}|"
                + '|'.join(hashlib.sha256(content).hexdigest() if content else '-' for content in (top2_content, outer2_content))
                if layered else '')
+            + (f"|{top3_category.strip()}|{top4_category.strip()}|"
+               + '|'.join(hashlib.sha256(content).hexdigest() if content else '-' for content in (top3_content, top4_content))
+               if top3_content or top4_content else '')
         )
         request_id = request_id if isinstance(request_id, str) else ''
         if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
@@ -1367,10 +1386,12 @@ async def tryon_generate_look(
         garments = {slot: (content, mime) for slot, content, mime in [
             ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
             ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime),
-            ('top2', top2_content, top2_mime), ('outer2', outer2_content, outer2_mime)
+            ('top2', top2_content, top2_mime), ('outer2', outer2_content, outer2_mime),
+            ('top3', top3_content, top3_mime), ('top4', top4_content, top4_mime)
         ] if content}
         slot_categories = {'top': top_category.strip(), 'outer': outer_category.strip(),
-                           'top2': top2_category.strip(), 'outer2': outer2_category.strip()}
+                           'top2': top2_category.strip(), 'outer2': outer2_category.strip(),
+                           'top3': top3_category.strip(), 'top4': top4_category.strip()}
         stage_total = 1 if fal_model or _look_strategy() == 'collage' else len(garments)
         # Layers shared with an earlier look of this person are taken from the
         # layer cache instead of being paid for again. `fresh` is set by the app

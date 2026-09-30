@@ -171,7 +171,7 @@ async function run() {
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('new-person', [item]));
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('person', [{ ...item, section: 'Низ' }]));
   });
-  await test('two tops and two outer layers go as layers in the order they were chosen', async () => {
+  await test('tops and outer layers go as layers in the order they were chosen', async () => {
     let sent;
     submit = async (...args) => { sent = args; return response; };
     const store = new TryOnJobStore(alice);
@@ -184,7 +184,15 @@ async function run() {
     assert.equal(sent[8], 'Футболка');
     assert.equal(sent[7], 'data:image/png;base64,coat');
     assert.deepEqual(sent.at(-1), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
-      outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет' });
+      outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет',
+      top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined });
+    await store.start({ modelUri: 'person', context: 'four tops', tuckMode: 'auto', items: [
+      garment('hoodie', 'Верх', 'Худи'), garment('tee', 'Верх', 'Футболка'), garment('shirt', 'Верх', 'Рубашка'),
+      garment('sweater', 'Верх', 'Свитер')] });
+    assert.equal(sent[1], 'data:image/png;base64,hoodie');
+    assert.deepEqual([sent.at(-1).top2Uri, sent.at(-1).top3Uri, sent.at(-1).top4Uri],
+      ['data:image/png;base64,tee', 'data:image/png;base64,shirt', 'data:image/png;base64,sweater'], 'all four tops reach the server');
+    assert.deepEqual([sent.at(-1).top3Category, sent.at(-1).top4Category], ['Рубашка', 'Свитер']);
     store.deactivate();
   });
   await test('in-flight generation survives screen/account unmount and charges one request', async () => {

@@ -149,15 +149,16 @@ export class TryOnJobStore {
     this.emit();
     try {
       await this.save();
-      // Tops and outerwear may come in two layers, in the order they were chosen:
-      // the first is worn closer to the body.
+      // Tops and outerwear may come in several layers; the server puts them
+      // on in their natural order, whatever order they were chosen in.
       const layers = (section: string) => input.items.filter(i => i.section === section && i.imageUri);
       const uriOf = (item?: { sourceImageUri?: string; imageUri?: string }) => item?.sourceImageUri || item?.imageUri;
-      const [top, top2] = layers('Верх');
+      const [top, top2, top3, top4] = layers('Верх');
       const [outer, outer2] = layers('Верхняя одежда');
       const response = await analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
         qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
-        { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category });
+        { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category,
+          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category });
       if (await this.complete(job, response)) return;
     } catch (error: any) {
       if (error instanceof ApiError && error.status && error.status < 500) {

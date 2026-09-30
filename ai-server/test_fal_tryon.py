@@ -19,6 +19,7 @@ import access
 import accounts
 import app
 import fal_tryon
+import tryon_policy
 
 
 def queue(status_sequence, result=None, submit_status=200, submit_body=None, result_status=200):
@@ -422,6 +423,52 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('image 2 is the top: a t-shirt', prompt)
         self.assertIn('image 4 is the outerwear: a long-sleeve t-shirt', prompt)
         self.assertIn('The top in image 2 is worn under the garment in image 4: it may show only at the neckline', prompt)
+
+    async def four_layers(self, request, **layers):
+        fields = dict(top_file=None, top2_file=None, top3_file=None, top4_file=None, outer_file=None, outer2_file=None,
+                      top_category='', top2_category='', top3_category='', top4_category='', outer_category='', outer2_category='')
+        fields.update(layers)
+        return await app.tryon_generate_look(
+            person_file=photo('white'), bottom_file=photo('blue'), shoes_file=None, tuck_mode='auto', compare_mode='false',
+            quality_mode='quality', request_id=request, async_mode='false', fresh='false', device='masha', **fields)
+
+    async def test_four_upper_layers_go_on_inside_out_whatever_the_taps(self):
+        # The user: two layers of tops is too few; a T-shirt, a long-sleeve,
+        # a hoodie and a jacket make one look, picked in any order.
+        result = await self.four_layers(
+            'request_000000000071', top_file=photo('gray'), top_category='Худи', top2_file=photo('white'), top2_category='Футболка',
+            top3_file=photo('black'), top3_category='Лонгслив', outer_file=photo('navy'), outer_category='Куртка')
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.generate.await_count, 1, 'four layers are still one call')
+        self.assertEqual(len(self.generate.await_args.args[3]), 5)
+        prompt = self.generate.await_args.args[4]
+        self.assertIn('image 2 is the top: a t-shirt; image 3 is the lower-body garment; '
+                      'image 4 is the outerwear: a long-sleeve t-shirt; '
+                      'image 5 is the second layer, worn over the outerwear: a hoodie; '
+                      'image 6 is the outermost layer, worn over everything: a jacket', prompt)
+        self.assertIn('The result must show all 5 garments at once', prompt)
+        self.assertIn('Wear the second layer from image 5 pulled on over the layers beneath it: '
+                      'they may show only at its neckline and never below its hem.', prompt)
+        self.assertIn('Wear the outermost layer from image 6 open over the layers beneath it', prompt)
+
+    async def test_two_outer_layers_go_on_inside_out(self):
+        await self.four_layers('request_000000000072', top_file=photo('white'), top_category='Футболка',
+                               outer_file=photo('gray'), outer_category='Пальто', outer2_file=photo('navy'), outer2_category='Пиджак')
+        prompt = self.generate.await_args.args[4]
+        self.assertIn('image 4 is the outerwear: a blazer; image 5 is the second layer, worn over the outerwear: an overcoat', prompt)
+
+    async def test_more_than_four_upper_layers_are_refused_before_paying(self):
+        result = await self.four_layers(
+            'request_000000000073', top_file=photo('white'), top_category='Футболка', top2_file=photo('black'), top2_category='Лонгслив',
+            top3_file=photo('gray'), top3_category='Худи', outer_file=photo('navy'), outer_category='Куртка',
+            outer2_file=photo('green'), outer2_category='Пальто')
+        self.assertEqual(result, {'error': 'Можно надеть не больше 4 слоёв верха.'})
+        self.generate.assert_not_awaited()
+
+    def test_up_to_three_layers_over_the_top_read_as_before(self):
+        self.assertEqual(tryon_policy.upper_roles(2), tryon_policy.UPPER_ROLES[:2])
+        self.assertEqual(tryon_policy.upper_roles(3), tryon_policy.UPPER_ROLES)
+        self.assertEqual(tryon_policy.upper_roles(4)[2], 'third layer, worn over the second layer')
 
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):

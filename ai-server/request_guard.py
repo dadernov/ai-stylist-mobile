@@ -69,7 +69,7 @@ class BoundedFormRoute(APIRoute):
         async def bounded(request):
             if request.headers.get('content-type', '').lower().startswith('multipart/form-data'):
                 # Cached on Request; FastAPI reuses this bounded parse.
-                # The photo and up to six garments (two layers of tops and of outerwear).
-                await request.form(max_files=7, max_fields=14, max_part_size=8192)
+                # The photo and up to six garments: four upper layers, trousers and shoes.
+                await request.form(max_files=7, max_fields=16, max_part_size=8192)
             return await handler(request)
         return bounded

@@ -125,7 +125,7 @@ def composite_slot(slot, category=''):
 # A general image editor sees the photo and every garment at once (fal_tryon).
 # One instruction names each image by its position and carries the same rules
 # as the single-garment prompts above.
-LOOK_NAMES = {'top': 'top', 'top2': 'outerwear', 'bottom': 'lower-body garment',
+LOOK_NAMES = {'top': 'top', 'top2': 'outerwear', 'top3': 'outerwear', 'top4': 'outerwear', 'bottom': 'lower-body garment',
               'outer': 'outerwear', 'outer2': 'outermost layer, worn over the outerwear', 'shoes': 'pair of shoes'}
 LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same canvas, framing, camera angle and zoom, '
                  'pose, face, expression, hair, skin, body shape, hands and background. '
@@ -139,8 +139,17 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
 # reliably when it was called outerwear and dropped it as a "second top", so
 # every layer over the base top is described in outerwear terms.
-UPPER_LAYERS = ('top2', 'outer', 'outer2')
+UPPER_LAYERS = ('top2', 'top3', 'top4', 'outer', 'outer2')
 UPPER_ROLES = ('outerwear', 'second layer, worn over the outerwear', 'outermost layer, worn over everything')
+# A look carries at most this many garments on the upper body, the base top included.
+MAX_UPPER_LAYERS = 4
+
+
+def upper_roles(count):
+    """Roles of `count` layers over the base top, inside out; up to three read as before."""
+    if count < 3:
+        return UPPER_ROLES[:count]
+    return UPPER_ROLES[:2] + ('third layer, worn over the second layer',) * (count - 3) + UPPER_ROLES[2:]
 
 
 def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None):
@@ -152,7 +161,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     names = names or {}
     categories = {'top': top_category, 'outer': outer_category, **(categories or {})}
     upper = [slot for slot in UPPER_LAYERS if slot in slots]
-    role = {slot: UPPER_ROLES[index] for index, slot in enumerate(upper)}
+    role = dict(zip(upper, upper_roles(len(upper))))
     image = {slot: index for index, slot in enumerate(slots, start=2)}
     described = []
     for slot in slots:
@@ -186,6 +195,10 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
             text += ('Wear the outerwear fully open and unfastened, with the new top and its print clearly visible. '
                      if 'top' in slots else 'Match the open or closed state of the outerwear reference. ')
             text += 'Do not tuck the outerwear. '
+        elif slot in ('top3', 'top4') and categories.get(slot) not in OPEN_FRONT:
+            # A sweater or a hoodie goes on over the head: it cannot be worn open.
+            text += (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} pulled on over the layers beneath it: '
+                     f'they may show only at its neckline and never below its hem. ')
         else:
             text += (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} open over the layers beneath it, '
                      'so each of them stays visible at the front, collar or hem. ')
@@ -211,7 +224,7 @@ def layer_prompt(upper, categories, names, base_top=''):
     below = base
     for index, slot in enumerate(upper, start=2):
         garment = noun(categories.get(slot, ''), 'the garment')
-        how = 'unbuttoned and open over' if categories.get(slot) in OPEN_FRONT or slot != 'top2' else 'worn over'
+        how = 'unbuttoned and open over' if categories.get(slot) in OPEN_FRONT or not slot.startswith('top') else 'worn over'
         steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, {how} {below}')
         visible.append(f'{garment} {"around it" if index == 2 else "outside"}')
         below = garment
@@ -230,15 +243,20 @@ def layer_prompt(upper, categories, names, base_top=''):
     return text + 'The result is a photorealistic photo with the lighting of image 1.'
 
 
-# Two tops layer in their natural order, whichever was picked first: a T-shirt
-# goes under a long-sleeve, a shirt under a sweater. Unknown ones keep the order.
+# Layers go on in their natural order, whichever was picked first: a T-shirt
+# goes under a long-sleeve, a shirt under a sweater, a blazer under a coat.
+# Unknown ones go over the known ones, in the order they were picked.
 TOP_LAYER_ORDER = {'Майка': 0, 'Топ': 0, 'Футболка': 1, 'Поло': 1, 'Лонгслив': 2, 'Водолазка': 2,
                    'Рубашка': 3, 'Блуза': 3, 'Свитер': 4, 'Худи': 4, 'Свитшот': 4, 'Кардиган': 5, 'Жилет': 5}
+OUTER_LAYER_ORDER = {'Пиджак': 0, 'Бомбер': 1, 'Куртка': 1, 'Пальто': 2, 'Тренч': 2, 'Плащ': 2,
+                     'Пуховик': 2, 'Парка': 2, 'Шуба': 2}
 
 
-def inner_first(first_category, second_category):
-    """True when the second top belongs under the first one."""
-    return TOP_LAYER_ORDER.get(second_category, 99) < TOP_LAYER_ORDER.get(first_category, 99)
+def natural_layers(layers, order):
+    """(content, mime, category) layers inside out, the empty ones last as (None, None, '')."""
+    present = [layer for layer in layers if layer[0]]
+    present.sort(key=lambda layer: order.get((layer[2] or '').strip(), 99))
+    return present + [(None, None, '')] * (len(layers) - len(present))
 
 
 # Garments usually worn open over another top.

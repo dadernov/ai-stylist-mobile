@@ -267,13 +267,16 @@ export async function analyzeTryOnGenerateLook(
   // true when the same garments are generated again: the user wants another
   // variant, so the server redoes every layer instead of reusing the base.
   fresh = false,
-  // A second top or outer layer, worn over the first one.
-  layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string } = {}
+  // Further tops and a second outer layer, worn over the first ones.
+  layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string;
+    top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string } = {}
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   await appendPhoto(form, 'person_file', personUri, true);
   if (topUri) await appendPhoto(form, 'top_file', topUri, true);
   if (layers.top2Uri) await appendPhoto(form, 'top2_file', layers.top2Uri, true);
+  if (layers.top3Uri) await appendPhoto(form, 'top3_file', layers.top3Uri, true);
+  if (layers.top4Uri) await appendPhoto(form, 'top4_file', layers.top4Uri, true);
   if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri, true);
   if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri, true);
   if (outerUri) await appendPhoto(form, 'outer_file', outerUri, true);
@@ -282,6 +285,8 @@ export async function analyzeTryOnGenerateLook(
   if (outerCategory) form.append('outer_category', outerCategory);
   if (layers.top2Category) form.append('top2_category', layers.top2Category);
   if (layers.outer2Category) form.append('outer2_category', layers.outer2Category);
+  if (layers.top3Category) form.append('top3_category', layers.top3Category);
+  if (layers.top4Category) form.append('top4_category', layers.top4Category);
   form.append('tuck_mode', tuckMode);
   // The app always asks for 'quality'; 'fast' drafts remain only in older history.
   form.append('quality_mode', qualityMode);

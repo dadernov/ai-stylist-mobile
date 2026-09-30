@@ -33,9 +33,11 @@ type Props = {
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
-// How many garments of a section one look can layer.
-// Two tops under one outer layer: more upper layers an editor does not keep.
-const LAYERS: Record<string, number> = { 'Верх': 2 };
+// How many garments of a section one look can layer, and how many the upper
+// body takes in all: a T-shirt, a long-sleeve, a hoodie and a jacket.
+const LAYERS: Record<string, number> = { 'Верх': 4, 'Верхняя одежда': 2 };
+const UPPER = ['Верх', 'Верхняя одежда'];
+const MAX_UPPER = 4;
 
 export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds, onSelectionCta }: Props) {
   // Фото для примерки выбирается прямо здесь, без перехода в профиль.
@@ -66,11 +68,16 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   const toggle = (item: WardrobeItem) => {
     setSelectedIds(previous => {
       if (previous.includes(item.id)) return previous.filter(id => id !== item.id);
-      // Two tops can be chosen; the server layers them in their natural order.
-      // One more of a full section replaces the oldest of it.
+      // Upper layers can be combined; the server puts them on in their natural order.
+      // One more of a full section, or of a full upper body, replaces the oldest of it.
+      const sectionOf = (id: string) => items.find(candidate => candidate.id === id)?.section || '';
       const layers = LAYERS[item.section] || 1;
-      const sameSection = previous.filter(id => items.find(candidate => candidate.id === id)?.section === item.section);
+      const sameSection = previous.filter(id => sectionOf(id) === item.section);
       const dropped = new Set(sameSection.slice(0, Math.max(0, sameSection.length - layers + 1)));
+      if (UPPER.includes(item.section)) {
+        const upper = previous.filter(id => UPPER.includes(sectionOf(id)) && !dropped.has(id));
+        upper.slice(0, Math.max(0, upper.length - MAX_UPPER + 1)).forEach(id => dropped.add(id));
+      }
       return [...previous.filter(id => {
         const current = items.find(candidate => candidate.id === id);
         if (!current || dropped.has(id)) return false;
@@ -118,8 +125,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           <AppPressable onPress={() => setSelectedIds([])}><Text style={styles.link}>{t('Очистить')}</Text></AppPressable>
         </View>
       )}
-      {selection.filter(item => item.section === 'Верх').length > 1 && (
-        <Text style={styles.layerHint}>{t('Два слоя верха надеваются в естественном порядке: например, футболка окажется под лонгсливом.')}</Text>
+      {selection.filter(item => UPPER.includes(item.section)).length > 1 && (
+        <Text style={styles.layerHint}>{t('До четырёх слоёв верха: они надеваются в естественном порядке. Например, футболка окажется под лонгсливом, а куртка — поверх всего.')}</Text>
       )}
       {selection.length > 0 && !onSelectionCta && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
       <View style={styles.grid}>
