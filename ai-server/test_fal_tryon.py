@@ -340,15 +340,16 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         prompt = self.generate.await_args.args[4]
         self.assertIn('Remove any necklace, chain or pendant', prompt)
 
-    async def test_a_t_shirt_under_a_long_sleeve_is_not_sent(self):
-        # Invisible in life; given the image, the editor drew white cuffs and a collar.
+    async def test_a_t_shirt_under_a_long_sleeve_shows_only_at_the_neckline(self):
+        # The user: the T-shirt shows at the top as far as the neckline allows,
+        # never below the hem. Both garments go, described as the result looks.
         await self.layered_look()
         _client, _model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
-        self.assertEqual(len(garment_urls), 5)
-        self.assertIn('image 2 is the top: a long-sleeve t-shirt', prompt)
-        self.assertNotIn('pulled on', prompt)
-        self.assertIn('image 4 is the outerwear: a blazer', prompt)
-        self.assertIn('image 5 is the second layer, worn over the outerwear: a raincoat', prompt)
+        self.assertEqual(len(garment_urls), 6)
+        self.assertIn('image 4 is the top pulled on over the first top: a long-sleeve t-shirt', prompt)
+        self.assertIn('shows only as a thin edge at the neckline', prompt)
+        self.assertIn('The cuffs, sleeves and hem are those of a long-sleeve t-shirt', prompt)
+        self.assertIn('image 5 is the outerwear: a blazer', prompt)
 
     async def test_long_sleeves_under_a_t_shirt_are_drawn(self):
         await app.tryon_generate_look(

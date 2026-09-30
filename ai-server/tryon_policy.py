@@ -138,15 +138,11 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
 # every layer over the base top is described in outerwear terms.
 UPPER_LAYERS = ('top2', 'outer', 'outer2')
 UPPER_ROLES = ('outerwear', 'second layer, worn over the outerwear', 'outermost layer, worn over everything')
-# Sleeve length decides what a layered top shows. Under a long-sleeved pullover
-# a short-sleeved top is invisible, as in life: it is not sent at all, because
-# the editor otherwise invented white cuffs and collars for it.
+# Sleeve length decides what a layered top shows. A short-sleeved top under a
+# long-sleeved pullover shows only at the neckline, as far as the pullover's
+# neckline lets it; never at the hem or the cuffs.
 SHORT_SLEEVES = {'Футболка', 'Поло', 'Майка', 'Топ'}
 LONG_PULLOVERS = {'Лонгслив', 'Водолазка', 'Свитер', 'Худи', 'Свитшот'}
-
-
-def hidden_inner_top(inner, outer):
-    return inner in SHORT_SLEEVES and outer in LONG_PULLOVERS
 
 
 # A top under a pulled-on top shows only where it is longer: a T-shirt under a
@@ -192,7 +188,15 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     elif 'top' in slots:
         text += 'Use only the new neckline and sleeves; no collar, cuffs or hem of the old top may remain. '
         text += fit_instruction(tuck)
-    if pullover and categories['top'] in LONG_PULLOVERS and categories.get('top2') in SHORT_SLEEVES:
+    if pullover and categories['top'] in SHORT_SLEEVES and categories.get('top2') in LONG_PULLOVERS:
+        # Described as the result looks: editors ignore "never show", but draw a
+        # concrete picture. The T-shirt peeks out at the neckline only.
+        inner, outer = names.get(categories['top'], 'the T-shirt'), names.get(categories['top2'], 'the long-sleeved top')
+        text += (f'The person wears {outer} from image {image["top2"]} over {inner} from image {image["top"]}. '
+                 f'{outer[0].upper() + outer[1:]} covers the body, the sleeves down to the wrists and the hem with its own fabric and colour; '
+                 f'{inner} underneath shows only as a thin edge at the neckline, as far as the neckline of {outer} lets it. '
+                 f'The cuffs, sleeves and hem are those of {outer}. ')
+    elif pullover and categories['top'] in LONG_PULLOVERS and categories.get('top2') in SHORT_SLEEVES:
         # The one layering an editor must draw: long sleeves under a T-shirt.
         text += (f'The person wears {names.get(categories["top2"], "the top")} from image {image["top2"]} over '
                  f'{names.get(categories["top"], "the long-sleeved top")} from image {image["top"]}: the chest shows the top from image '
