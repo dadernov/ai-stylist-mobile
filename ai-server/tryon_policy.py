@@ -128,7 +128,9 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
                  'pose, face, expression, hair, skin, body shape, hands and background. '
                  'Image 1 is the exact canvas of the result: the head, face and body keep exactly the same position, '
                  'size and angle in the frame, so the result can be laid over image 1 pixel for pixel. '
-                 'Do not crop, zoom, move, turn, slim or retouch the person. ')
+                 'Do not crop, zoom, move, turn, slim or retouch the person. '
+                 # A pendant from a bare-chested photo kept showing on top of every new top.
+                 'Remove any necklace, chain or pendant the person wears in image 1: no jewellery is visible on the new clothes. ')
 
 
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
@@ -136,6 +138,22 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
 # every layer over the base top is described in outerwear terms.
 UPPER_LAYERS = ('top2', 'outer', 'outer2')
 UPPER_ROLES = ('outerwear', 'second layer, worn over the outerwear', 'outermost layer, worn over everything')
+# Sleeve length decides what a layered top shows. Under a long-sleeved pullover
+# a short-sleeved top is invisible, as in life: it is not sent at all, because
+# the editor otherwise invented white cuffs and collars for it.
+SHORT_SLEEVES = {'Футболка', 'Поло', 'Майка', 'Топ'}
+LONG_PULLOVERS = {'Лонгслив', 'Водолазка', 'Свитер', 'Худи', 'Свитшот'}
+
+
+def hidden_inner_top(inner, outer):
+    return inner in SHORT_SLEEVES and outer in LONG_PULLOVERS
+
+
+# A top under a pulled-on top shows only where it is longer: a T-shirt under a
+# long-sleeve stays hidden, long sleeves under a T-shirt show on the forearms.
+INNER_TOP = ('The top in image {outer} is pulled on over the top in image {inner}. The inner top shows only where it '
+             'naturally would, where it is longer than the outer one, such as long sleeves under short sleeves. '
+             'A shorter inner top never sticks out below the hem, at the cuffs or at the neckline of the outer top. ')
 
 
 def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None):
@@ -146,8 +164,13 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     """
     names = names or {}
     categories = {'top': top_category, 'outer': outer_category, **(categories or {})}
-    upper = [slot for slot in UPPER_LAYERS if slot in slots]
+    # A second top that is pulled on (a long-sleeve, a sweater) is a top over a
+    # top; only open-front ones (a shirt, a cardigan) layer like outerwear.
+    pullover = 'top2' in slots and categories.get('top2') not in OPEN_FRONT
+    upper = [slot for slot in UPPER_LAYERS if slot in slots and not (slot == 'top2' and pullover)]
     role = {slot: UPPER_ROLES[index] for index, slot in enumerate(upper)}
+    if pullover:
+        role['top2'] = 'top pulled on over the first top'
     image = {slot: index for index, slot in enumerate(slots, start=2)}
     described = []
     for slot in slots:
@@ -161,7 +184,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
             'Ignore backgrounds, hangers, mannequins and people in the garment images. '
             'Prints, logos and details of one garment must never appear on another. '
             f'{LOOK_IDENTITY}')
-    if len(upper) > 1:
+    if len(upper) + pullover > 1:
         # Editors tend to drop one garment of a layered look; name the rule.
         text += f'The result must show all {len(slots)} garments at once; none may be left out. '
     if 'top' in slots and categories['top'] in ONE_PIECE:
@@ -169,6 +192,14 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     elif 'top' in slots:
         text += 'Use only the new neckline and sleeves; no collar, cuffs or hem of the old top may remain. '
         text += fit_instruction(tuck)
+    if pullover and categories['top'] in LONG_PULLOVERS and categories.get('top2') in SHORT_SLEEVES:
+        # The one layering an editor must draw: long sleeves under a T-shirt.
+        text += (f'The person wears {names.get(categories["top2"], "the top")} from image {image["top2"]} over '
+                 f'{names.get(categories["top"], "the long-sleeved top")} from image {image["top"]}: the chest shows the top from image '
+                 f'{image["top2"]} with its print, and the long sleeves from image {image["top"]} show below its short sleeves, '
+                 'down to the wrists. ')
+    elif pullover:
+        text += INNER_TOP.format(inner=image['top'], outer=image['top2'])
     if 'bottom' in slots:
         text += TROUSERS
     for index, slot in enumerate(upper):
@@ -199,11 +230,16 @@ def layer_prompt(upper, categories, names, base_top=''):
     base = noun(base_top, 'the top they wear')
     steps, visible = [], [f'{base} in the middle']
     below = base
+    pulled_on = None
     for index, slot in enumerate(upper, start=2):
         garment = noun(categories.get(slot, ''), 'the garment')
-        how = 'unbuttoned and open over' if categories.get(slot) in OPEN_FRONT or slot != 'top2' else 'worn over'
-        steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, {how} {below}')
-        visible.append(f'{garment} {"around it" if index == 2 else "outside"}')
+        if slot == 'top2' and categories.get(slot) not in OPEN_FRONT:
+            steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, pulled on over {below}')
+            visible = [f'{garment} covering {base}']
+            pulled_on = index
+        else:
+            steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, unbuttoned and open over {below}')
+            visible.append(f'{garment} {"around it" if index == 2 else "outside"}')
         below = garment
     count = len(upper)
     text = (f'Image 1 is a photo of a person. Put {"one extra layer" if count == 1 else f"{count} extra layers"} on this person '
@@ -214,6 +250,9 @@ def layer_prompt(upper, categories, names, base_top=''):
             'Reproduce every new layer faithfully: exact colour, fabric, cut, length and details. '
             'Ignore backgrounds, hangers, doors and objects in the garment images. '
             'Prints, logos and details of one garment must never appear on another. ')
+    if pulled_on:
+        text += ('The top they already wear shows only where it is longer than the new one, such as long sleeves under short '
+                 'sleeves; it never sticks out below the hem, at the cuffs or at the neckline. ')
     for index, slot in enumerate(upper, start=2):
         if categories.get(slot) in LONG_OUTER:
             text += f'The garment in image {index} is long: keep its full length below the hips and never shorten it. '

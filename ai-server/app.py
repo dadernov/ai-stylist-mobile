@@ -666,6 +666,12 @@ FAL_JPEG_QUALITY = 92
 
 async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None):
     """One call for the whole look: the photo first, then each garment."""
+    categories = dict(categories or {})
+    if 'top' in garments and 'top2' in garments and tryon_policy.hidden_inner_top(categories.get('top', top_category), categories.get('top2')):
+        # A T-shirt under a long-sleeve is not visible, as in life: the pullover
+        # is the top, and the editor gets nothing to invent cuffs or a collar from.
+        garments = {**{slot: value for slot, value in garments.items() if slot != 'top2'}, 'top': garments['top2']}
+        categories['top'] = top_category = categories.pop('top2')
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
     person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY, fal_tryon.MIN_ASPECT)
     decoded = _data_url_to_bytes(person_url)
