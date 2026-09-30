@@ -34,6 +34,7 @@ import access
 import accounts
 import fal_tryon
 import fashn_credits
+import photo_check
 import jobs
 import stage_cache
 from request_guard import RequestGuard, BoundedFormRoute
@@ -1202,6 +1203,20 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
         return result
     finally:
         _ANALYSIS_LOCK.release()
+
+
+@app.post("/tryon-photo-check")
+def tryon_photo_check(file: UploadFile = File(...), device: str = Depends(access.require_account)):
+    """Advice on the try-on photo before any paid generation (photo_check); nothing is kept."""
+    access.throttle(device, 'photo-check', _env_int('AI_PHOTO_CHECK_PER_MINUTE', 10))
+    content = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if not content or len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    try:
+        image = _working_image(content, max_side=photo_check.MAX_SIDE)
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(422, "Не удалось открыть фото. Выбери JPEG, PNG или WebP до 25 мегапикселей.")
+    return {"issues": photo_check.issues(image)}
 
 
 @app.post("/tryon-model")

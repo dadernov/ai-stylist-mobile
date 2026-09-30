@@ -190,13 +190,27 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
                  'below that hem only the trousers show. ')
     if 'bottom' in slots:
         text += TROUSERS
+    # A sweater or a hoodie over other tops goes on over the head: the layers
+    # under it are closed and show only at its neckline, the ones over it are
+    # open over it. Looks without one read exactly as before.
+    pullover = next((slot for slot in upper if slot in ('top3', 'top4') and categories.get(slot) not in OPEN_FRONT), None)
+    if pullover:
+        noun = lambda slot: _bare(names.get(categories.get(slot, ''), '')) or 'garment'
+        stack = [slot for slot in ('top', *upper) if slot in slots]
+        text += ('From the body outwards the upper layers are: '
+                 + ', '.join(f'the {noun(slot)} (image {image[slot]})' for slot in stack) + '. ')
     for index, slot in enumerate(upper):
-        if index == 0:
+        if pullover and upper.index(slot) < upper.index(pullover):
+            text += (f'The {noun(slot)} from image {image[slot]} is worn closed under the {noun(pullover)} from image {image[pullover]}: '
+                     f'only its collar shows at the neckline of the {noun(pullover)}, and nothing of it shows below the hem of the {noun(pullover)}. ')
+        elif pullover and upper.index(slot) > upper.index(pullover):
+            text += (f'Wear the {noun(slot)} from image {image[slot]} open over the {noun(pullover)}, '
+                     f'which stays clearly visible at the front. ')
+        elif index == 0:
             text += ('Wear the outerwear fully open and unfastened, with the new top and its print clearly visible. '
                      if 'top' in slots else 'Match the open or closed state of the outerwear reference. ')
             text += 'Do not tuck the outerwear. '
-        elif slot in ('top3', 'top4') and categories.get(slot) not in OPEN_FRONT:
-            # A sweater or a hoodie goes on over the head: it cannot be worn open.
+        elif slot == pullover:
             text += (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} pulled on over the layers beneath it: '
                      f'they may show only at its neckline and never below its hem. ')
         else:
@@ -209,6 +223,14 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     else:
         text += FOOTWEAR + ' '
     return text + 'The result is a photorealistic photo with the lighting and colours of image 1.'
+
+
+def _bare(noun):
+    """'a sweatshirt' -> 'sweatshirt'."""
+    for article in ('a ', 'an '):
+        if noun.startswith(article):
+            return noun[len(article):]
+    return noun
 
 
 def layer_prompt(upper, categories, names, base_top=''):

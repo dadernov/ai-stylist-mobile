@@ -15,6 +15,7 @@ import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
 import { FormScrollView } from './ui/FormScrollView';
 import { RecentTryOns } from './RecentTryOns';
+import { PhotoAdvice } from './PhotoAdvice';
 
 type Props = {
   items: WardrobeItem[];
@@ -99,6 +100,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
         </View>
         <IconButton icon={modelUri ? Pencil : ArrowUpRight} label={t(modelUri ? 'Заменить фото' : 'Добавить фото')} onPress={() => { void pickModel(); }} />
       </View>
+      <PhotoAdvice uri={modelUri} />
       <View style={styles.row}>
         <Text style={styles.heading}>{t('Вещи для примерки')}</Text>
         <Text style={styles.muted}>{t('Выбрано: {count}', { count: selection.length })}</Text>

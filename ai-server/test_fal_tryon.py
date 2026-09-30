@@ -449,7 +449,12 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('The result must show all 5 garments at once', prompt)
         self.assertIn('Wear the second layer from image 5 pulled on over the layers beneath it: '
                       'they may show only at its neckline and never below its hem.', prompt)
-        self.assertIn('Wear the outermost layer from image 6 open over the layers beneath it', prompt)
+        self.assertIn('From the body outwards the upper layers are: the t-shirt (image 2), the long-sleeve t-shirt (image 4), '
+                      'the hoodie (image 5), the jacket (image 6).', prompt)
+        # Under a hoodie a layer is closed: an open one ended up over the sweatshirt in a real run.
+        self.assertIn('The long-sleeve t-shirt from image 4 is worn closed under the hoodie from image 5', prompt)
+        self.assertNotIn('Wear the outerwear fully open', prompt)
+        self.assertIn('Wear the jacket from image 6 open over the hoodie', prompt)
 
     async def test_two_outer_layers_go_on_inside_out(self):
         await self.four_layers('request_000000000072', top_file=photo('white'), top_category='Футболка',

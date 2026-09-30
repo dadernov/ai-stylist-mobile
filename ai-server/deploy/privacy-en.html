@@ -37,6 +37,7 @@
 
 <h2>3. Your face in photos</h2>
 <p>To keep the generator from distorting your face and background, the server locates the face with a local model and restores the original pixels of the head and background after generation. We don't create biometric templates, don't identify people and don't store facial data. Photo metadata (including EXIF location tags) is removed before photos are sent to the generation service.</p>
+<p>When you choose a try-on photo, the server checks the frame with the same local models (whether your face, the top of your head and your feet are visible, whether an arm is raised, whether other people are in the frame) and suggests how to improve it. For this check the photo is not sent anywhere and is not stored.</p>
 
 <h2>4. Consent</h2>
 <p>Before photos are sent to AI processing for the first time, the app explains where they go and asks for your consent. Without it, AI analysis and try-on don't run; everything else works. You can withdraw consent in Profile → “Consent to AI photo processing”. Upload only your own photos or photos of people who agreed to it.</p>

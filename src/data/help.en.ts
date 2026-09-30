@@ -15,7 +15,8 @@ export const helpTopicsEn: HelpTopic[] = [
   ] },
   { id: 'person', title: 'Try-on photo', summary: 'Full-body person, face and pose', sections: [
     { title: 'One person in the frame', paragraphs: ['Choose a sharp full-body photo: face, top of the head and both feet fully visible. Leave some background around the body and floor under the feet. A photo without a mirror is usually better: the phone doesn\'t cover the face.'] },
-    { title: 'Neutral pose', paragraphs: ['Stand straight, face the camera and hold your arms slightly away from the body. Don\'t cross arms or legs. Simple clothes without extra volume help the silhouette read clearly.'] },
+    { title: 'Neutral pose', paragraphs: ['Stand straight, face the camera and hold your arms slightly away from the body. Don\'t cross your arms or legs or raise them to your face or hair: a jacket or shirt sits badly on a raised arm. Simple clothes without extra volume help the silhouette read clearly.'] },
+    { title: 'No need to remove the background', paragraphs: ['Any calm background works: a room, a wall, a street. With a background the finished look feels more alive, while a rough cut-out around the hair carries over into the result. Once you pick a photo, the app tells you if something in the frame gets in the way of the try-on.'] },
     { title: 'Even light', paragraphs: ['Avoid backlight, deep shadows on the face and strong filters. The face should be large and clear enough to check that your appearance is preserved.'] },
     { title: 'Where to replace the photo', paragraphs: ['Open “Profile” and the “Photo for virtual try-on” block. It is a separate photo, not necessarily your avatar. If it isn\'t set yet, the app may use the avatar.'] },
   ] },

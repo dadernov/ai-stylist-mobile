@@ -251,6 +251,8 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
         return {'error': 'fal submit returned no status URL'}
     deadline = _now() + max_wait_seconds
     network_errors = 0
+    # The last queue state tells a slow queue (IN_QUEUE) from a slow model (IN_PROGRESS).
+    last_state = None
     while True:
         await asyncio.sleep(poll_seconds)
         if _now() > deadline:
@@ -262,6 +264,7 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
                     await client.put(cancel_url, headers=headers)
                 except httpx.HTTPError:
                     pass
+            print(f'fal timeout: last status {last_state}', flush=True)
             return {'error': 'fal timeout', 'timeout': True}
         try:
             status = await client.get(status_url, headers=headers)
@@ -273,6 +276,7 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
         if status.status_code >= 400:
             return _failure(status, 'status')
         state = status.json()
+        last_state = state.get('status')
         if state.get('status') != 'COMPLETED':
             continue
         if state.get('error'):

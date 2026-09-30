@@ -12,6 +12,7 @@ import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { FadeInView } from '../components/ui/FadeInView';
 import { Gender } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
+import { PhotoAdvice } from '../components/PhotoAdvice';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -180,7 +181,7 @@ export function ProfileScreen({
           <View style={styles.modelCard}>
             <Text style={styles.modelTitle}>{t('Фото для виртуальной примерки')}</Text>
             <Text style={styles.modelText}>
-              {t('Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем накладывать избранные образы.')}
+              {t('Фото в полный рост, от макушки до стоп, руки опущены. Фон любой, вырезать его не нужно. Лучше в облегающей одежде. На это фото мы надеваем образы.')}
             </Text>
             {modelUri ? (
               // A chosen photo is a thumbnail, not a whole screen: tap to see it full size.
@@ -194,8 +195,8 @@ export function ProfileScreen({
                   <PrimaryButton title={t('Заменить фото')} onPress={handlePickModel} variant="ghost" />
                 </View>
               </View>
-            ) : <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
-              {modelUri ? null : (
+            ) : (
+              <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
                 <View style={styles.modelEmpty}>
                   <LinearGradient
                     colors={[colors.accentGoldSoft, colors.surface] as const}
@@ -207,9 +208,9 @@ export function ProfileScreen({
                   </LinearGradient>
                   <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
                 </View>
-              )}
-            </AppPressable>}
-            {modelUri ? null : <PrimaryButton title={t('Выбрать из галереи')} onPress={handlePickModel} variant="gold" />}
+              </AppPressable>
+            )}
+            {modelUri ? <PhotoAdvice uri={modelUri} /> : <PrimaryButton title={t('Выбрать из галереи')} onPress={handlePickModel} variant="gold" />}
           </View>
         </FadeInView>
 
