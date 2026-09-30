@@ -72,9 +72,16 @@ def start(owner, job_id, fingerprint, cost):
             total = db.execute('SELECT COALESCE(SUM(spent),0) FROM usage WHERE day=?', (day,)).fetchone()[0]
             if total + cost > global_limit:
                 raise HTTPException(429, 'Дневной лимит сервиса исчерпан. Попробуй завтра.')
-            active = db.execute("SELECT COUNT(*) FROM tryon_jobs WHERE status='running'").fetchone()[0]
-            if active >= max(1, int(os.getenv('AI_MAX_ACTIVE_TRYONS', '2'))):
-                raise HTTPException(429, 'Примерочная занята. Повтори через минуту.')
+            # A look waits its turn instead of being refused (app._TryOnQueue runs
+            # AI_MAX_ACTIVE_TRYONS at once); only a full queue or one person
+            # holding several places turns a new one away.
+            own = db.execute("SELECT COUNT(*) FROM tryon_jobs WHERE status='running' AND owner=?", (owner,)).fetchone()[0]
+            per_user = max(1, int(os.getenv('AI_MAX_TRYONS_PER_USER', '3')))
+            if own >= per_user:
+                raise HTTPException(429, 'Слишком много примерок сразу. Дождись, пока одна из них закончится.')
+            waiting = db.execute("SELECT COUNT(*) FROM tryon_jobs WHERE status='running'").fetchone()[0]
+            if waiting >= max(1, int(os.getenv('AI_MAX_QUEUED_TRYONS', '40'))):
+                raise HTTPException(429, 'Сейчас очень много примерок. Попробуй через пару минут.')
             db.execute('INSERT INTO usage(device,day,spent) VALUES(?,?,?) ON CONFLICT(device,day) DO UPDATE SET spent=spent+excluded.spent', (owner, day, cost))
             now = time.time()
             db.execute('INSERT INTO tryon_jobs(owner,id,fingerprint,day,reserved,status,created,updated) VALUES(?,?,?,?,?,?,?,?)',

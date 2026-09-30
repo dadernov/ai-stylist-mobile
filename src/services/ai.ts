@@ -51,12 +51,15 @@ export type TryOnModelResult = {
 };
 
 export type TryOnProgress = {
-  // Server stage names: bottom | shoes | top | outer | outfit, plus 'composite' for the final lock.
+  // Server stage names: bottom | shoes | top | outer | outfit, plus 'composite' for the final lock;
+  // 'queue' while the look waits its turn on the server, 'upload' while the app still sends the photos.
   done: string[];
   pending: string[];
   stage?: string | null;
   total: number;
   previewUrl?: string;
+  // The place in the server's queue, from 1.
+  position?: number;
 };
 
 export type TryOnGenerateResult = {

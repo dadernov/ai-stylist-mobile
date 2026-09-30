@@ -183,20 +183,12 @@ export function ProfileScreen({
             <Text style={styles.modelText}>
               {t('Фото в полный рост, от макушки до стоп, руки опущены. Фон любой, вырезать его не нужно. Лучше в облегающей одежде. На это фото мы надеваем образы.')}
             </Text>
-            {modelUri ? (
-              // A chosen photo is a thumbnail, not a whole screen: tap to see it full size.
-              <View style={styles.modelRow}>
-                <AppPressable style={styles.modelThumb} onPress={() => setPreviewUri(modelUri)} accessibilityRole="imagebutton" accessibilityLabel={t('Фото для примерки')}>
-                  <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="cover" />
-                </AppPressable>
-                <View style={{ flex: 1, gap: SPACING.sm }}>
-                  <Text style={styles.modelReady}>{t('Фото добавлено')}</Text>
-                  <Text style={styles.modelText}>{t('Нажми на фото, чтобы посмотреть его целиком.')}</Text>
-                  <PrimaryButton title={t('Заменить фото')} onPress={handlePickModel} variant="ghost" />
-                </View>
-              </View>
-            ) : (
-              <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
+            {/* The try-on photo is shown full length: it is the person every look is put on. */}
+            <AppPressable style={styles.modelPreview} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}
+              accessibilityRole={modelUri ? 'imagebutton' : 'button'} accessibilityLabel={t(modelUri ? 'Фото для примерки' : '+ Добавить фото модели')}>
+              {modelUri ? (
+                <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="contain" />
+              ) : (
                 <View style={styles.modelEmpty}>
                   <LinearGradient
                     colors={[colors.accentGoldSoft, colors.surface] as const}
@@ -208,9 +200,10 @@ export function ProfileScreen({
                   </LinearGradient>
                   <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
                 </View>
-              </AppPressable>
-            )}
-            {modelUri ? <PhotoAdvice uri={modelUri} /> : <PrimaryButton title={t('Выбрать из галереи')} onPress={handlePickModel} variant="gold" />}
+              )}
+            </AppPressable>
+            {modelUri ? <PhotoAdvice uri={modelUri} /> : null}
+            <PrimaryButton title={t(modelUri ? 'Заменить фото' : 'Выбрать из галереи')} onPress={handlePickModel} variant={modelUri ? 'ghost' : 'gold'} />
           </View>
         </FadeInView>
 
@@ -365,25 +358,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   statText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: c.text
-  },
-  modelRow: {
-    flexDirection: 'row',
-    gap: SPACING.lg,
-    alignItems: 'center'
-  },
-  modelThumb: {
-    width: 104,
-    height: 168,
-    borderRadius: RADII.lg,
-    overflow: 'hidden',
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.goldHairline
-  },
-  modelReady: {
-    fontSize: 16,
     fontWeight: '600',
     color: c.text
   },

@@ -237,6 +237,8 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
     {'error', ...} with 'balance', 'blocked' or 'timeout' set when known.
     """
     max_wait_seconds = max_wait_seconds or int(os.getenv('TRYON_FAL_MAX_WAIT_SECONDS', '180'))
+    # Time in fal's own queue is not the model being slow: it has its own, longer limit.
+    max_queue_seconds = max(max_wait_seconds, int(os.getenv('TRYON_FAL_MAX_QUEUE_SECONDS', '600')))
     headers = {'Authorization': f'Key {api_key()}', 'Content-Type': 'application/json'}
     body = payload(model, person_url, garment_urls, prompt, seed, frame_size)
     try:
@@ -249,13 +251,15 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
     status_url, response_url = queued.get('status_url'), queued.get('response_url')
     if not status_url or not response_url:
         return {'error': 'fal submit returned no status URL'}
-    deadline = _now() + max_wait_seconds
+    submitted_at = _now()
+    started_at = None
     network_errors = 0
     # The last queue state tells a slow queue (IN_QUEUE) from a slow model (IN_PROGRESS).
     last_state = None
     while True:
         await asyncio.sleep(poll_seconds)
-        if _now() > deadline:
+        now = _now()
+        if (now > started_at + max_wait_seconds) if started_at is not None else (now > submitted_at + max_queue_seconds):
             cancel_url = queued.get('cancel_url')
             if cancel_url:
                 try:
@@ -277,6 +281,8 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
             return _failure(status, 'status')
         state = status.json()
         last_state = state.get('status')
+        if last_state == 'IN_PROGRESS' and started_at is None:
+            started_at = now
         if state.get('status') != 'COMPLETED':
             continue
         if state.get('error'):

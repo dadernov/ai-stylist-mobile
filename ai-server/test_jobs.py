@@ -86,11 +86,23 @@ class JobBudget(unittest.TestCase):
         self.assertEqual(jobs.get('a', 'id')['status'], 'failed')
         self.assertEqual(access.spent_today('a'), 1)
 
-    def test_admission_limits_active_jobs(self):
-        with patch.dict(os.environ, {'AI_MAX_ACTIVE_TRYONS': '1'}):
+    def test_a_busy_fitting_room_queues_instead_of_refusing(self):
+        # The user: "what if 100 people generate at once" - they wait their turn.
+        with patch.dict(os.environ, {'AI_MAX_ACTIVE_TRYONS': '1', 'AI_MAX_QUEUED_TRYONS': '3'}):
             jobs.start('a', 'id', 'fingerprint', 1)
-            with self.assertRaises(HTTPException): jobs.start('b', 'id', 'fingerprint', 1)
-        self.assertEqual(access.spent_today('b'), 0)
+            self.assertTrue(jobs.start('b', 'id', 'fingerprint', 1)[0])
+            jobs.start('c', 'id', 'fingerprint', 1)
+            with self.assertRaises(HTTPException) as full: jobs.start('d', 'id', 'fingerprint', 1)
+        self.assertEqual(full.exception.status_code, 429)
+        self.assertEqual(access.spent_today('d'), 0)
+
+    def test_one_person_holds_at_most_a_few_places(self):
+        with patch.dict(os.environ, {'AI_MAX_TRYONS_PER_USER': '2'}):
+            jobs.start('a', 'one', 'fingerprint', 1)
+            jobs.start('a', 'two', 'fingerprint', 1)
+            with self.assertRaises(HTTPException) as busy: jobs.start('a', 'three', 'fingerprint', 1)
+            self.assertTrue(jobs.start('b', 'one', 'fingerprint', 1)[0], 'another person still gets in')
+        self.assertIn('Дождись', busy.exception.detail)
 
 
 class JobApi(unittest.IsolatedAsyncioTestCase):
@@ -249,3 +261,38 @@ class Progress(unittest.TestCase):
         self.assertNotIn('progress', jobs.get('a', 'job')['result'])
         jobs.progress('a', 'job', {'progress': {'stage': 'late'}})
         self.assertEqual(jobs.get('a', 'job')['result']['outputUrl'], 'data:image/png;base64,AA', 'finished jobs ignore late progress')
+
+
+class TryOnQueue(unittest.IsolatedAsyncioTestCase):
+    async def test_looks_over_the_limit_wait_in_order_and_see_their_place(self):
+        import app
+        queue = app._TryOnQueue()
+        places = {'b': [], 'c': []}
+        with patch.dict(os.environ, {'AI_MAX_ACTIVE_TRYONS': '1'}):
+            await queue.acquire(lambda position: None)
+            async def wait(name):
+                async def publish(position): places[name].append(position)
+                await queue.acquire(publish)
+                return name
+            b = asyncio.create_task(wait('b')); await asyncio.sleep(0)
+            c = asyncio.create_task(wait('c')); await asyncio.sleep(0)
+            self.assertFalse(b.done() or c.done(), 'both wait while the first look runs')
+            queue.release(); self.assertEqual(await b, 'b')
+            await asyncio.sleep(0)
+            self.assertEqual(places, {'b': [1], 'c': [2, 1]}, 'the one behind moves up')
+            queue.release(); self.assertEqual(await c, 'c')
+            queue.release()
+        self.assertEqual((queue.running, queue.waiting), (0, []))
+
+    async def test_a_look_cancelled_while_waiting_leaves_the_queue(self):
+        import app
+        queue = app._TryOnQueue()
+        async def publish(position): pass
+        with patch.dict(os.environ, {'AI_MAX_ACTIVE_TRYONS': '1'}):
+            await queue.acquire(publish)
+            waiting = asyncio.create_task(queue.acquire(publish)); await asyncio.sleep(0)
+            waiting.cancel()
+            with self.assertRaises(asyncio.CancelledError): await waiting
+            self.assertEqual(queue.waiting, [])
+            queue.release()
+        self.assertEqual(queue.running, 0)

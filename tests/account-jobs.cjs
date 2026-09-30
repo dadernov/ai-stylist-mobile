@@ -171,6 +171,22 @@ async function run() {
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('new-person', [item]));
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('person', [{ ...item, section: 'Низ' }]));
   });
+  await test('the generation window learns the job at once and sees the photos being sent', async () => {
+    const pending = deferred();
+    submit = async () => pending.promise;
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    let told;
+    const started = store.start({ modelUri: 'person', context: 'window', tuckMode: 'auto', items: [item], onJob: id => { told = id; } });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.ok(told, 'the id comes before the upload finishes');
+    const job = store.getSnapshot().jobs.find(current => current.id === told);
+    assert.equal(job.status, 'pending');
+    assert.equal(job.progress.stage, 'upload');
+    pending.resolve(response);
+    await started;
+    store.deactivate();
+  });
   await test('tops and outer layers go as layers in the order they were chosen', async () => {
     let sent;
     submit = async (...args) => { sent = args; return response; };

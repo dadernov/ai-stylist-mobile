@@ -17,7 +17,17 @@ export type TryOnJob = { id: string; context: string; itemIds: string[]; garment
 export type JobSnapshot = { jobs: TryOnJob[]; ready: boolean; readOnly?: boolean; error?: string };
 type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMode: TuckMode; quality: TryOnQualityMode;
   // Generate every layer anew instead of building on layers the server kept from an earlier look.
-  fresh?: boolean };
+  fresh?: boolean;
+  // Told the job's id at once, before the photos are sent: the generation window follows it.
+  onJob?: (id: string) => void };
+// Preparing and sending the photos never takes this long on a working connection;
+// past it the job says so instead of spinning with no request on the server.
+export const SUBMIT_TIMEOUT_MS = 150000;
+const SUBMIT_TIMEOUT_ERROR = 'Не удалось отправить фото. Проверь интернет и попробуй ещё раз.';
+const withTimeout = <T,>(promise: Promise<T>, ms: number, message: string) => new Promise<T>((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(message)), ms);
+  promise.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+});
 const qualityOf = (job: TryOnJob): TryOnQualityMode => job.quality || 'quality';
 
 export const tryOnContext = (modelUri: string, items: WardrobeItem[]) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,
@@ -137,15 +147,17 @@ export class TryOnJobStore {
     if (!this.snapshot.ready || !this.writable) throw new Error(this.snapshot.error || 'История ещё загружается.');
     // A draft and the final of the same look are separate jobs: one may run while the other is shown.
     const existing = this.snapshot.jobs.find(job => job.context === input.context && qualityOf(job) === input.quality && job.status === 'pending');
-    if (existing) { void this.poll(existing); return; }
+    if (existing) { request.onJob?.(existing.id); void this.poll(existing); return; }
     const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode
       && qualityOf(job) === input.quality && job.status === 'retry');
     const job: TryOnJob = retry || { id: Crypto.randomUUID(), context: input.context, itemIds: input.items.map(i => i.id),
       garments: input.items.map(i => ({ id: i.id, name: i.name })),
       name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality };
+    request.onJob?.(job.id);
     if (this.working.has(job.id)) return;
     this.working.add(job.id);
-    this.snapshot = { ...this.snapshot, error: undefined, jobs: [{ ...job, status: 'pending', error: undefined }, ...this.snapshot.jobs.filter(j => j.id !== job.id)] };
+    this.snapshot = { ...this.snapshot, error: undefined, jobs: [{ ...job, status: 'pending', error: undefined,
+      progress: { done: [], pending: [], stage: 'upload', total: 1 } }, ...this.snapshot.jobs.filter(j => j.id !== job.id)] };
     this.emit();
     try {
       await this.save();
@@ -155,10 +167,11 @@ export class TryOnJobStore {
       const uriOf = (item?: { sourceImageUri?: string; imageUri?: string }) => item?.sourceImageUri || item?.imageUri;
       const [top, top2, top3, top4] = layers('Верх');
       const [outer, outer2] = layers('Верхняя одежда');
-      const response = await analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
+      const response = await withTimeout(analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
         qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
         { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category,
-          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category });
+          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category }),
+        SUBMIT_TIMEOUT_MS, SUBMIT_TIMEOUT_ERROR);
       if (await this.complete(job, response)) return;
     } catch (error: any) {
       if (error instanceof ApiError && error.status && error.status < 500) {

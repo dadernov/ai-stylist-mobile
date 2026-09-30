@@ -32,6 +32,7 @@ import { Shirt, ScanLine, Sparkles, Heart, UserRound, LucideIcon } from 'lucide-
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
+import { GenerationDockProvider } from './src/components/GenerationDock';
 import { AppDialogProvider } from './src/components/AppDialog';
 import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
 
@@ -592,6 +593,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
+      {/* Try-ons run above every screen; the folded window sits over the fitting room's own button. */}
+      <GenerationDockProvider items={items} modelUri={modelUri || avatarUri} bottom={tabBarSpace + 76}>
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 
@@ -657,6 +660,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       ) : null}
+      </GenerationDockProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </SafeAreaView>
   );

@@ -6,9 +6,7 @@ import { Check, Download, RefreshCw, Share2, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
-
-// A try-on takes about a minute; the bar follows that and waits at 95%.
-const EXPECTED_MS = 65000;
+import { EXPECTED_TRYON_MS } from './tryOnStatus';
 
 type Props = {
   title: string;
@@ -59,7 +57,8 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
 
   useEffect(() => {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
-    const target = done ? 1 : busy ? Math.min(0.95, 1 - Math.exp(-2.2 * elapsed / EXPECTED_MS)) : 0;
+    // The bar follows the usual two minutes and waits at 95%.
+    const target = done ? 1 : busy ? Math.min(0.95, 1 - Math.exp(-2.2 * elapsed / EXPECTED_TRYON_MS)) : 0;
     Animated.timing(progress, { toValue: target, duration: done ? 350 : 500, easing: Easing.out(Easing.quad), useNativeDriver: false }).start();
   }, [now, startedAt, busy, done, progress]);
 
@@ -86,7 +85,8 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                   <Text style={[styles.title, { color: c.text }]}>{t('Примерка')}</Text>
                   <Text style={[styles.subtitle, { color: c.muted }]} numberOfLines={1}>{title}</Text>
                 </View>
-                <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} onPress={close}
+                {/* While the look generates the cross folds the window into the corner. */}
+                <AppPressable accessibilityRole="button" accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close}
                   style={[styles.close, { borderColor: c.border }]}>
                   <X size={20} color={c.text} />
                 </AppPressable>
@@ -126,7 +126,7 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                       <Animated.View style={[styles.bar, { backgroundColor: c.accentGold,
                         width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
                     </View>
-                    <Text style={[styles.note, { color: c.muted }]}>{t('Обычно около минуты. Окно можно закрыть — примерка продолжится.')}</Text>
+                    <Text style={[styles.note, { color: c.muted }]}>{t('Обычно около двух минут. Окно можно свернуть — примерка продолжится.')}</Text>
                   </>
                 ) : null}
                 {error && !busy ? <Text style={[styles.note, { color: c.danger }]}>{error}</Text> : null}

@@ -10,7 +10,8 @@ import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryO
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
-import { GenerationStage } from './GenerationStage';
+import { useGenerationDock } from './GenerationDock';
+import { tryOnStatusLabel } from './tryOnStatus';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X, Share2 } from 'lucide-react-native';
@@ -72,6 +73,7 @@ export function AiTryOnPreview({
   const { colors } = useTheme();
   const { jobs, store, ready: jobsReady, readOnly, error: journalError, login } = useTryOnJobs();
   const aiConsent = useAiConsent();
+  const dock = useGenerationDock();
   const [context, setContext] = useState<string | null>(null);
   const contextPhotos = JSON.stringify([modelUri, items.map(i => [i.id, i.imageUri, i.sourceImageUri, i.section, i.category])]);
   useEffect(() => {
@@ -98,9 +100,6 @@ export function AiTryOnPreview({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
-  // The try-on happens in its own window that slides up on "Try on".
-  const [stageOpen, setStageOpen] = useState(false);
-  const [stageStartedAt, setStageStartedAt] = useState<number>();
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
   // What the shown picture is: a cheap draft ('fast') or the final ('quality').
   // Results saved before drafts existed carry no mode and were finals.
@@ -129,16 +128,9 @@ export function AiTryOnPreview({
     return garment?.name || (section ? t(section) : stage);
   };
   const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
-  // 'outfit' is a whole look in one provider call: there are no layers to count.
-  const busyLabel = !progress ? t('Генерируем образ…')
-    : progress.stage === 'composite' ? t('Восстанавливаем лицо и фон…')
-    : progress.stage === 'outfit' ? t('Надеваем весь образ…')
-    // A layered look: the base look is ready, the upper layers go on over it.
-    : progress.stage === 'layers' ? t('Надеваем верхние слои…')
-    : progress.stage ? t('Надеваем: {name} ({step} из {total})…', { name: stageLabel(progress.stage), step: String(progress.done.length + 1), total: String(progress.total) })
-    : t('Генерируем образ…');
+  const busyLabel = tryOnStatusLabel(progress, t, stageLabel);
   const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
-  const intermediateHint = !progress || progress.stage === 'outfit' ? null
+  const intermediateHint = !progress || ['outfit', 'queue', 'upload'].includes(progress.stage || '') ? null
     : progress.stage === 'layers' ? t('Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.')
     : progress.pending.length || (progress.stage && progress.stage !== 'composite')
       ? t('Уже надето: {done}. Осталось: {pending}. Лицо и фон восстановятся в финальной версии.', {
@@ -262,13 +254,12 @@ export function AiTryOnPreview({
   const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
     if (!(await aiConsent.ensure())) return;
-    setStageStartedAt(Date.now());
-    setStageOpen(true);
     setLoading(true);
     setError(null);
     setWarning(null);
     try {
-      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh });
+      // The try-on opens in the app-wide generation window, which can fold into the corner.
+      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh, onJob: dock.open });
     } catch (e: any) {
       if (mounted.current) setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
@@ -439,23 +430,6 @@ export function AiTryOnPreview({
         <Text style={styles.buttonText}>{isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
       </AppPressable>
 
-      {stageOpen ? (
-        <GenerationStage
-          title={items.map(item => item.name).join(' + ')}
-          busy={isBusy}
-          busyLabel={busyLabel}
-          startedAt={stageStartedAt ?? pendingJob?.createdAt}
-          photoUri={intermediateUri || modelUri || null}
-          resultUri={isBusy ? null : resultUri}
-          error={isBusy ? null : error || (matchingJobs[0]?.error ? t(matchingJobs[0].error) : null)}
-          warning={warning ? warning.split(' · ').map(part => t(part)).join(' · ') : null}
-          saveState={saveState}
-          onSave={() => { void saveToGallery(); }}
-          onShare={() => { void shareResult(); }}
-          onRegenerate={() => { void run('quality', true); }}
-          onClose={() => setStageOpen(false)}
-        />
-      ) : null}
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>

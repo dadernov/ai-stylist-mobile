@@ -98,6 +98,64 @@ ONE_PIECE_GARMENTS = {"Платье", "Сарафан", "Комбинезон"}
 _TRYON_LOOK_CACHE: dict[str, dict] = {}
 _TRYON_LOOK_INFLIGHT: dict[str, asyncio.Task] = {}
 _TRYON_LOOK_LOCK = asyncio.Lock()
+
+
+class _TryOnQueue:
+    """Runs AI_MAX_ACTIVE_TRYONS looks at once; the rest wait in order and see their place.
+
+    Waiting on the provider costs the server little, the photo work around it
+    a few seconds of CPU; jobs.start caps how many may wait at all.
+    """
+
+    def __init__(self):
+        self.running = 0
+        self.waiting = []  # [future, publish(position)] in arrival order
+
+    @staticmethod
+    def limit():
+        return max(1, _env_int('AI_MAX_ACTIVE_TRYONS', 6))
+
+    async def acquire(self, publish):
+        if self.running < self.limit() and not self.waiting:
+            self.running += 1
+            return
+        entry = [asyncio.get_running_loop().create_future(), publish]
+        self.waiting.append(entry)
+        await publish(len(self.waiting))
+        try:
+            await entry[0]
+        except asyncio.CancelledError:
+            if entry in self.waiting:
+                self.waiting.remove(entry)
+            elif entry[0].done() and not entry[0].cancelled():
+                self.release()
+            raise
+
+    def release(self):
+        self.running = max(0, self.running - 1)
+        while self.waiting and self.running < self.limit():
+            future, _ = self.waiting.pop(0)
+            if not future.done():
+                self.running += 1
+                future.set_result(None)
+        if self.waiting:
+            asyncio.get_running_loop().create_task(self._announce())
+
+    async def _announce(self):
+        for position, (_, publish) in enumerate(list(self.waiting), start=1):
+            await publish(position)
+
+
+_TRYON_QUEUE = _TryOnQueue()
+
+
+async def _publish_queue_place(device, job_id, position):
+    # Best effort, as every progress write: a failed one never fails the look.
+    try:
+        await asyncio.to_thread(jobs.progress, device, job_id, {'progress': {
+            'done': [], 'pending': [], 'stage': 'queue', 'position': position, 'total': 1}})
+    except Exception as exc:
+        print(f'Try-on queue progress unavailable: {type(exc).__name__}', flush=True)
 _ANALYSIS_LOCK = threading.Lock()
 _ANALYSIS_CACHE = {}
 _REMBG_LOCK = threading.Lock()
@@ -1615,6 +1673,7 @@ async def tryon_generate_look(
             return response
 
         async def execute():
+            await _TRYON_QUEUE.acquire(lambda position: _publish_queue_place(device, job_id, position))
             try:
                 result = await _generate_look()
             except (ValueError, HTTPException) as exc:
@@ -1622,6 +1681,8 @@ async def tryon_generate_look(
             except Exception as exc:
                 print(f'Try-on job failed: {type(exc).__name__}')
                 result = {'error': 'Не удалось завершить примерку. Создай новый вариант.'}
+            finally:
+                _TRYON_QUEUE.release()
             # Persist only the protected result, not unprotected provider URLs.
             if result.get('error'):
                 result = {'status': 'failed', 'error': result['error']}
