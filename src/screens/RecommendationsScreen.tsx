@@ -15,7 +15,7 @@ import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { Gender } from '../types/profile';
-import { buildLooks, evaluateLook, EVENTS, getOutfitAdvice, getOutfitSwaps, OutfitContext, Precipitation, STYLES, wardrobeGaps } from '../domain/outfits';
+import { buildLooks, evaluateLook, EVENTS, getOutfitAdvice, getOutfitSwaps, lookCore, OutfitContext, Precipitation, STYLES, wardrobeGaps } from '../domain/outfits';
 import { MatchSummary } from '../components/MatchSummary';
 import { useWeather } from '../components/useWeather';
 import { describeWeatherCode } from '../services/weather';
@@ -25,10 +25,12 @@ type Props = {
   onFavorite: (look: GeneratedLook) => void; onTryOn: (ids: string[]) => void; onWardrobe: () => void;
   // Set from a garment's card: the ideas are then built around that garment.
   anchorRequest?: { id: string; at: number };
+  // Looks put aside with "Not now" in the last weeks sink in the ideas.
+  dismissed?: string[]; onDismiss?: (core: string) => void;
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss }: Props) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
   const { colors: c } = useTheme();
@@ -44,6 +46,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [hidden, setHidden] = useState<string[]>([]);
   // Saving a look updates its heart without shuffling the list under the user's finger.
   const [favoriteItemIds] = useState(() => [...new Set(favorites.flatMap(look => look.itemIds))]);
+  // Read once: a look hidden now leaves the screen at once, and sinks from the next visit.
+  const [dismissedAtStart] = useState(() => dismissed || []);
   const manualTemperature = weather.trim() && Number.isFinite(Number(weather.replace(',', '.'))) && Math.abs(Number(weather.replace(',', '.'))) <= 60 ? Number(weather.replace(',', '.')) : null;
   // Ручной ввод главнее, иначе — реальная погода рядом.
   const temperature = manualTemperature ?? (live ? Math.round(live.temperature) : null);
@@ -54,8 +58,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
   const looks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null
-  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature]);
+    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart
+  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart]);
   const visible = looks.filter(look => !hidden.includes(look.id));
   return <FormScrollView contentContainerStyle={styles.content}>
     <ScreenHeader eyebrow={t('Из твоего гардероба')} title={t('Что надеть')} />
@@ -117,13 +121,13 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <PrimaryButton title={t(hidden.length ? 'Вернуть варианты' : 'К гардеробу')} icon={hidden.length ? RefreshCw : ArrowRight} onPress={hidden.length ? () => setHidden([]) : onWardrobe} />
     </View>}
     {visible.map((look, index) => <Recommendation key={look.id} look={look} index={index} items={items} anchorId={anchor?.id} beautyAdvice={beautyAdvice} precipitation={precipitation}
-      favorites={favorites} onFavorite={onFavorite} onTryOn={onTryOn} onHide={() => setHidden(previous => [...previous, look.id])} />)}
+      favorites={favorites} onFavorite={onFavorite} onTryOn={onTryOn} onHide={ids => { setHidden(previous => [...previous, look.id]); onDismiss?.(lookCore(ids.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[])); }} />)}
   </FormScrollView>;
 }
 
 function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitation, favorites, onFavorite, onTryOn, onHide }: {
   look: GeneratedLook; index: number; items: WardrobeItem[]; anchorId?: string; beautyAdvice: boolean; precipitation: Precipitation; favorites: GeneratedLook[];
-  onFavorite: Props['onFavorite']; onTryOn: Props['onTryOn']; onHide: () => void;
+  onFavorite: Props['onFavorite']; onTryOn: Props['onTryOn']; onHide: (ids: string[]) => void;
 }) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
@@ -166,7 +170,7 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
     </View>}
     <AppPressable accessibilityRole="button" onPress={() => setExpanded(!expanded)} style={styles.details}><Text style={styles.label}>{t(expanded ? 'Свернуть' : 'Почему сочетается')}</Text>{expanded ? <ChevronUp size={16} color={c.muted} /> : <ChevronDown size={16} color={c.muted} />}</AppPressable>
     <PrimaryButton title={t('Примерить сочетание')} icon={ArrowRight} onPress={() => onTryOn(ids)} />
-    <AppPressable accessibilityRole="button" onPress={onHide} style={styles.details}><Text style={styles.muted}>{t('Не сейчас')}</Text></AppPressable>
+    <AppPressable accessibilityRole="button" onPress={() => onHide(ids)} style={styles.details}><Text style={styles.muted}>{t('Не сейчас')}</Text></AppPressable>
   </View>;
 }
 

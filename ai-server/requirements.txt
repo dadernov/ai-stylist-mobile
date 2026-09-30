@@ -10,3 +10,5 @@ httpx==0.28.1
 opencv-python-headless>=4.10,<5
 tokenizers>=0.21,<0.23
 huggingface-hub>=1.0,<2
+# Шифрование фото гардероба на сервере (closet.py): AES-256-GCM.
+cryptography==50.0.2

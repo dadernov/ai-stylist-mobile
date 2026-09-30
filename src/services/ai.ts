@@ -84,7 +84,7 @@ export type TryOnQualityMode = 'fast' | 'quality';
 // больше не открыты всем подряд, а суточная норма считается по аккаунту.
 // Сессия читается из хранилища на каждый запрос, чтобы после входа или выхода
 // не остался заголовок от прошлого пользователя.
-const authHeaders = async (owner?: Session): Promise<Record<string, string>> => {
+export const authHeaders = async (owner?: Session): Promise<Record<string, string>> => {
   const session = owner || await readStoredSession();
   return {
     ...(AI_CLIENT_TOKEN ? { Authorization: `Bearer ${AI_CLIENT_TOKEN}` } : {}),
@@ -141,7 +141,7 @@ const shrinkForUpload = async (fileUri: string, png: boolean) => {
   }
 };
 
-const appendPhoto = async (form: FormData, field: string, uri: string, shrink = false) => {
+export const appendPhoto = async (form: FormData, field: string, uri: string, shrink = false) => {
   const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
   const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
   const extension = png ? 'png' : webp ? 'webp' : 'jpg';

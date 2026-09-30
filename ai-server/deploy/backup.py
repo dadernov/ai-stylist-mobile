@@ -1,5 +1,5 @@
 #!/opt/wardrobe/ai-server/.venv/bin/python
-"""Daily SQLite backups (accounts + quota/jobs) with the online backup API.
+"""Daily SQLite backups (accounts, quota/jobs, wardrobe rows) with the online backup API.
 Installed as /etc/cron.daily/wardrobe-backup. Keeps 14 days."""
 import gzip
 import os
@@ -9,7 +9,10 @@ import time
 from pathlib import Path
 
 TARGET = Path('/var/backups/wardrobe')
-SOURCES = {'accounts': '/opt/wardrobe/ai-server/accounts.sqlite3', 'quota': '/opt/wardrobe/ai-server/quota.sqlite3'}
+# The wardrobe's rows go here too; its photos stay on the server only, encrypted,
+# and every phone keeps its own copy to send again.
+SOURCES = {'accounts': '/opt/wardrobe/ai-server/accounts.sqlite3', 'quota': '/opt/wardrobe/ai-server/quota.sqlite3',
+           'closet': '/opt/wardrobe/ai-server/closet.sqlite3'}
 KEEP_DAYS = 14
 
 day = time.strftime('%Y-%m-%d')

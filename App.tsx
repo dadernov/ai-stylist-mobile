@@ -19,7 +19,7 @@ import { LanguageProvider, localeFor, translate, useLanguage, useT } from './src
 import { LanguageChooser } from './src/components/LanguageChooser';
 import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
-import { loadRaw, saveJson } from './src/services/storage';
+import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
 import { accountKey, DATA_KEYS, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { GeneratedLook, SavedLook } from './src/types/looks';
@@ -33,12 +33,14 @@ import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
+import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
 import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
 
 const STORAGE_KEYS = DATA_KEYS;
+const DISMISS_DAYS = 14;
 
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
@@ -276,6 +278,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     weather: ''
   });
   const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
+  // Looks put aside with "Not now": they sink in the ideas for two weeks.
+  const [dismissedLooks, setDismissedLooks] = useState<{ core: string; at: number }[]>([]);
   const [isReady, setReady] = useState(false);
   useEffect(() => {
     if (isReady && jobsReady) void jobsStore.importLooks([...savedLooks, ...favoriteLooks, ...lastLooks], items).catch(() => {});
@@ -319,6 +323,10 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       });
       setItems(cleanedItems); setFavoriteLooks(data.favorites); setLastLooks(data.looks); setSavedLooks(data.saved);
       if (data.context) setLastContext(data.context);
+      const dismissed = await loadJson<{ core: string; at: number }[]>(accountKey(session.login, 'dismissedLooks'));
+      if (!alive.current) return;
+      if (Array.isArray(dismissed.value)) setDismissedLooks(dismissed.value.filter(entry => entry && typeof entry.core === 'string'
+        && Number.isFinite(entry.at) && entry.at > Date.now() - DISMISS_DAYS * 86_400_000));
       if (data.failed.size) {
         showToast('Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.');
       }
@@ -436,6 +444,18 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     persist(STORAGE_KEYS.favorites, favoriteLooks, 'избранное');
   }, [isReady, favoriteLooks]);
 
+  // The wardrobe and the try-on photo also live on the server, so they survive
+  // the phone and appear on another device (services/closetSync.ts).
+  useClosetSync({
+    session, ready: isReady, items, setItems,
+    blocked: () => unreadableKeys.current.has(STORAGE_KEYS.wardrobe) || unreadableKeys.current.has(STORAGE_KEYS.profile),
+    profile: { gender, beautyAdvice, modelUri, avatarUri },
+    applyProfile: next => {
+      setGender(next.gender); setBeautyAdvice(next.beautyAdvice === true);
+      setModelUri(next.modelUri); setAvatarUri(next.avatarUri);
+    }
+  });
+
   useEffect(() => {
     persist(STORAGE_KEYS.lastContext, lastContext, 'настройки подбора');
   }, [isReady, lastContext]);
@@ -447,6 +467,10 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   useEffect(() => {
     persist(STORAGE_KEYS.savedLooks, savedLooks, 'сохранённые образы');
   }, [isReady, savedLooks]);
+
+  useEffect(() => {
+    persist('dismissedLooks', dismissedLooks, 'скрытые образы');
+  }, [isReady, dismissedLooks]);
 
   useEffect(() => {
     return () => {
@@ -521,6 +545,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       );
     if (activeTab === 'recommendations')
       return <RecommendationsScreen items={items} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+        dismissed={dismissedLooks.map(entry => entry.core)}
+        onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
         onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}
         onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     if (activeTab === 'favorites')

@@ -162,7 +162,8 @@
             "photo"
           ]
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "icon": "./assets/icon.png",
     "locales": {

@@ -194,3 +194,42 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.equal(noveltyBonus(tops[0], now), 0, 'demo and imported ids get no bonus');
   console.log('PASS: a newly added garment reaches the ideas, the head start fades in two weeks');
 }
+
+{
+  // Cool days bring layered looks: a T-shirt under a sweater, a shirt under a cardigan,
+  // inside out as the try-on puts them on; never all four, never on a hot day.
+  const it = (id, category, section, color) => item(id, category, section, { color });
+  const W = [it('tee', 'Футболка', 'Верх', 'Белый'), it('longsleeve', 'Лонгслив', 'Верх', 'Черный'), it('shirt', 'Рубашка', 'Верх', 'Голубой'),
+    it('hoodie', 'Худи', 'Верх', 'Серый'), it('sweater', 'Свитер', 'Верх', 'Бежевый'), it('cardigan', 'Кардиган', 'Верх', 'Коричневый'),
+    it('jeans', 'Джинсы', 'Низ', 'Синий'), it('pants', 'Брюки', 'Низ', 'Черный'), it('sneakers', 'Кроссовки', 'Обувь', 'Белый'),
+    it('boots', 'Ботинки', 'Обувь', 'Черный'), it('loafers', 'Лоферы', 'Обувь', 'Коричневый'), it('jacket', 'Куртка', 'Верхняя одежда', 'Черный'),
+    it('trench', 'Тренч', 'Верхняя одежда', 'Бежевый')];
+  const byId = Object.fromEntries(W.map(entry => [entry.id, entry]));
+  const tops = look => look.itemIds.filter(id => byId[id].section === 'Верх');
+  const order = { Футболка: 1, Лонгслив: 2, Рубашка: 3, Свитер: 4, Худи: 4, Кардиган: 5 };
+  const cool = buildLooks(W, 'Кэжуал', 'Прогулка', '', 9, 'male', false, { precipitation: 'rain' });
+  const layered = cool.filter(look => tops(look).length === 2);
+  assert.ok(layered.length >= 1 && layered.length <= 2, 'a cool day brings some layered looks, not only them');
+  for (const look of layered) {
+    const [inner, over] = tops(look).map(id => byId[id].category);
+    assert.ok(order[inner] < order[over], `${inner} goes under ${over}`);
+    assert.ok(!(over === 'Худи' && inner === 'Рубашка') && !(over === 'Кардиган' && ['Свитер', 'Худи'].includes(inner)), 'no awkward pairs');
+    assert.equal(look.title.split(' + ').length, 3, 'the title names both tops and the bottom');
+  }
+  assert.ok(buildLooks(W, 'Кэжуал', 'Прогулка', '', 25).every(look => tops(look).length === 1), 'no layers on a hot day');
+  assert.ok(buildLooks(W, 'Кэжуал', 'Прогулка', '', null).every(look => tops(look).length === 1), 'no layers when the weather is unknown');
+  console.log('PASS: cool days bring layered looks in their natural order, at most two of four, none when hot');
+}
+
+{
+  // "Not now" is remembered: the look sinks in later ideas instead of coming back on top.
+  const { lookCore } = require('../src/domain/outfits.ts');
+  const tee = item('tee', 'Футболка', 'Верх'), polo = item('polo', 'Поло', 'Верх'), jeans2 = item('jeans2', 'Джинсы', 'Низ', { color: 'Синий' });
+  const wardrobe = [tee, polo, jeans2, shoes];
+  const first = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20)[0];
+  const core = lookCore(wardrobe.filter(entry => first.itemIds.includes(entry.id)));
+  const later = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'male', false, { dismissed: [core] });
+  assert.notEqual(lookCore(wardrobe.filter(entry => later[0].itemIds.includes(entry.id))), core, 'the dismissed look is no longer first');
+  assert.equal(lookCore(wardrobe.filter(entry => later.at(-1).itemIds.includes(entry.id))), core, 'it sinks to the end, it is not banned');
+  console.log('PASS: a look put aside with "Not now" sinks in later ideas');
+}

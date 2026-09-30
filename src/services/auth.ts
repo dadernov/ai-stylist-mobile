@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { ApiError, fetchJson } from './http';
 import { translate } from '../constants/i18n';
@@ -13,6 +14,33 @@ import { translate } from '../constants/i18n';
  * заново при каждом открытии не нужно.
  */
 const SESSION_KEY = 'authSession';
+
+// The session token is the key to the account: on a phone it lives in the
+// Keychain (the Keystore on Android), not in the app's plain storage, and a
+// login saved before moves there on its first read. A browser has no such store.
+type SecureStore = { getItemAsync(key: string): Promise<string | null>; setItemAsync(key: string, value: string): Promise<void>;
+  deleteItemAsync(key: string): Promise<void> };
+const secure: SecureStore | null = Platform.OS === 'web' ? null : require('expo-secure-store');
+const readRaw = async () => {
+  if (!secure) return AsyncStorage.getItem(SESSION_KEY);
+  const kept = await secure.getItemAsync(SESSION_KEY);
+  if (kept) return kept;
+  const legacy = await AsyncStorage.getItem(SESSION_KEY);
+  if (legacy) {
+    await secure.setItemAsync(SESSION_KEY, legacy);
+    await AsyncStorage.removeItem(SESSION_KEY);
+  }
+  return legacy;
+};
+const writeRaw = async (value: string) => {
+  if (!secure) return AsyncStorage.setItem(SESSION_KEY, value);
+  await secure.setItemAsync(SESSION_KEY, value);
+  await AsyncStorage.removeItem(SESSION_KEY);
+};
+const removeRaw = async () => {
+  if (secure) await secure.deleteItemAsync(SESSION_KEY);
+  await AsyncStorage.removeItem(SESSION_KEY);
+};
 
 export type Session = { token: string; login: string; displayName: string };
 let sessionWrites: Promise<unknown> = Promise.resolve();
@@ -40,7 +68,7 @@ const request = async (path: string, body: unknown, sessionToken?: string) => {
 export const readStoredSession = async (): Promise<Session | null> => {
   try {
     await sessionWrites;
-    const raw = await AsyncStorage.getItem(SESSION_KEY);
+    const raw = await mutateSession(readRaw);
     const value = raw ? JSON.parse(raw) : null;
     return validSession(value) ? value : null;
   } catch (error) {
@@ -52,7 +80,7 @@ export const readStoredSession = async (): Promise<Session | null> => {
 const store = async (session: Session) => {
   try {
     if (!validSession(session)) throw new Error('Invalid server session');
-    await mutateSession(() => AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session)));
+    await mutateSession(() => writeRaw(JSON.stringify(session)));
   } catch (error) {
     // Сессия не записалась — на этом запуске человек внутри, но при следующем
     // придётся войти заново. Молчать об этом нельзя, поэтому пробрасываем выше.
@@ -94,9 +122,9 @@ export async function verifySession(session: Session): Promise<Session | null> {
 
 export async function forgetStoredSession(session: Session) {
   await mutateSession(async () => {
-    const raw = await AsyncStorage.getItem(SESSION_KEY);
+    const raw = await readRaw();
     const stored = raw ? JSON.parse(raw) : null;
-    if (stored?.token === session.token) await AsyncStorage.removeItem(SESSION_KEY);
+    if (stored?.token === session.token) await removeRaw();
   });
 }
 

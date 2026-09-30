@@ -5,7 +5,12 @@ import { pickBeauty } from '../constants/beauty';
 
 export type Precipitation = 'rain' | 'snow' | null;
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
-export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator; now?: number };
+export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator; now?: number;
+  // Cores (lookCore) of looks the user put aside with "Not now": they sink, not vanish.
+  dismissed?: string[] };
+
+/** What makes a look itself: its tops and bottom. The same core with other shoes is the same look. */
+export const lookCore = (items: WardrobeItem[]) => items.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.id).sort().join(',');
 
 // A garment added in the last two weeks gets a head start that fades day by
 // day: without it the long-owned pieces keep every place in the ideas and a
@@ -541,6 +546,21 @@ export function wardrobeGaps(items: WardrobeItem[], context: OutfitContext, t: T
   return [...new Set(gaps)];
 }
 
+// A second top over the first, inside out as the try-on puts them on
+// (ai-server tryon_policy.TOP_LAYER_ORDER): a T-shirt under a sweater, a shirt
+// under a cardigan. Layers are for cool days, when one top is too little.
+const TOP_LAYER_ORDER: Record<string, number> = { Майка: 0, Топ: 0, Футболка: 1, Поло: 1, Лонгслив: 2, Водолазка: 2,
+  Рубашка: 3, Блуза: 3, Свитер: 4, Худи: 4, Свитшот: 4, Кардиган: 5, Жилет: 5 };
+const MID_LAYERS = new Set(['Рубашка', 'Свитер', 'Худи', 'Свитшот', 'Кардиган', 'Жилет']);
+const LAYER_MAX_TEMPERATURE = 17;
+const canLayer = (inner: WardrobeItem, over: WardrobeItem) => inner.id !== over.id && MID_LAYERS.has(over.category) && !isOnePiece(inner)
+  && (TOP_LAYER_ORDER[inner.category] ?? 99) < (TOP_LAYER_ORDER[over.category] ?? -1);
+// Pairs that read as a mistake rather than a style: a hoodie over a shirt, a sweatshirt over a blouse.
+// Two bulky knits on top of each other too.
+const awkwardLayer = (inner: WardrobeItem, over: WardrobeItem) => (over.category === 'Худи' && ['Рубашка', 'Блуза', 'Поло'].includes(inner.category))
+  || (over.category === 'Свитшот' && inner.category === 'Блуза')
+  || (['Кардиган', 'Жилет'].includes(over.category) && describe(inner).volume === 3);
+
 export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false, options: RecommendationOptions = {}): GeneratedLook[] {
   const context: OutfitContext = { style, event, temperature, gender, precipitation: options.precipitation ?? null, wind: options.wind ?? null };
   const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values()).filter(item => !options.excludedIds?.includes(item.id));
@@ -568,15 +588,27 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       .sort((a, b) => preference(b) - preference(a)).slice(0, limit);
   };
   const tops = choose('Верх', 8), bottoms = choose('Низ', 8), shoes = choose('Обувь', 5), outer = choose('Верхняя одежда', 5);
+  const layering = temperature !== null && temperature <= LAYER_MAX_TEMPERATURE && !['Спортзал', 'Пляж'].includes(event);
+  const mids = layering ? wardrobe.filter(item => item.section === 'Верх' && MID_LAYERS.has(item.category) && eligible(item))
+    .sort((a, b) => preference(b) - preference(a)).slice(0, 4) : [];
   const bags = choose('Сумки', 2);
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];
-  for (const top of optional(tops)) for (const bottom of top && isOnePiece(top) ? [null] : optional(bottoms)) {
+  for (const top of optional(tops)) for (const mid of top ? [null, ...mids.filter(item => canLayer(top, item))] : [null])
+  for (const bottom of top && isOnePiece(top) ? [null] : optional(bottoms)) {
     for (const shoe of optional(shoes)) for (const layer of anchor?.section === 'Верхняя одежда' ? outer : [null, ...outer]) {
-      const selection = [top, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
+      const selection = [top, mid, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
       if (!selection.length) continue;
       let score = selection.reduce((total, item) => total + preference(item), 0) + paletteScore(selection);
       if (top) score += 12;
+      if (top && mid) {
+        // Two tops warm like one warmer top: the pair belongs to a cool day, the colder
+        // the more. The second top counts half, or any look would win by one more garment.
+        score += (temperature !== null && temperature < 8 ? 6 : 3) - preference(mid) / 2;
+        if (awkwardLayer(top, mid)) score -= 14;
+        // A bulky knit under a blazer breaks its line.
+        if (layer?.category === 'Пиджак' && describe(mid).volume === 3) score -= 8;
+      }
       if (bottom || (top && isOnePiece(top))) score += 12;
       if (shoe) score += 8;
       if (layer) {
@@ -597,7 +629,8 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       if (top && bottom && describe(top).volume === 3 && describe(bottom).volume === 3) score -= 6;
       const patterned = selection.filter(item => item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)).length;
       score -= Math.max(0, patterned - 1) * 5;
-      candidates.push({ items: selection, score, signature: [top?.id, bottom?.id, shoe?.id, layer?.id].join('|') });
+      if (options.dismissed?.includes(lookCore(selection))) score -= 25;
+      candidates.push({ items: selection, score, signature: [top?.id, mid?.id, bottom?.id, shoe?.id, layer?.id].join('|') });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
@@ -612,8 +645,11 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   unique.sort((a, b) => b.score - a.score);
   const core = (candidate: { items: WardrobeItem[] }) => candidate.items.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.id);
   const selected: typeof candidates = [];
+  // Layers are one way to dress for the cold, not the only one: at most two of the four looks.
+  const layered = (candidate: { items: WardrobeItem[] }) => candidate.items.filter(item => item.section === 'Верх').length > 1;
   while (unique.length && selected.length < 4) {
-    const adjusted = (candidate: typeof unique[number]) => candidate.score - Math.max(0, ...selected.map(previous => {
+    const layeredFull = selected.filter(layered).length >= 2 && unique.some(candidate => !layered(candidate));
+    const adjusted = (candidate: typeof unique[number]) => candidate.score - (layeredFull && layered(candidate) ? 1000 : 0) - Math.max(0, ...selected.map(previous => {
       const shared = candidate.items.filter(item => previous.items.some(other => item.id === other.id)).length / Math.max(1, candidate.items.length) * 18;
       // Тот же верх и низ с другой обувью — это не новый образ, а вариант того же.
       const sameCore = core(candidate).length > 0 && core(candidate).every(id => core(previous).includes(id)) ? 30 : 0;
@@ -625,6 +661,8 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     selected.push(next);
   }
   const beauty = pickBeauty(event, beautyAdvice);
+  // A look put aside with "Not now" comes after the others, however well it matches.
+  const sunk = (look: GeneratedLook) => Boolean(options.dismissed?.includes(lookCore(look.itemIds.map(id => wardrobe.find(item => item.id === id)!).filter(Boolean))));
   return selected.map((candidate, index) => {
     const selection = [...candidate.items];
     if (bags.length && (anchor?.section === 'Сумки' || (event !== 'Спортзал' && itemScore(bags[0], context) >= -4))) selection.push(bags[0]);
@@ -638,7 +676,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       tuckMode: advice.tuckMode, makeup: beauty.makeup, hair: beauty.hair,
       matchPercent: match.percent, fitScore: match.percent
     };
-  }).sort((a, b) => b.matchPercent - a.matchPercent)
+  }).sort((a, b) => Number(sunk(a)) - Number(sunk(b)) || b.matchPercent - a.matchPercent)
     .filter((look, index, all) => index === 0 || look.matchPercent >= Math.max(45, all[0].matchPercent - 30));
 }
 

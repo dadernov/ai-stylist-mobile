@@ -15,7 +15,7 @@ import numpy as np
 from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
@@ -35,6 +35,7 @@ import accounts
 import fal_tryon
 import fashn_credits
 import photo_check
+import closet
 import jobs
 import stage_cache
 from request_guard import RequestGuard, BoundedFormRoute
@@ -85,7 +86,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Session-Token"]
 )
 
@@ -1195,6 +1196,7 @@ async def auth_delete_account(login: str = Depends(access.require_account)):
     is cleared by the app."""
     await asyncio.to_thread(jobs.purge_owner, login)
     await asyncio.to_thread(stage_cache.purge_owner, login)
+    await asyncio.to_thread(closet.purge_owner, login)
     existed = await asyncio.to_thread(accounts.delete_account, login)
     return {"deleted": bool(existed), "login": login}
 
@@ -1261,6 +1263,51 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
         return result
     finally:
         _ANALYSIS_LOCK.release()
+
+
+class ClosetRecord(BaseModel):
+    data: dict
+
+
+# The wardrobe on the server (closet.py): every call is bound to the session's
+# own account, so one person can never read or change another one's things.
+@app.get("/closet")
+def closet_snapshot(since: float = 0, device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-read', _env_int('AI_CLOSET_READS_PER_MINUTE', 30))
+    closet.collect(device)
+    return closet.snapshot(device, since)
+
+
+@app.put("/closet/items/{item_id}")
+def closet_put_item(item_id: str, record: ClosetRecord, device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-write', _env_int('AI_CLOSET_WRITES_PER_MINUTE', 300))
+    return {"updated": closet.put_item(device, item_id, record.data)}
+
+
+@app.delete("/closet/items/{item_id}")
+def closet_delete_item(item_id: str, device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-write', _env_int('AI_CLOSET_WRITES_PER_MINUTE', 300))
+    return {"updated": closet.delete_item(device, item_id)}
+
+
+@app.put("/closet/profile")
+def closet_put_profile(record: ClosetRecord, device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-write', _env_int('AI_CLOSET_WRITES_PER_MINUTE', 300))
+    return {"updated": closet.put_profile(device, record.data)}
+
+
+@app.post("/closet/blobs")
+def closet_put_blob(file: UploadFile = File(...), device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-upload', _env_int('AI_CLOSET_UPLOADS_PER_MINUTE', 120))
+    return {"id": closet.put_blob(device, file.file.read(closet.MAX_UPLOAD_BYTES + 1))}
+
+
+@app.get("/closet/blobs/{blob_id}")
+def closet_get_blob(blob_id: str, device: str = Depends(access.require_account)):
+    access.throttle(device, 'closet-download', _env_int('AI_CLOSET_DOWNLOADS_PER_MINUTE', 600))
+    data, mime = closet.get_blob(device, blob_id)
+    # A person's photo is never kept by a shared cache on the way.
+    return Response(data, media_type=mime, headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/tryon-photo-check")

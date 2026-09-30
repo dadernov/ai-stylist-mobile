@@ -832,6 +832,7 @@ export const en: Record<string, string> = {
   "настройки подбора": "styling settings",
   "подобранные образы": "suggested looks",
   "сохранённые образы": "saved looks",
+  "скрытые образы": "hidden looks",
   "Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.": "Some saved data can't be read. It is kept as is and won't be overwritten.",
   "Принт": "Print",
   "Поделиться": "Share",

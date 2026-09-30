@@ -18,7 +18,7 @@
 <main>
 <p class="langs"><a href="/privacy">Русский</a> · <b>English</b> · <a href="/privacy/zh">中文</a></p>
 <h1>Privacy Policy</h1>
-<p class="meta">AI Stylist app for iOS. Version of 28 September 2026. If versions differ, the Russian text prevails.</p>
+<p class="meta">AI Stylist app for iOS. Version of 30 September 2026. If versions differ, the Russian text prevails.</p>
 
 <h2>1. Who processes your data</h2>
 <p>The app and its server are run by an individual developer (the data controller). For any questions about your data, or requests to access, correct or delete it: <a href="mailto:mrbdigital@proton.me">mrbdigital@proton.me</a>. We reply within 30 days.</p>
@@ -27,13 +27,14 @@
 <table>
 <tr><th>Data</th><th>Purpose</th><th>Where and how long</th></tr>
 <tr><td>Login, display name, password hash (the password itself is not stored)</td><td>Signing in, a separate wardrobe and generation limit per user</td><td>Server, while the account exists</td></tr>
+<tr><td>Wardrobe: items (name, type, colour and other fields), their photos, your try-on photo and profile settings</td><td>So the wardrobe is not lost with the phone and is available on another device</td><td>Server, while the account exists. Photos are stored encrypted (AES-256) and re-saved without metadata or location tags (EXIF). A deleted item is kept for 30 more days, so it can be restored from another device, then removed</td></tr>
 <tr><td>Clothing photos</td><td>Detect the item type and colour, remove the background</td><td>Processed in server memory, never written to disk. The last few results stay in memory until the server restarts</td></tr>
 <tr><td>Your full-body photo and photos of the selected items</td><td>Virtual try-on</td><td>Sent to the fal.ai generation service for the duration of the generation (FASHN AI in fallback mode). fal.ai does not store the request and deletes its copy of the finished image after an hour. The finished image is kept on our server for no more than 24 hours, then deleted automatically</td></tr>
 <tr><td>Try-on job records without images (ID, time, status) and daily counters</td><td>Preventing double charges and the daily limit</td><td>Server, up to 90 days</td></tr>
 <tr><td>Location (only with permission)</td><td>Weather forecast when suggesting looks</td><td>Sent by the app directly to Open-Meteo; never reaches our server and is not stored</td></tr>
 <tr><td>Technical logs: IP address, time and path of requests</td><td>Security and abuse prevention</td><td>Server, up to 14 days</td></tr>
 </table>
-<p>Your wardrobe, saved looks, favorites, try-on history and saved results are stored only on your device.</p>
+<p>Saved looks, favorites, try-on history and saved results are stored only on your device. The wardrobe and the try-on photo are stored on your device with a copy on the server (see the table).</p>
 
 <h2>3. Your face in photos</h2>
 <p>To keep the generator from distorting your face and background, the server locates the face with a local model and restores the original pixels of the head and background after generation. We don't create biometric templates, don't identify people and don't store facial data. Photo metadata (including EXIF location tags) is removed before photos are sent to the generation service.</p>
@@ -52,10 +53,10 @@
 <p>Data leaves the user's country only for these recipients and purposes. The app contains no ads or analytics trackers, doesn't track you across apps and doesn't sell data.</p>
 
 <h2>6. Your rights and deletion</h2>
-<p>You can find out what data we hold about you, correct or delete it, and withdraw consent. Delete your account in the app: Profile → “Delete account”. The account, sessions, try-on results and counters are removed from the server immediately, together with all app data on the device. Service database backups are kept for 14 days and contain no images; a deleted account disappears from them when they expire.</p>
+<p>You can find out what data we hold about you, correct or delete it, and withdraw consent. Delete your account in the app: Profile → “Delete account”. The account, sessions, the wardrobe with its photos, try-on results and counters are removed from the server immediately, together with all app data on the device. Database backups (including the list of items) are kept for 14 days and contain no images; a deleted account disappears from them when they expire.</p>
 
 <h2>7. Security</h2>
-<p>Connections are protected by HTTPS. Passwords are stored only as a strong hash. Generation is available only to signed-in users, and the number of requests is limited.</p>
+<p>Connections are protected by HTTPS. Passwords are stored only as a strong hash; the sign-in token on the phone is kept in the iOS Keychain. The wardrobe and its photos are available only to your account, and the photos are encrypted on the server. Generation is available only to signed-in users, and the number of requests is limited.</p>
 
 <h2>8. Children</h2>
 <p>The app is not intended for children under 13. If you learn that a child has given us data, write to us and we will delete it.</p>

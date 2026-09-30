@@ -28,8 +28,12 @@ const files = {
   deleteAsync: async file => { disk.delete(file); }
 };
 let submit, poll;
+const keychain = new Map();
 const stubs = {
   '@react-native-async-storage/async-storage': { default: storage },
+  // The phone's Keychain, where the session token lives.
+  'expo-secure-store': { getItemAsync: async key => keychain.get(key) ?? null, setItemAsync: async (key, value) => { keychain.set(key, value); },
+    deleteItemAsync: async key => { keychain.delete(key); } },
   'react-native': { Platform: { OS: 'ios' } },
   'expo-file-system/legacy': files,
   'expo-file-system': { File: class File { constructor(...parts) { this.uri = parts.join('/'); } write() {} get name() { return 'file'; } }, Paths: { cache: '/cache/' } },
@@ -137,6 +141,18 @@ async function run() {
     await forgetStoredSession(alice);
     assert.equal((await readStoredSession()).token, bob.token);
     assert.equal(values.get(accountKey('alice', 'profileState')), '{"gender":"male"}');
+  });
+  await test('the session token moves to the Keychain and leaves the plain storage', async () => {
+    keychain.clear();
+    values.set('authSession', JSON.stringify(alice));
+    assert.equal((await readStoredSession()).token, alice.token);
+    assert.equal(values.has('authSession'), false, 'a login saved before moved out of the plain storage');
+    assert.equal(JSON.parse(keychain.get('authSession')).token, alice.token);
+    global.fetch = async () => new Response(JSON.stringify(bob));
+    await signIn('bobby', 'password');
+    assert.equal(values.has('authSession'), false, 'a new login is never written in plain storage');
+    await signOut(await readStoredSession());
+    assert.equal(keychain.has('authSession'), false);
   });
   await test('auth verification only forgets an explicit 401', async () => {
     global.fetch = async () => new Response('{"detail":"busy"}', { status: 503 });

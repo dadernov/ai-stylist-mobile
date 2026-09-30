@@ -21,6 +21,8 @@ RestartSec=3
 
 # Ограничения на случай, если в сервис всё же кто-то попадёт.
 NoNewPrivileges=true
+# Базы, кеши и фото пользователей не читает никто, кроме самого сервиса.
+UMask=0077
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
