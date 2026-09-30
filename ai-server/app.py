@@ -1325,6 +1325,10 @@ async def tryon_generate_look(
         outer2_content, outer2_mime = await read_upload(outer2_file if isinstance(outer2_file, StarletteUploadFile) else None, "outer2_file")
         top2_category = top2_category if isinstance(top2_category, str) else ''
         outer2_category = outer2_category if isinstance(outer2_category, str) else ''
+        if top_content and top2_content and tryon_policy.inner_first(top_category.strip(), top2_category.strip()):
+            # A T-shirt picked after a long-sleeve still goes under it.
+            (top_content, top_mime, top_category), (top2_content, top2_mime, top2_category) = \
+                (top2_content, top2_mime, top2_category), (top_content, top_mime, top_category)
         layered = bool(top2_content or outer2_content)
 
         if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content)):

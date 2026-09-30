@@ -649,7 +649,7 @@ export const en: Record<string, string> = {
   "Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.": "The base look is ready, putting on the upper layers. The face and background are restored in the final version.",
   "Верхние слои не удалось надеть, показан базовый образ. Попробуй перегенерировать.": "The upper layers didn't go on, so the base look is shown. Try regenerating.",
   "Многослойные образы доступны только в новой примерке.": "Layered looks are only available with the new try-on.",
-  "Два слоя верха: первая выбранная вещь надевается ближе к телу, вторая поверх неё.": "Two layered tops: the first one you picked is worn closer to the body, the second over it.",
+  "Два слоя верха надеваются в естественном порядке: например, футболка окажется под лонгсливом.": "Two tops are layered in their natural order: a T-shirt, for example, goes under a long-sleeve.",
   "Подобрать образы с этой вещью": "Find looks with this item",
   "Генератор отклонил фото. Попробуй другое фото или другие вещи.": "The generator rejected the photo. Try another photo or other items.",
   "Генерация заняла слишком много времени. Попробуй ещё раз.": "Generation took too long. Please try again.",

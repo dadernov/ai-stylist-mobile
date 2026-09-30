@@ -336,40 +336,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         result = await self.layered_look()
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(self.generate.await_count, 1)
+        self.assertEqual(len(self.generate.await_args.args[3]), 6)
         self.assertEqual(result['creditsCharged'], 1)
-        prompt = self.generate.await_args.args[4]
-        self.assertIn('Remove any necklace, chain or pendant', prompt)
-
-    async def test_a_t_shirt_under_a_long_sleeve_shows_only_at_the_neckline(self):
-        # The user: the T-shirt shows at the top as far as the neckline allows,
-        # never below the hem. Both garments go, described as the result looks.
-        await self.layered_look()
-        _client, _model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
-        self.assertEqual(len(garment_urls), 6)
-        self.assertIn('image 4 is the top pulled on over the first top: a long-sleeve t-shirt', prompt)
-        self.assertIn('shows only as a thin edge at the neckline', prompt)
-        self.assertIn('The cuffs, sleeves and hem are those of a long-sleeve t-shirt', prompt)
-        self.assertIn('image 5 is the outerwear: a blazer', prompt)
-
-    async def test_long_sleeves_under_a_t_shirt_are_drawn(self):
-        await app.tryon_generate_look(
-            person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=None, outer_file=None,
-            top2_file=photo('green'), outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
-            top_category='Лонгслив', outer_category='', top2_category='Футболка', outer2_category='',
-            request_id='request_000000000041', async_mode='false', fresh='false', device='masha')
-        _client, _model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
-        self.assertEqual(len(garment_urls), 3)
-        self.assertIn('image 4 is the top pulled on over the first top: a t-shirt', prompt)
-        self.assertIn('the long sleeves from image 2 show below its short sleeves', prompt)
-
-    async def test_a_shirt_under_a_sweater_shows_only_where_longer(self):
-        await app.tryon_generate_look(
-            person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=None, outer_file=None,
-            top2_file=photo('green'), outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
-            top_category='Рубашка', outer_category='', top2_category='Свитер', outer2_category='',
-            request_id='request_000000000042', async_mode='false', fresh='false', device='masha')
-        prompt = self.generate.await_args.args[4]
-        self.assertIn('A shorter inner top never sticks out below the hem', prompt)
 
     async def test_the_layer_pass_puts_the_layers_over_the_base_look(self):
         os.environ['TRYON_FAL_LAYER_PASS'] = 'layered'
@@ -386,8 +354,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(layer_call.args[3]), 3)
         prompt = layer_call.args[4]
         self.assertIn('Put 3 extra layers on this person', prompt)
-        self.assertIn('first a long-sleeve t-shirt from image 2, pulled on over a t-shirt', prompt)
-        self.assertIn('it never sticks out below the hem', prompt)
+        self.assertIn('first a long-sleeve t-shirt from image 2, worn over a t-shirt', prompt)
         self.assertIn('then a blazer from image 3, unbuttoned and open over a long-sleeve t-shirt', prompt)
         self.assertIn('then a raincoat from image 4', prompt)
         self.assertIn('The garment in image 4 is long', prompt)
@@ -417,7 +384,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         result = await app.tryon_generate_look(
             person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=None, outer_file=photo('navy'),
             top2_file=plain, outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
-            top_category='Футболка', outer_category='Пиджак', top2_category='Рубашка', outer2_category='',
+            top_category='Футболка', outer_category='Пиджак', top2_category='Лонгслив', outer2_category='',
             request_id='request_000000000032', async_mode='false', fresh='false', device='masha')
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(len(self.generate.await_args.args[3]), 4, 'the layer read over HTTP reaches the editor')
@@ -434,6 +401,27 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {'TRYON_FAL_LAYER_PASS': 'off'}):
             await self.layered_look(request='request_000000000022')
         self.assertEqual(self.generate.await_count, 4, 'off: a layered look is one call')
+
+    async def test_the_inner_top_shows_at_the_neck_never_below_the_hem(self):
+        # The user: the inner top may peek out at the neck, never below the hem.
+        await self.layered_look(request='request_000000000051')
+        prompt = self.generate.await_args.args[4]
+        self.assertIn('The top in image 2 is worn under the garment in image 4: it may show only at the neckline', prompt)
+        self.assertIn('below that hem only the trousers show', prompt)
+        self.assertIn('Remove any necklace, chain or pendant', prompt)
+
+    async def test_two_tops_layer_in_their_natural_order(self):
+        # The user picked the long-sleeve first and the T-shirt second, meaning a
+        # T-shirt under a long-sleeve: the order comes from the garments, not the taps.
+        await app.tryon_generate_look(
+            person_file=photo('white'), top_file=photo('black'), bottom_file=photo('blue'), shoes_file=None, outer_file=None,
+            top2_file=photo('white'), outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
+            top_category='Лонгслив', outer_category='', top2_category='Футболка', outer2_category='',
+            request_id='request_000000000061', async_mode='false', fresh='false', device='masha')
+        prompt = self.generate.await_args.args[4]
+        self.assertIn('image 2 is the top: a t-shirt', prompt)
+        self.assertIn('image 4 is the outerwear: a long-sleeve t-shirt', prompt)
+        self.assertIn('The top in image 2 is worn under the garment in image 4: it may show only at the neckline', prompt)
 
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):

@@ -62,7 +62,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
     setSelectedIds(previous => {
       if (previous.includes(item.id)) return previous.filter(id => id !== item.id);
       if (mode === 'single') return [item.id];
-      // Two tops can be layered: the one chosen first is worn closer to the body.
+      // Two tops can be chosen; the server layers them in their natural order.
       // One more of a full section replaces the oldest of it.
       const layers = LAYERS[item.section] || 1;
       const sameSection = previous.filter(id => items.find(candidate => candidate.id === id)?.section === item.section);
@@ -126,7 +126,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
         </View>
       )}
       {selection.filter(item => item.section === 'Верх').length > 1 && (
-        <Text style={styles.layerHint}>{t('Два слоя верха: первая выбранная вещь надевается ближе к телу, вторая поверх неё.')}</Text>
+        <Text style={styles.layerHint}>{t('Два слоя верха надеваются в естественном порядке: например, футболка окажется под лонгсливом.')}</Text>
       )}
       {selection.length > 0 && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
       <View style={styles.grid}>
