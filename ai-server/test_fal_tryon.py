@@ -324,28 +324,83 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['warning'], app.UNLOCKED_WARNING)
         self.assertEqual((result['identityLocked'], result['faceRestored']), (False, False))
 
-    async def test_layers_go_in_one_call_inner_to_outer(self):
-        result = await app.tryon_generate_look(
+    async def layered_look(self, **extra):
+        return await app.tryon_generate_look(
             person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=photo('black'),
-            outer_file=photo('navy'), top2_file=photo('green'), outer2_file=photo('gray'),
+            outer_file=photo('navy'), top2_file=photo('green'), outer2_file=extra.get('outer2', photo('gray')),
             tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Футболка', outer_category='Пиджак',
-            top2_category='Лонгслив', outer2_category='Плащ', request_id='request_000000000009', async_mode='false', fresh='false',
-            device='masha')
+            top2_category='Лонгслив', outer2_category='Плащ', request_id=extra.get('request', 'request_000000000009'),
+            async_mode='false', fresh='false', device='masha')
+
+    async def test_a_layered_look_is_one_call_by_default(self):
+        result = await self.layered_look()
         self.assertEqual(result['status'], 'succeeded', result)
         self.assertEqual(self.generate.await_count, 1)
-        _client, model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
-        self.assertEqual(len(garment_urls), 6)
-        self.assertEqual(model.key, fal_tryon.DEFAULT_MODEL, 'six garments go to an editor that takes them all')
-        # Upper layers follow the bottom, inside out, and are described as outerwear:
-        # an editor dropped a "second top" but layered the same garment as outerwear.
-        for index, name in enumerate(('top: a t-shirt', 'lower-body garment', 'outerwear: a long-sleeve t-shirt',
-                                      'second layer, worn over the outerwear: a blazer',
-                                      'outermost layer, worn over everything: a raincoat', 'pair of shoes'), start=2):
-            self.assertIn(f'image {index} is the {name}', prompt)
-        self.assertIn('The result must show all 6 garments at once', prompt)
-        self.assertIn('Wear the outermost layer from image 6 open over the layers beneath it', prompt)
-        self.assertIn('The garment in image 6 is long', prompt)
-        self.assertIn('long_outer', self.protect.await_args.args[3] if self.protect.await_count else ['long_outer'])
+        self.assertEqual(len(self.generate.await_args.args[3]), 6)
+        self.assertEqual(result['creditsCharged'], 1)
+
+    async def test_the_layer_pass_puts_the_layers_over_the_base_look(self):
+        os.environ['TRYON_FAL_LAYER_PASS'] = 'layered'
+        self.generate.side_effect = [
+            {'status': 'succeeded', 'outputUrl': 'https://fal.media/base.png', 'model': 'seedream-5-lite', 'costUsd': 0.035},
+            {'status': 'succeeded', 'outputUrl': 'https://fal.media/layers.png', 'model': 'seedream-5-lite', 'costUsd': 0.035}]
+        result = await self.layered_look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.generate.await_count, 2)
+        base_call, layer_call = self.generate.await_args_list
+        self.assertEqual(len(base_call.args[3]), 3, 'the base is top, bottom and shoes')
+        self.assertNotIn('outerwear', base_call.args[4])
+        self.assertEqual(layer_call.args[2], 'https://fal.media/base.png', 'the layers go over the base look')
+        self.assertEqual(len(layer_call.args[3]), 3)
+        prompt = layer_call.args[4]
+        self.assertIn('Put 3 extra layers on this person', prompt)
+        self.assertIn('first a long-sleeve t-shirt from image 2, worn over a t-shirt', prompt)
+        self.assertIn('then a blazer from image 3, unbuttoned and open over a long-sleeve t-shirt', prompt)
+        self.assertIn('then a raincoat from image 4', prompt)
+        self.assertIn('The garment in image 4 is long', prompt)
+        self.assertEqual(result['creditsCharged'], 2)
+        self.assertEqual(access.spent_today('masha'), 2)
+        self.assertEqual([step['step'] for step in result['steps']], ['outfit', 'layers'])
+        self.assertEqual([entry['stage'] for entry in self.published][:2], ['outfit', 'layers'])
+        self.assertNotIn('warning', result)
+
+    async def test_when_the_layers_fail_the_base_look_is_shown_with_a_note(self):
+        os.environ['TRYON_FAL_LAYER_PASS'] = 'layered'
+        self.generate.side_effect = [
+            {'status': 'succeeded', 'outputUrl': 'https://fal.media/base.png', 'model': 'seedream-5-lite', 'costUsd': 0.035},
+            {'error': 'fal model error'}]
+        result = await self.layered_look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(result['warning'], app.LAYERS_WARNING)
+        self.assertEqual(self.protect.await_args.args[2] if self.protect.await_count else 'https://fal.media/base.png', 'https://fal.media/base.png')
+
+    async def test_a_layer_sent_over_http_is_read(self):
+        # FastAPI hands the endpoint Starlette's UploadFile, not its own subclass;
+        # a layer checked against the subclass was silently dropped.
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+        data = BytesIO(); Image.new('RGB', (80, 160), 'green').save(data, format='PNG'); data.seek(0)
+        plain = StarletteUploadFile(file=data, filename='layer.png')
+        self.assertNotIsInstance(plain, UploadFile)
+        result = await app.tryon_generate_look(
+            person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=None, outer_file=photo('navy'),
+            top2_file=plain, outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
+            top_category='Футболка', outer_category='Пиджак', top2_category='Лонгслив', outer2_category='',
+            request_id='request_000000000032', async_mode='false', fresh='false', device='masha')
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(len(self.generate.await_args.args[3]), 4, 'the layer read over HTTP reaches the editor')
+
+    async def test_one_upper_layer_stays_one_call_unless_asked(self):
+        result = await self.look()
+        self.assertEqual(self.generate.await_count, 1)
+        self.assertEqual(result['creditsCharged'], 1)
+        with patch.dict(os.environ, {'TRYON_FAL_LAYER_PASS': 'always'}):
+            self.generate.side_effect = None
+            result = await self.look(request='request_000000000021')
+        self.assertEqual(self.generate.await_count, 3, 'a single coat over the top went as a second call')
+        self.assertEqual(result['creditsCharged'], 2)
+        with patch.dict(os.environ, {'TRYON_FAL_LAYER_PASS': 'off'}):
+            await self.layered_look(request='request_000000000022')
+        self.assertEqual(self.generate.await_count, 4, 'off: a layered look is one call')
 
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):

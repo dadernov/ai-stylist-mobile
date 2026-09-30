@@ -129,10 +129,13 @@ export function AiTryOnPreview({
   const busyLabel = !progress ? t('Генерируем образ…')
     : progress.stage === 'composite' ? t('Восстанавливаем лицо и фон…')
     : progress.stage === 'outfit' ? t('Надеваем весь образ…')
+    // A layered look: the base look is ready, the upper layers go on over it.
+    : progress.stage === 'layers' ? t('Надеваем верхние слои…')
     : progress.stage ? t('Надеваем: {name} ({step} из {total})…', { name: stageLabel(progress.stage), step: String(progress.done.length + 1), total: String(progress.total) })
     : t('Генерируем образ…');
   const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
   const intermediateHint = !progress || progress.stage === 'outfit' ? null
+    : progress.stage === 'layers' ? t('Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.')
     : progress.pending.length || (progress.stage && progress.stage !== 'composite')
       ? t('Уже надето: {done}. Осталось: {pending}. Лицо и фон восстановятся в финальной версии.', {
         done: listStages(progress.done) || '—', pending: listStages([...(progress.stage && progress.stage !== 'composite' ? [progress.stage] : []), ...progress.pending]) })

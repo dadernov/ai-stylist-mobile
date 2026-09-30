@@ -159,6 +159,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
             'Replace the matching original clothes completely and reproduce every reference garment faithfully: '
             'exact colour, print, lettering, fabric, cut, length and fit. '
             'Ignore backgrounds, hangers, mannequins and people in the garment images. '
+            'Prints, logos and details of one garment must never appear on another. '
             f'{LOOK_IDENTITY}')
     if len(upper) > 1:
         # Editors tend to drop one garment of a layered look; name the rule.
@@ -185,6 +186,42 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     else:
         text += FOOTWEAR + ' '
     return text + 'The result is a photorealistic photo with the lighting and colours of image 1.'
+
+
+def layer_prompt(upper, categories, names, base_top=''):
+    """Second call of a layered look: put the upper layers over a finished base look.
+
+    `upper` lists the layers inside out; each image follows the photo in that
+    order. The wording is the one that kept both layers in every test run.
+    """
+    names = names or {}
+    noun = lambda category, fallback: names.get(category, '') or fallback
+    base = noun(base_top, 'the top they wear')
+    steps, visible = [], [f'{base} in the middle']
+    below = base
+    for index, slot in enumerate(upper, start=2):
+        garment = noun(categories.get(slot, ''), 'the garment')
+        how = 'unbuttoned and open over' if categories.get(slot) in OPEN_FRONT or slot != 'top2' else 'worn over'
+        steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, {how} {below}')
+        visible.append(f'{garment} {"around it" if index == 2 else "outside"}')
+        below = garment
+    count = len(upper)
+    text = (f'Image 1 is a photo of a person. Put {"one extra layer" if count == 1 else f"{count} extra layers"} on this person '
+            f'over the clothes they already wear: {"; ".join(steps)}. '
+            f'All upper layers must be clearly visible: {", ".join(visible)}. '
+            'Keep everything else in image 1 exactly as it is: the same person, face, hair, pose, framing and camera, '
+            'the clothes underneath with their prints, the trousers, the shoes and the background. '
+            'Reproduce every new layer faithfully: exact colour, fabric, cut, length and details. '
+            'Ignore backgrounds, hangers, doors and objects in the garment images. '
+            'Prints, logos and details of one garment must never appear on another. ')
+    for index, slot in enumerate(upper, start=2):
+        if categories.get(slot) in LONG_OUTER:
+            text += f'The garment in image {index} is long: keep its full length below the hips and never shorten it. '
+    return text + 'The result is a photorealistic photo with the lighting of image 1.'
+
+
+# Garments usually worn open over another top.
+OPEN_FRONT = {'Рубашка', 'Блуза', 'Кардиган', 'Жилет'}
 
 
 def bria_instruction(slots, top_category='', outer_category='', tuck='auto'):

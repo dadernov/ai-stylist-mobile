@@ -280,7 +280,10 @@ def _similarity(source, target):
     return np.column_stack((rotation, target.mean(axis=0) - rotation @ source.mean(axis=0)))
 
 
-def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face):
+HEAD_LABELS = [1, 2, 3, 11]  # hat, hair, sunglasses, face in the clothes parsing
+
+
+def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face, source_labels=None, generated_labels=None):
     """Put the photo's own face into a frame whose head moved or resized a little.
 
     A general image editor redraws the whole picture: the head comes back ~10%
@@ -318,19 +321,51 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     centre_x, centre_y = x + width / 2, y + height * .56
     ImageDraw.Draw(mask).ellipse((centre_x - width * .44, centre_y - height * .56,
                                   centre_x + width * .44, centre_y + height * .5), fill=255)
-    alpha = cv2.GaussianBlur(np.asarray(mask, np.float32) / 255, (0, 0), max(2., width * .07))
-    alpha = cv2.warpAffine(alpha, matrix, generated.size, flags=cv2.INTER_LINEAR)
+    region = np.asarray(mask) > 0
+    if source_labels is not None and np.asarray(source_labels).shape == region.shape:
+        # The whole head, not only the face: hair, ears and glasses make the
+        # likeness as much as the eyes do. Nothing below the chin, where the
+        # new collar is.
+        yy, xx = np.ogrid[:region.shape[0], :region.shape[1]]
+        extent = (xx >= x - .65 * width) & (xx <= x + 1.65 * width) & (yy >= y - .9 * height) & (yy <= y + height)
+        region |= np.isin(source_labels, HEAD_LABELS) & extent
+    alpha = cv2.warpAffine(region.astype(np.float32), matrix, generated.size, flags=cv2.INTER_LINEAR)
+    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
+        # The editor's own hair outside the photo's head would stay as a second
+        # outline; the photo's scene there (a wall, mostly) covers it.
+        gx, gy, gw, gh = faces[0].box
+        yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
+        extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + gh)
+        alpha = np.maximum(alpha, (np.isin(generated_labels, HEAD_LABELS) & extent).astype(np.float32))
+    # Grow the mask before feathering: a feather that starts at the hair line
+    # leaves the editor's strands half visible, a ghost beside the real hair.
+    grow = max(3, round(width * .08))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 2 + 1, grow * 2 + 1))
+    alpha = cv2.dilate((alpha > .5).astype(np.uint8), kernel).astype(np.float32)
+    alpha = cv2.GaussianBlur(alpha, (0, 0), max(2., width * .04))
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
     frame = np.asarray(generated.convert('RGB'))
     core = alpha > .6
     if not core.any():
         raise AlignmentError('face-transplant-mismatch')
-    # The generator relights the scene slightly; match the mean colour of the
-    # face to its new surroundings so the ellipse does not read as a patch.
+    # The generator relights the scene slightly. Match the mean colour of the
+    # head to its new surroundings, and of the photo's wall that fills in
+    # around the hair to the editor's wall, so neither reads as a patch.
     face_lab = cv2.cvtColor(face, cv2.COLOR_RGB2LAB).astype(np.float32)
     frame_lab = cv2.cvtColor(frame, cv2.COLOR_RGB2LAB).astype(np.float32)
-    face_lab += np.clip(frame_lab[core].mean(axis=0) - face_lab[core].mean(axis=0), -12, 12)
+    person = np.ones(alpha.shape, bool)
+    if source_labels is not None and np.asarray(source_labels).shape == region.shape:
+        person = cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
+                                flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
+    head = core & person
+    scenery = (alpha > .05) & ~person
+    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
+        scenery &= np.asarray(generated_labels) == 0
+    if head.any():
+        face_lab[person] += np.clip(frame_lab[head].mean(axis=0) - face_lab[head].mean(axis=0), -12, 12)
+    if scenery.sum() > 50:
+        face_lab[~person] += np.clip(frame_lab[scenery].mean(axis=0) - face_lab[scenery].mean(axis=0), -25, 25)
     face = cv2.cvtColor(face_lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
     blended = frame * (1 - alpha[..., None]) + face * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))

@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPExcept
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, CATEGORIES, SHORT_NAMES
@@ -207,6 +208,7 @@ async def _load_image_from_url_or_data_url(client: httpx.AsyncClient, source: st
 
 
 ALIGNMENT_MESSAGE = 'Не удалось точно совместить примерку с исходным фото. Лицо и фон не изменены; попробуй повторить примерку.'
+LAYERS_WARNING = 'Верхние слои не удалось надеть, показан базовый образ. Попробуй перегенерировать.'
 UNLOCKED_WARNING = ('Лицо и фон не удалось защитить пиксель в пиксель, поэтому показан кадр генератора целиком. '
                     'Если лицо или фон изменились, перегенерируй.')
 
@@ -267,8 +269,14 @@ def _face_restored_output_url(frame: Image.Image, prepared):
     (face_guard.transplant_face). None when even the face does not fit.
     """
     try:
-        original, _cutout, faces, _labels = prepared
-        restored = face_guard.transplant_face(original, frame.convert('RGB').resize(original.size, Image.Resampling.LANCZOS), faces[0])
+        original, _cutout, faces, labels = prepared
+        framed = frame.convert('RGB').resize(original.size, Image.Resampling.LANCZOS)
+        try:
+            generated_labels = footwear_guard.parse(framed)
+        except Exception as exc:
+            print(f'Try-on head parsing unavailable: {type(exc).__name__}', flush=True)
+            generated_labels = None
+        restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels)
     except face_guard.AlignmentError as exc:
         print(f'Try-on face restore rejected: {exc}', flush=True)
         return None
@@ -669,6 +677,14 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     else:
         prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories)
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
+
+
+async def _run_fal_layers(client, model, base_url, garments, upper, categories, seed, frame_size=None):
+    """Second call of a layered look: the upper layers over the finished base look."""
+    garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
+                                            FAL_GARMENT_SIDE, FAL_JPEG_QUALITY) for slot in upper]
+    prompt = tryon_policy.layer_prompt(upper, categories, _CATEGORY_NOUNS, categories.get('top', ''))
+    return await fal_tryon.generate(client, model, base_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
 def _look_strategy():
@@ -1303,8 +1319,9 @@ async def tryon_generate_look(
         shoes_content, shoes_mime = await read_upload(shoes_file, "shoes_file")
         outer_content, outer_mime = await read_upload(outer_file, "outer_file")
         # Optional layers, as the request_id below: a direct call gets Form/File defaults.
-        top2_content, top2_mime = await read_upload(top2_file if isinstance(top2_file, UploadFile) else None, "top2_file")
-        outer2_content, outer2_mime = await read_upload(outer2_file if isinstance(outer2_file, UploadFile) else None, "outer2_file")
+        # Over HTTP the value is Starlette's UploadFile, not FastAPI's subclass.
+        top2_content, top2_mime = await read_upload(top2_file if isinstance(top2_file, StarletteUploadFile) else None, "top2_file")
+        outer2_content, outer2_mime = await read_upload(outer2_file if isinstance(outer2_file, StarletteUploadFile) else None, "outer2_file")
         top2_category = top2_category if isinstance(top2_category, str) else ''
         outer2_category = outer2_category if isinstance(outer2_category, str) else ''
         layered = bool(top2_content or outer2_content)
@@ -1360,12 +1377,14 @@ async def tryon_generate_look(
         reused_depth, reused_frame = await asyncio.to_thread(stage_cache.lookup, device, chain_keys) if chain_keys and reuse else (0, None)
         # The budget is reserved in credits for exactly the layers that will run;
         # a fal look is one call and takes TRYON_FAL_UNITS.
-        cost = fal_tryon.units() if fal_model else (stage_total - reused_depth) * profile.credits
+        # A layered look on fal is two calls: the base look, then the upper layers over it.
+        fal_layer_pass = bool(fal_model) and fal_tryon.layer_pass(list(garments))
+        cost = fal_tryon.units() * (2 if fal_layer_pass else 1) if fal_model else (stage_total - reused_depth) * profile.credits
 
         async def _generate_look():
             started = time.monotonic()
             prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
-            stages = [('outfit', None, None)] if fal_model else await asyncio.to_thread(
+            stages = ([('outfit', None, None)] + ([('layers', None, None)] if fal_layer_pass else [])) if fal_model else await asyncio.to_thread(
                 _plan_stages, garments, top_category.strip(), outer_category.strip(), tuck_mode_normalized,
                 tryon_max_side, tryon_jpeg_quality
             )
@@ -1373,6 +1392,7 @@ async def tryon_generate_look(
             steps = []
             names = [name for name, _, _ in stages]
             preview_url = None
+            layer_warning = None
             # Frames this job generated, as (layer index, bytes). They reach the
             # layer cache only after the whole look passes the identity lock.
             fresh_frames = []
@@ -1405,11 +1425,13 @@ async def tryon_generate_look(
 
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
                 if fal_model:
+                    upper = [slot for slot in fal_tryon.UPPER_LAYERS if slot in garments] if fal_layer_pass else []
                     await publish([], stage='outfit')
-                    jobs.attempt(device, job_id, cost)
+                    jobs.attempt(device, job_id, fal_tryon.units())
                     step_started = time.monotonic()
-                    result = await _run_fal_look(client, fal_model, person_content, garments, top_category.strip(),
-                                                 outer_category.strip(), tuck_mode_normalized, seed, slot_categories)
+                    result = await _run_fal_look(client, fal_model, person_content,
+                                                 {slot: value for slot, value in garments.items() if slot not in upper},
+                                                 top_category.strip(), outer_category.strip(), tuck_mode_normalized, seed, slot_categories)
                     elapsed = round(time.monotonic() - step_started, 2)
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
@@ -1417,6 +1439,29 @@ async def tryon_generate_look(
                     if result.get('error') or not result.get('outputUrl'):
                         return {'error': fal_tryon.user_error(result), 'steps': steps}
                     current_model = result['outputUrl']
+                    if upper:
+                        # The base look is shown while the layers go on; its face and
+                        # background are the editor's until the final lock.
+                        base_frame = None
+                        try:
+                            base_frame = await _load_image_from_url_or_data_url(client, current_model)
+                            preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, base_frame) if base_frame else None
+                        except Exception as exc:
+                            print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
+                        await publish(['outfit'], stage='layers', preview_url=preview_url)
+                        jobs.attempt(device, job_id, fal_tryon.units())
+                        step_started = time.monotonic()
+                        layered = await _run_fal_layers(client, fal_model, current_model, garments, upper, slot_categories, seed,
+                                                        base_frame.size if base_frame is not None else None)
+                        elapsed = round(time.monotonic() - step_started, 2)
+                        steps.append({'step': 'layers', 'result': layered, 'durationSeconds': elapsed})
+                        print(f'Try-on timing: stage=layers; model={fal_model.key}; seconds={elapsed}; '
+                              f'usd={layered.get("costUsd")}; error={layered.get("error")}', flush=True)
+                        if layered.get('outputUrl'):
+                            current_model = layered['outputUrl']
+                        else:
+                            # The base look is paid for and correct; show it and say what is missing.
+                            layer_warning = LAYERS_WARNING
                     try:
                         last_frame = await _load_image_from_url_or_data_url(client, current_model)
                     except Exception as exc:
@@ -1522,6 +1567,7 @@ async def tryon_generate_look(
                 "layersReused": reused_depth,
                 "creditsCharged": cost if fal_model else (len(stages) - reused_depth) * profile.credits,
             }
+            warning = ' · '.join(part for part in (warning, layer_warning) if part)
             if warning:
                 response["warning"] = warning
             return response

@@ -115,6 +115,26 @@ def face_only():
     return os.getenv('TRYON_FAL_RESTORE', 'face').strip().lower() != 'scene'
 
 
+# Layers worn over the base top, from the inside out.
+UPPER_LAYERS = ('top2', 'outer', 'outer2')
+
+
+def layer_pass(slots):
+    """True when the upper layers go in a second call over the finished base look.
+
+    One call keeps a T-shirt, a shirt and a trench coat together (three runs of
+    three), so that is the default. The second call, twice the price and time,
+    shows every layer more openly: TRYON_FAL_LAYER_PASS=layered uses it for two
+    or more upper layers, `always` for a single one too.
+    """
+    mode = os.getenv('TRYON_FAL_LAYER_PASS', 'off').strip().lower()
+    upper = [slot for slot in UPPER_LAYERS if slot in slots]
+    base = [slot for slot in slots if slot not in UPPER_LAYERS]
+    if mode == 'off' or not base or not upper:
+        return False
+    return len(upper) >= 2 or (mode == 'always' and 'top' in slots)
+
+
 def units():
     """What one look takes from the daily budgets, which count FASHN credits."""
     try:
