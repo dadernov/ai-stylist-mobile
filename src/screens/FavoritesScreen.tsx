@@ -77,7 +77,8 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
         <SectionLabel>{t('Образ из вещей')}</SectionLabel>
         <LookPreview items={lookItems} />
 
-        <SectionLabel>{t('Сгенерированный образ')}</SectionLabel>
+        {/* The label belongs to a picture; without one only the button remains. */}
+        {tryOnUri || !onTryOn ? <SectionLabel>{t('Сгенерированный образ')}</SectionLabel> : null}
         {tryOnUri ? (
           <AppPressable style={styles.generatedWrap} onPress={() => onPreview(tryOnUri)}>
             <Image source={{ uri: tryOnUri }} style={styles.generatedImage} resizeMode="contain" />

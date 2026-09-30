@@ -25,6 +25,7 @@ import { buildLooks, evaluateLook, EVENTS, STYLES } from '../domain/outfits';
 import { describeWeatherCode } from '../services/weather';
 import { useWeather } from '../components/useWeather';
 import { MatchSummary } from '../components/MatchSummary';
+import { ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { Gender } from '../types/profile';
 
 const stylePresets = STYLES;
@@ -205,13 +206,19 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
     [look.itemIds, itemsById]
   );
   const isFavorited = favoriteLookIds?.has(look.id);
+  const { colors } = useTheme();
+  // The card shows what matters at a glance; the reasoning opens on demand.
+  const [details, setDetails] = useState(false);
+  const match = useMemo(() => look.event ? evaluateLook(lookItems, { style: look.style, event: look.event, temperature: look.temperature ?? null }, t) : null,
+    [lookItems, look.style, look.event, look.temperature, t]);
   return (
     <FadeInView delay={index * 60}>
       <View style={styles.lookCard}>
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.title}</Text>
-            {renderFitBadge(look.matchPercent, styles)}
+            {/* With a match summary below, the percent would show twice. */}
+            {match ? null : renderFitBadge(look.matchPercent, styles)}
           </View>
           <View style={styles.lookActions}>
             <AppPressable haptics style={styles.actionSoft} onPress={() => onSaveToLooks(look)}>
@@ -227,8 +234,27 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
             </AppPressable>
           </View>
         </View>
-        <Text style={styles.lookWeather}>{look.weather}</Text>
+        {look.weather ? <Text style={styles.lookWeather}>{look.weather}</Text> : null}
         <LookPreview items={lookItems} />
+        {match ? <MatchSummary {...match} detailed={details} /> : null}
+        <AppPressable style={styles.detailsToggle} accessibilityRole="button" accessibilityState={{ expanded: details }} onPress={() => setDetails(open => !open)}>
+          <Text style={styles.detailsToggleText}>{t(details ? 'Свернуть' : 'Почему сочетается')}</Text>
+          {details ? <ChevronUp size={16} color={colors.accentGold} /> : <ChevronDown size={16} color={colors.accentGold} />}
+        </AppPressable>
+        {details ? <>
+          {renderFitReasons(look.fitReasons, styles, t)}
+          {look.stylingTips?.length ? <View style={styles.beautyBlock}>
+            <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
+            {look.stylingTips.map(tip => <Text key={tip} style={styles.beautyText}>{tip}</Text>)}
+          </View> : null}
+          {look.warnings?.map(warning => <Text key={warning} style={styles.beautyText}>{warning}</Text>)}
+          {beautyAdvice && (look.makeup || look.hair) ? <View style={styles.beautyBlock}>
+            <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+            <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+            <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+            <Text style={styles.beautyText}>{t(look.hair)}</Text>
+          </View> : null}
+        </> : null}
         <AiTryOnPreview
           modelUri={modelUri}
           items={lookItems}
@@ -241,24 +267,6 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
           onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
-        {lookItems.map((item) => (
-          <Text key={item.id} style={styles.lookItem}>
-            • {item.name}
-          </Text>
-        ))}
-        {look.event ? <MatchSummary {...evaluateLook(lookItems, { style: look.style, event: look.event, temperature: look.temperature ?? null }, t)} detailed /> : null}
-        {renderFitReasons(look.fitReasons, styles, t)}
-        {look.stylingTips?.length ? <View style={styles.beautyBlock}>
-          <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
-          {look.stylingTips.map(tip => <Text key={tip} style={styles.beautyText}>{tip}</Text>)}
-        </View> : null}
-        {look.warnings?.map(warning => <Text key={warning} style={styles.beautyText}>{warning}</Text>)}
-        {beautyAdvice && (look.makeup || look.hair) ? <View style={styles.beautyBlock}>
-          <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-          <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-          <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-          <Text style={styles.beautyText}>{t(look.hair)}</Text>
-        </View> : null}
       </View>
     </FadeInView>
   );
@@ -303,7 +311,6 @@ const SavedLookCard = memo(function SavedLookCard({
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.name}</Text>
-            
           </View>
           <View style={styles.lookActions}>
             <AppPressable haptics style={styles.actionSoft} onPress={() => onEdit(look)}>
@@ -335,11 +342,6 @@ const SavedLookCard = memo(function SavedLookCard({
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
           onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
-        {lookItems.map((item) => (
-          <Text key={item.id} style={styles.lookItem}>
-            • {item.name}
-          </Text>
-        ))}
         {renderFitReasons(look.fitReasons, styles, t)}
       </View>
     </FadeInView>
@@ -372,6 +374,8 @@ export function OutfitBuilderScreen({
   const [activeTab, setActiveTab] = useState<'fitting' | 'builder' | 'looks' | 'history'>(initialTab);
   const [historyItemId, setHistoryItemId] = useState(initialHistoryItemId);
   const [repeatSelection, setRepeatSelection] = useState<{ ids: string[]; key: number }>();
+  // "Try on" for the garments picked in the fitting room, pinned above the tab bar.
+  const [fittingCta, setFittingCta] = useState<{ count: number; open: () => void } | null>(null);
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
   const { weather: liveWeather, error: weatherError, loading: weatherLoading, reload: loadWeather } = useWeather(activeTab === 'builder');
@@ -699,11 +703,13 @@ export function OutfitBuilderScreen({
         onFilter={setHistoryItemId} onOpenItem={onOpenItem}
         onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])}
         onTryOn={ids => { setRepeatSelection(previous => ({ ids, key: (previous?.key || 0) + 1 })); setActiveTab('fitting'); }} />}
-      <FormScrollView style={activeTab === 'history' && { display: 'none' }} contentContainerStyle={styles.pageContent}>
+      <FormScrollView style={activeTab === 'history' && { display: 'none' }}
+        contentContainerStyle={[styles.pageContent, activeTab === 'fitting' && fittingCta ? { paddingBottom: 96 } : null]}>
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
           <FittingRoom key={repeatSelection?.key || 0} items={items} modelUri={modelUri}
             initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onModelChange={onModelChange} onWardrobe={onWardrobe}
             onOpenHistory={() => { setHistoryItemId(undefined); setActiveTab('history'); }}
+            onSelectionCta={setFittingCta}
             onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])} />
         </View>
         {activeTab === 'builder' ? (
@@ -831,6 +837,11 @@ export function OutfitBuilderScreen({
           </View>
         ) : null}
       </FormScrollView>
+      {activeTab === 'fitting' && fittingCta ? (
+        <View style={styles.floatingCta} pointerEvents="box-none">
+          <PrimaryButton title={t('К примерке · {count}', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} size="lg" />
+        </View>
+      ) : null}
 
       <Modal transparent animationType="slide" visible={isEditModalVisible} onRequestClose={() => setEditModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -882,6 +893,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     left: -16,
     right: -16,
     height: 220
+  },
+  floatingCta: {
+    position: 'absolute',
+    left: SPACING.lg,
+    right: SPACING.lg,
+    bottom: SPACING.md,
+    ...SHADOWS.floating
   },
   pageContent: {
     width: '100%',
@@ -1197,10 +1215,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...SHADOWS.card
   },
   lookHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    alignItems: 'flex-start'
+    gap: 10
   },
   lookTitleWrap: {
     flex: 1,
@@ -1228,9 +1243,20 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   lookActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-end',
+    gap: 8
+  },
+  detailsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
     gap: 6,
-    flexShrink: 1
+    paddingVertical: 8,
+    paddingHorizontal: 12
+  },
+  detailsToggleText: {
+    color: c.accentGold,
+    fontSize: 14,
+    fontWeight: '600'
   },
   actionSoft: {
     backgroundColor: c.accentGoldSoft,
@@ -1276,10 +1302,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...TYPE.caption,
     color: c.muted,
     marginBottom: 3
-  },
-  lookItem: {
-    color: c.text,
-    fontSize: 13
   },
   reasonBlock: {
     marginTop: 6,

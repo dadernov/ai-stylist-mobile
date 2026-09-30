@@ -145,20 +145,17 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
   const palette = [...new Set(selection.map(item => item.color))].filter(color => color && color !== 'Не определено');
   const title = selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => t(item.category)).join(' + ') || t('Образ {number}', { number: index + 1 });
   return <View style={styles.look}>
-    <View style={styles.sectionHeading}>
+    <View style={styles.lookHeading}>
       <View style={{ flex: 1, gap: 5 }}><Text style={styles.number}>{t('ВАРИАНТ {number}', { number: String(index + 1).padStart(2, '0') })}</Text><Text style={styles.lookTitle}>{title}</Text></View>
       <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: advice.tips, warnings: advice.warnings, tuckMode: advice.tuckMode })} />
     </View>
-    <LookPreview items={selection} />
-    <MatchSummary percent={match.percent} criteria={match.criteria} detailed={expanded} />
-    <Text style={styles.muted}>{palette.map(color => t(color)).join(' · ')}</Text>
-    <View style={styles.pieces}>{selection.map(item => <View key={item.id} style={styles.piece}>
-      <Text style={styles.body}>{item.name}</Text>
-      {item.id !== anchorId && <IconButton icon={ArrowRightLeft} label={t('Заменить {name}', { name: item.name })} onPress={() => setReplaceId(replaceId === item.id ? null : item.id)} />}
-    </View>)}</View>
-    {selectedForSwap && <View style={{ gap: 8 }}><Text style={styles.label}>{t('Вместо «{name}»', { name: selectedForSwap.name })}</Text>
+    <LookPreview items={selection} swappingId={replaceId} canSwap={item => item.id !== anchorId}
+      swapLabel={item => t('Заменить {name}', { name: item.name })} onSwap={item => setReplaceId(replaceId === item.id ? null : item.id)} />
+    {selectedForSwap && <View style={styles.replacing}><Text style={styles.label}>{t('Вместо «{name}»', { name: selectedForSwap.name })}</Text>
       {alternatives.length ? <OptionPicker options={alternatives.map(item => item.id)} labels={Object.fromEntries(alternatives.map(item => [item.id, item.name]))} value="" label={t('Выбрать замену')} onChange={id => replace(selectedForSwap.id, id)} /> : <Text style={styles.muted}>{t('Других вещей в этой категории нет.')}</Text>}
     </View>}
+    <MatchSummary percent={match.percent} criteria={match.criteria} detailed={expanded} />
+    {palette.length ? <Text style={styles.muted}>{palette.map(color => t(color)).join(' · ')}</Text> : null}
     {advice.tips.slice(0, 1).map(tip => <Text key={tip} style={styles.body}>{tip}</Text>)}
     {advice.warnings.slice(0, expanded ? undefined : 1).map(warning => <View key={warning} style={styles.warning}><Text style={styles.body}>{warning}</Text></View>)}
     {swaps.map(swap => <AppPressable key={swap.from.id} accessibilityRole="button" onPress={() => replace(swap.from.id, swap.to.id)} style={styles.swap}>
@@ -192,8 +189,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   look: { gap: 14, paddingBottom: 24, marginBottom: 12, borderBottomWidth: 1, borderColor: c.border },
   number: { color: c.accentGold, fontSize: 10, fontWeight: '700' },
   lookTitle: { color: c.text, fontSize: 22, fontWeight: '600' },
-  pieces: { gap: 2 },
-  piece: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  lookHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 12 },
+  replacing: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: c.surface },
   warning: { paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: c.danger },
   swap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border },
   details: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 40 }

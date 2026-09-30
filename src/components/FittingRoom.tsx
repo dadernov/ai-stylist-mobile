@@ -1,5 +1,5 @@
 import { usePhotoPicker } from './usePhotoPicker';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { ArrowUpRight, Check, Pencil, Save, Search, UserRound, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
@@ -26,6 +26,8 @@ type Props = {
   onOpenHistory: () => void;
   initialItemId?: string;
   initialItemIds?: string[];
+  // The screen shows "Try on" as a floating button, always in reach while picking.
+  onSelectionCta?: (cta: { count: number; open: () => void } | null) => void;
 };
 
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
@@ -35,7 +37,7 @@ const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезо�
 // Two tops under one outer layer: more upper layers an editor does not keep.
 const LAYERS: Record<string, number> = { 'Верх': 2 };
 
-export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds, onSelectionCta }: Props) {
   // Фото для примерки выбирается прямо здесь, без перехода в профиль.
   const { pickPhoto, cropModal } = usePhotoPicker();
   const pickModel = async () => {
@@ -52,6 +54,10 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   const [search, setSearch] = useState('');
   const [previewOpen, setPreviewOpen] = useState(Boolean(initialItemId || initialItemIds?.length));
   const selection = useMemo(() => selectedIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[], [items, selectedIds]);
+  useEffect(() => {
+    onSelectionCta?.(selection.length ? { count: selection.length, open: () => setPreviewOpen(true) } : null);
+  }, [selection.length, onSelectionCta]);
+  useEffect(() => () => onSelectionCta?.(null), [onSelectionCta]);
   const visibleItems = items.filter(item => (section === 'Все' || item.section === section)
     && `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   // The session belongs to these exact photos, including the profile photo.
@@ -115,7 +121,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       {selection.filter(item => item.section === 'Верх').length > 1 && (
         <Text style={styles.layerHint}>{t('Два слоя верха надеваются в естественном порядке: например, футболка окажется под лонгсливом.')}</Text>
       )}
-      {selection.length > 0 && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
+      {selection.length > 0 && !onSelectionCta && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
       <View style={styles.grid}>
         {visibleItems.map(item => {
           const supported = supportedSections.includes(item.section);

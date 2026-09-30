@@ -166,7 +166,7 @@ export function ProfileScreen({
               </View>
               <View style={styles.statsSeparator} />
               <View style={styles.statCell}>
-                <Text style={styles.statValue}>{t(authMethod)}</Text>
+                <Text style={styles.statText} numberOfLines={1}>{t(authMethod)}</Text>
                 <Text style={styles.statLabel}>{t('Способ входа')}</Text>
               </View>
             </View>
@@ -182,13 +182,20 @@ export function ProfileScreen({
             <Text style={styles.modelText}>
               {t('Загрузи фото в полный рост на однотонном фоне (можно в обычной облегающей одежде). На него мы будем накладывать избранные образы.')}
             </Text>
-            <AppPressable
-              style={styles.modelPreview}
-              onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}
-            >
-              {modelUri ? (
-                <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="contain" />
-              ) : (
+            {modelUri ? (
+              // A chosen photo is a thumbnail, not a whole screen: tap to see it full size.
+              <View style={styles.modelRow}>
+                <AppPressable style={styles.modelThumb} onPress={() => setPreviewUri(modelUri)} accessibilityRole="imagebutton" accessibilityLabel={t('Фото для примерки')}>
+                  <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="cover" />
+                </AppPressable>
+                <View style={{ flex: 1, gap: SPACING.sm }}>
+                  <Text style={styles.modelReady}>{t('Фото добавлено')}</Text>
+                  <Text style={styles.modelText}>{t('Нажми на фото, чтобы посмотреть его целиком.')}</Text>
+                  <PrimaryButton title={t('Заменить фото')} onPress={handlePickModel} variant="ghost" />
+                </View>
+              </View>
+            ) : <AppPressable style={styles.modelPreview} onPress={handlePickModel}>
+              {modelUri ? null : (
                 <View style={styles.modelEmpty}>
                   <LinearGradient
                     colors={[colors.accentGoldSoft, colors.surface] as const}
@@ -201,12 +208,8 @@ export function ProfileScreen({
                   <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
                 </View>
               )}
-            </AppPressable>
-            <PrimaryButton
-              title={modelUri ? t('Заменить фото') : t('Выбрать из галереи')}
-              onPress={handlePickModel}
-              variant={modelUri ? 'ghost' : 'gold'}
-            />
+            </AppPressable>}
+            {modelUri ? null : <PrimaryButton title={t('Выбрать из галереи')} onPress={handlePickModel} variant="gold" />}
           </View>
         </FadeInView>
 
@@ -358,6 +361,30 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 19,
     fontWeight: '700',
     color: c.accentGold
+  },
+  statText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: c.text
+  },
+  modelRow: {
+    flexDirection: 'row',
+    gap: SPACING.lg,
+    alignItems: 'center'
+  },
+  modelThumb: {
+    width: 104,
+    height: 168,
+    borderRadius: RADII.lg,
+    overflow: 'hidden',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.goldHairline
+  },
+  modelReady: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: c.text
   },
   statLabel: {
     ...TYPE.caption,

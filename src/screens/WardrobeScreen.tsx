@@ -665,15 +665,20 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                 <Text style={styles.detailMeta}>{[detail.category, detail.color, detail.season, detail.pattern].filter(Boolean).map(value => t(value)).join(' · ')}</Text>
                 {(detail.size || detail.store || detail.material) && <Text style={styles.detailMeta}>{[detail.size, detail.store, detail.material].filter(Boolean).join(' · ')}</Text>}
               </View>
-              <View style={styles.detailToolbar}>
-                <AppPressable accessibilityRole="button" style={styles.detailEdit} onPress={() => { setDetailId(null); handleEditItem(detail); }}>
-                  <Pencil size={16} color={colors.text} /><Text style={{ color: colors.text, fontSize: 14 }}>{t('Редактировать')}</Text>
-                </AppPressable>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <IconButton icon={ScanLine} label={t('Повторить анализ')} onPress={() => { setDetailId(null); reanalyzeExisting(detail); }} />
-                  <IconButton icon={ImagePlus} label={t('Заменить фото')} onPress={() => { setDetailId(null); handleRetakeExisting(detail.id); }} />
-                  <IconButton icon={Trash2} label={t('Удалить')} danger onPress={() => handleDeleteItem(detail.id)} />
-                </View>
+              {/* Four labelled actions instead of an edit link and three bare icons. */}
+              <View style={styles.detailActions}>
+                {[
+                  { icon: Pencil, label: 'Изменить', onPress: () => { setDetailId(null); handleEditItem(detail); } },
+                  { icon: ScanLine, label: 'AI-анализ', a11y: 'Повторить анализ', onPress: () => { setDetailId(null); reanalyzeExisting(detail); } },
+                  { icon: ImagePlus, label: 'Новое фото', a11y: 'Заменить фото', onPress: () => { setDetailId(null); handleRetakeExisting(detail.id); } },
+                  { icon: Trash2, label: 'Удалить', danger: true, onPress: () => handleDeleteItem(detail.id) },
+                ].map(({ icon: Icon, label, a11y, danger, onPress }) => (
+                  <AppPressable key={label} haptics accessibilityRole="button" accessibilityLabel={t(a11y || label)} onPress={onPress}
+                    style={[styles.detailAction, danger && { borderColor: colors.dangerSoft, backgroundColor: colors.dangerSoft }]}>
+                    <Icon size={18} color={danger ? colors.danger : colors.text} strokeWidth={1.7} />
+                    <Text style={[styles.detailActionText, danger && { color: colors.danger }]} numberOfLines={1}>{t(label)}</Text>
+                  </AppPressable>
+                ))}
               </View>
               {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
               {onStyleWith ? <PrimaryButton title={t('Подобрать образы с этой вещью')} icon={Sparkles} variant="ghost" onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
@@ -856,7 +861,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   detailPhoto: { width: '100%', height: 300, borderRadius: 8, backgroundColor: c.surface },
   detailTitle: { fontFamily: SERIF, fontSize: 26, color: c.text },
   detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
-  detailEdit: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
+  detailActions: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
+  detailActionText: { fontSize: 12, fontWeight: '600', color: c.text },
   filterRow: {
     paddingBottom: 6,
     marginBottom: 0,

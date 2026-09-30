@@ -1,10 +1,18 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { ArrowRightLeft } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
-import { useThemedStyles } from '../constants/ThemeContext';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { AppPressable } from './AppPressable';
 
 type LookPreviewProps = {
   items: WardrobeItem[];
+  /** Puts a swap button on each photo, except where `canSwap` says no. */
+  onSwap?: (item: WardrobeItem) => void;
+  canSwap?: (item: WardrobeItem) => boolean;
+  swapLabel?: (item: WardrobeItem) => string;
+  /** The item whose replacements are open, highlighted. */
+  swappingId?: string | null;
 };
 
 const sectionOrder = ['Верхняя одежда', 'Верх', 'Низ', 'Обувь', 'Сумки'];
@@ -18,8 +26,9 @@ const sortBySection = (items: WardrobeItem[]) => {
   });
 };
 
-export function LookPreview({ items }: LookPreviewProps) {
+export function LookPreview({ items, onSwap, canSwap, swapLabel, swappingId }: LookPreviewProps) {
   const styles = useThemedStyles(makeStyles);
+  const { colors: c } = useTheme();
   const sorted = sortBySection(items);
   if (!sorted.length) {
     return <View style={styles.preview} />;
@@ -34,6 +43,13 @@ export function LookPreview({ items }: LookPreviewProps) {
           ) : (
             <View style={styles.previewPlaceholder} />
           )}
+          {onSwap && (!canSwap || canSwap(item)) ? (
+            <AppPressable accessibilityRole="button" accessibilityLabel={swapLabel?.(item)} accessibilityState={{ selected: swappingId === item.id }}
+              hitSlop={6} onPress={() => onSwap(item)}
+              style={[styles.swap, { backgroundColor: swappingId === item.id ? c.buttonPrimaryBg : c.card, borderColor: c.border }]}>
+              <ArrowRightLeft size={15} color={swappingId === item.id ? c.buttonPrimaryText : c.text} />
+            </AppPressable>
+          ) : null}
           <Text style={styles.caption} numberOfLines={1}>{item.name}</Text>
         </View>
       ))}
@@ -67,5 +83,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: 6,
     backgroundColor: c.surface
   },
-  caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 }
+  caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 },
+  swap: { position: 'absolute', top: 8, right: 8, width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }
 });
