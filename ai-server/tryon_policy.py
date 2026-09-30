@@ -79,8 +79,11 @@ def fit_instruction(tuck):
         return ('Fully tuck the top into the trousers or skirt all around the waist. '
                 'The waistband must be visible in front of the top; no loose hem over it and no half-tuck. ')
     if tuck == 'untucked':
-        return ('Wear the top completely untucked, with its full natural hem outside and over the waistband. '
-                'No front tuck, side tuck or half-tuck. Do not shorten the garment. ')
+        # Described as it looks: told only "untucked", the editor cropped a polo
+        # to end exactly at the belt.
+        return ('Wear the top completely untucked: its hem hangs loose outside the trousers at the garment\'s full natural '
+                'length, below the waistband, covering the waistband and the belt area, which are not visible. '
+                'No front tuck, side tuck or half-tuck. Do not shorten or crop the garment. ')
     return ''
 
 

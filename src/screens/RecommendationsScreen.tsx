@@ -50,7 +50,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const precipitation: Precipitation = precipitationChoice === 'auto' ? live?.precipitation ?? null : precipitationChoice === 'none' ? null : precipitationChoice;
   const gaps = useMemo(() => wardrobeGaps(items, { style, event, temperature, precipitation }, t), [items, style, event, temperature, precipitation, t]);
   const liveText = live ? t('Сейчас {temp}°C, {description}', { temp: Math.round(live.temperature), description: t(describeWeatherCode(live.code)) }) + (live.city ? ` · ${live.city}` : '')
-    : weatherLoading ? t('Определяем погоду…') : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.') : t('Погода недоступна');
+    : weatherLoading ? t('Определяем погоду…') : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.')
+    : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
   const looks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
     anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null

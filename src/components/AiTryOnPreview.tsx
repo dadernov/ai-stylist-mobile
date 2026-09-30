@@ -10,6 +10,7 @@ import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryO
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
+import { GenerationStage } from './GenerationStage';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X, Share2 } from 'lucide-react-native';
@@ -97,6 +98,9 @@ export function AiTryOnPreview({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
+  // The try-on happens in its own window that slides up on "Try on".
+  const [stageOpen, setStageOpen] = useState(false);
+  const [stageStartedAt, setStageStartedAt] = useState<number>();
   const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
   // What the shown picture is: a cheap draft ('fast') or the final ('quality').
   // Results saved before drafts existed carry no mode and were finals.
@@ -258,6 +262,8 @@ export function AiTryOnPreview({
   const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
     if (!(await aiConsent.ensure())) return;
+    setStageStartedAt(Date.now());
+    setStageOpen(true);
     setLoading(true);
     setError(null);
     setWarning(null);
@@ -432,6 +438,24 @@ export function AiTryOnPreview({
         {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
         <Text style={styles.buttonText}>{isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
       </AppPressable>
+
+      {stageOpen ? (
+        <GenerationStage
+          title={items.map(item => item.name).join(' + ')}
+          busy={isBusy}
+          busyLabel={busyLabel}
+          startedAt={stageStartedAt ?? pendingJob?.createdAt}
+          photoUri={intermediateUri || modelUri || null}
+          resultUri={isBusy ? null : resultUri}
+          error={isBusy ? null : error || (matchingJobs[0]?.error ? t(matchingJobs[0].error) : null)}
+          warning={warning ? warning.split(' · ').map(part => t(part)).join(' · ') : null}
+          saveState={saveState}
+          onSave={() => { void saveToGallery(); }}
+          onShare={() => { void shareResult(); }}
+          onRegenerate={() => { void run('quality', true); }}
+          onClose={() => setStageOpen(false)}
+        />
+      ) : null}
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>

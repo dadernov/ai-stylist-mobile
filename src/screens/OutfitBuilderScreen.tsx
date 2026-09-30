@@ -385,7 +385,8 @@ export function OutfitBuilderScreen({
         temp: Math.round(liveWeather.temperature), description: t(describeWeatherCode(liveWeather.code)), wind: Math.round(liveWeather.wind) }))
       + (liveWeather.city ? ` · ${liveWeather.city}` : '')
     : weatherLoading ? t('Определяем погоду…')
-    : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.') : t('Не удалось получить погоду. Проверь интернет.');
+    : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.')
+    : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Не удалось получить погоду. Проверь интернет.');
   const [looks, setLooks] = useState<GeneratedLook[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
