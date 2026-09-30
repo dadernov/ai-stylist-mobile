@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowRight, ArrowRightLeft, Check, ChevronDown, ChevronUp, Heart, Lightbulb, MapPin, RefreshCw, SlidersHorizontal, Thermometer } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
@@ -23,16 +23,19 @@ import { describeWeatherCode } from '../services/weather';
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
   onFavorite: (look: GeneratedLook) => void; onTryOn: (ids: string[]) => void; onWardrobe: () => void;
+  // Set from a garment's card: the ideas are then built around that garment.
+  anchorRequest?: { id: string; at: number };
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest }: Props) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
   const { colors: c } = useTheme();
   const [event, setEvent] = useState('Прогулка');
   const [style, setStyle] = useState('Кэжуал');
-  const [anchorId, setAnchorId] = useState('any');
+  const [anchorId, setAnchorId] = useState(anchorRequest?.id || 'any');
+  useEffect(() => { if (anchorRequest) setAnchorId(anchorRequest.id); }, [anchorRequest?.at]);
   const [weather, setWeather] = useState('');
   const [precipitationChoice, setPrecipitationChoice] = useState<PrecipitationChoice>('auto');
   // Погода подставляется сама, поэтому уточнения свёрнуты: образы видны без прокрутки.

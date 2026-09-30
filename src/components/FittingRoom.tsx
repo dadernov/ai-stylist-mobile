@@ -31,6 +31,10 @@ type Props = {
 const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
+// How many garments of a section one look can layer.
+// Two tops under one outer layer: more upper layers an editor does not keep.
+const LAYERS: Record<string, number> = { 'Верх': 2 };
+
 export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds }: Props) {
   // Фото для примерки выбирается прямо здесь, без перехода в профиль.
   const { pickPhoto, cropModal } = usePhotoPicker();
@@ -58,10 +62,15 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
     setSelectedIds(previous => {
       if (previous.includes(item.id)) return previous.filter(id => id !== item.id);
       if (mode === 'single') return [item.id];
+      // Two tops can be layered: the one chosen first is worn closer to the body.
+      // One more of a full section replaces the oldest of it.
+      const layers = LAYERS[item.section] || 1;
+      const sameSection = previous.filter(id => items.find(candidate => candidate.id === id)?.section === item.section);
+      const dropped = new Set(sameSection.slice(0, Math.max(0, sameSection.length - layers + 1)));
       return [...previous.filter(id => {
         const current = items.find(candidate => candidate.id === id);
-        if (!current || current.section === item.section) return false;
-        if (onePiece.has(item.category) && ['Верх', 'Низ'].includes(current.section)) return false;
+        if (!current || dropped.has(id)) return false;
+        if (onePiece.has(item.category) && ['Верх', 'Низ'].includes(current.section) && current.id !== item.id) return false;
         if (onePiece.has(current.category) && ['Верх', 'Низ'].includes(item.section)) return false;
         return true;
       }), item.id];
@@ -115,6 +124,9 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           ))}
           <AppPressable onPress={() => setSelectedIds([])}><Text style={styles.link}>{t('Очистить')}</Text></AppPressable>
         </View>
+      )}
+      {selection.filter(item => item.section === 'Верх').length > 1 && (
+        <Text style={styles.layerHint}>{t('Два слоя верха: первая выбранная вещь надевается ближе к телу, вторая поверх неё.')}</Text>
       )}
       {selection.length > 0 && <PrimaryButton title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
       <View style={styles.grid}>
@@ -205,6 +217,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
   filters: { gap: 0 },
   filter: { padding: 10, borderRadius: 6 },
+  layerHint: { color: c.muted, fontSize: 13, lineHeight: 18 },
   selected: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
   selectedItem: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%', borderWidth: 1, borderColor: c.border, borderRadius: 6, padding: 6 },
   selectedPhoto: { width: 32, height: 38, backgroundColor: c.surface, borderRadius: 3 },

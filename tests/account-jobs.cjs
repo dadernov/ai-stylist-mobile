@@ -33,6 +33,9 @@ const stubs = {
   'react-native': { Platform: { OS: 'ios' } },
   'expo-file-system/legacy': files,
   'expo-file-system': { File: class File { constructor(...parts) { this.uri = parts.join('/'); } write() {} get name() { return 'file'; } }, Paths: { cache: '/cache/' } },
+  // Try-on uploads are shrunk on the device; here every photo is already small.
+  'expo-image-manipulator': { SaveFormat: { JPEG: 'jpeg', PNG: 'png' }, ImageManipulator: { manipulate: () => ({
+    resize() { return this; }, renderAsync: async () => ({ width: 800, height: 1200, saveAsync: async () => ({ uri: 'file:///cache/small.jpg' }) }) }) } },
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'sha256' }, randomUUID: crypto.randomUUID,
     digestStringAsync: async (algorithm, value) => crypto.createHash(algorithm).update(value).digest('hex') }
 };
@@ -168,10 +171,26 @@ async function run() {
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('new-person', [item]));
     assert.notEqual(await tryOnContext('person', [item]), await tryOnContext('person', [{ ...item, section: 'Низ' }]));
   });
+  await test('two tops and two outer layers go as layers in the order they were chosen', async () => {
+    let sent;
+    submit = async (...args) => { sent = args; return response; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const garment = (id, section, category) => ({ ...item, id, name: id, section, category, imageUri: `data:image/png;base64,${id}` });
+    await store.start({ modelUri: 'person', context: 'layers', tuckMode: 'auto', items: [
+      garment('tee', 'Верх', 'Футболка'), garment('longsleeve', 'Верх', 'Лонгслив'),
+      garment('coat', 'Верхняя одежда', 'Плащ'), garment('vest', 'Верхняя одежда', 'Жилет')] });
+    assert.equal(sent[1], 'data:image/png;base64,tee', 'the first top is the base layer');
+    assert.equal(sent[8], 'Футболка');
+    assert.equal(sent[7], 'data:image/png;base64,coat');
+    assert.deepEqual(sent.at(-1), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
+      outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет' });
+    store.deactivate();
+  });
   await test('in-flight generation survives screen/account unmount and charges one request', async () => {
     const pending = deferred();
     let calls = 0;
-    submit = async (...args) => { calls++; assert.equal(args.at(-2).login, 'alice'); return pending.promise; };
+    submit = async (...args) => { calls++; assert.equal(args.at(-3).login, 'alice'); return pending.promise; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'context', tuckMode: 'auto' };
@@ -287,7 +306,7 @@ async function run() {
   });
   await test('regenerate gets a new ID; a rejected protected result is not displayed', async () => {
     const ids = [];
-    submit = async (...args) => { ids.push(args.at(-3)); return response; };
+    submit = async (...args) => { ids.push(args.at(-4)); return response; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'ctx', tuckMode: 'auto' };
@@ -362,7 +381,7 @@ async function run() {
   });
   await test('a draft goes out as fast, the final as quality, and each result remembers which it was', async () => {
     const sent = [];
-    submit = async (...args) => { sent.push({ quality: args[6], fresh: args.at(-1) }); return { ...response, updatedAt: 1000 + sent.length }; };
+    submit = async (...args) => { sent.push({ quality: args[6], fresh: args.at(-2) }); return { ...response, updatedAt: 1000 + sent.length }; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const look = { modelUri: 'person', items: [item], context: 'draft-final', tuckMode: 'auto' };
@@ -406,7 +425,7 @@ async function run() {
   });
   await test('fresh reaches the server only when asked', async () => {
     const flags = [];
-    submit = async (...args) => { flags.push(args.at(-1)); return response; };
+    submit = async (...args) => { flags.push(args.at(-2)); return response; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const look = { modelUri: 'person', items: [item], context: 'fresh', tuckMode: 'auto', quality: 'fast' };

@@ -248,6 +248,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
   const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
   const [tryOnItemIds, setTryOnItemIds] = useState<string[] | undefined>();
+  // A garment card asks the ideas to be built around that garment.
+  const [ideasAnchor, setIdeasAnchor] = useState<{ id: string; at: number } | undefined>();
   const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder' | 'history'>('fitting');
   const [historyItemId, setHistoryItemId] = useState<string>();
   const [wardrobeDetailId, setWardrobeDetailId] = useState<string>();
@@ -471,7 +473,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId}
         onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('builder'); }}
-        onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
+        onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }}
+        onStyleWith={item => { setIdeasAnchor({ id: item.id, at: Date.now() }); setActiveTab('recommendations'); }} />;
     }
     if (activeTab === 'builder')
       return (
@@ -516,7 +519,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen items={items} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+      return <RecommendationsScreen items={items} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
         onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}
         onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     if (activeTab === 'favorites')

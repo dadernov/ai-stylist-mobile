@@ -29,7 +29,10 @@ import httpx
 QUEUE_URL = 'https://queue.fal.run'
 # The order garments follow the photo in, inner to outer and top to bottom:
 # the prompt names each image by this position.
-LOOK_ORDER = ('top', 'bottom', 'outer', 'shoes')
+# A second top or outer layer (`top2`, `outer2`) is worn over the first one.
+# Upper layers follow the bottom from the inside out: an editor ignored a
+# "second top" placed right after the first, but layers outerwear reliably.
+LOOK_ORDER = ('top', 'bottom', 'top2', 'outer', 'outer2', 'shoes')
 BALANCE_ERROR = 'Примерочная временно недоступна: закончился баланс генерации. Попробуй позже.'
 BLOCKED_ERROR = 'Генератор отклонил фото. Попробуй другое фото или другие вещи.'
 TIMEOUT_ERROR = 'Генерация заняла слишком много времени. Попробуй ещё раз.'
@@ -66,6 +69,9 @@ MODELS = {model.key: model for model in (
 # specialised try-on model (Tstars-Tryon, arXiv 2604.19748): 9.30 vs 9.37 of 10
 # on one garment, 8.91 vs 9.17 on a whole outfit.
 DEFAULT_MODEL = 'seedream-5-lite'
+# The photo goes as it is: side bands made Seedream redraw the person larger
+# and stretched. Only a photo narrower than 1:3 is padded to 1:3.
+MIN_ASPECT = 1 / 3
 
 
 def enabled():

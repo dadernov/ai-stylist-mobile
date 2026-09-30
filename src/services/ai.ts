@@ -2,6 +2,7 @@ import { AI_BASE_URL, AI_CLIENT_TOKEN } from '../constants/ai';
 import { File } from 'expo-file-system';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { readStoredSession, Session } from './auth';
 import { fetchJson } from './http';
 import { translate } from '../constants/i18n';
@@ -118,7 +119,26 @@ const UPLOAD_ERROR = 'Не удалось прочитать выбранное 
 // Since SDK 57 the global fetch is Expo's: multipart parts must be strings,
 // Blobs or expo-file-system File objects. The old { uri, name, type } part
 // throws "Unsupported FormDataPart implementation".
-const appendPhoto = async (form: FormData, field: string, uri: string) => {
+// The server never uses more than 2048 px of a try-on photo, and a full-size
+// camera JPEG (3-8 MB) takes longer to upload over mobile data than the
+// analysis itself. PNG keeps its transparency; anything that fails to shrink
+// is sent as it is.
+const TRYON_UPLOAD_MAX_SIDE = 2048;
+const shrinkForUpload = async (fileUri: string, png: boolean) => {
+  try {
+    const rendered = await ImageManipulator.manipulate(fileUri).renderAsync();
+    const { width, height } = rendered;
+    if (Math.max(width, height) <= TRYON_UPLOAD_MAX_SIDE) return fileUri;
+    const resized = await ImageManipulator.manipulate(fileUri)
+      .resize(width >= height ? { width: TRYON_UPLOAD_MAX_SIDE } : { height: TRYON_UPLOAD_MAX_SIDE }).renderAsync();
+    const saved = await resized.saveAsync(png ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.9 });
+    return saved.uri;
+  } catch {
+    return fileUri;
+  }
+};
+
+const appendPhoto = async (form: FormData, field: string, uri: string, shrink = false) => {
   const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
   const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
   const extension = png ? 'png' : webp ? 'webp' : 'jpg';
@@ -150,6 +170,7 @@ const appendPhoto = async (form: FormData, field: string, uri: string) => {
   }
   // Expo's multipart encoder accepts any part with bytes(); File itself
   // exposes arrayBuffer() only, so wrap it with the name and type it needs.
+  if (shrink) fileUri = await shrinkForUpload(fileUri, png);
   const file = new File(fileUri);
   const part = {
     uri: fileUri,
@@ -245,16 +266,22 @@ export async function analyzeTryOnGenerateLook(
   owner?: Session,
   // true when the same garments are generated again: the user wants another
   // variant, so the server redoes every layer instead of reusing the base.
-  fresh = false
+  fresh = false,
+  // A second top or outer layer, worn over the first one.
+  layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string } = {}
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
-  await appendPhoto(form, 'person_file', personUri);
-  if (topUri) await appendPhoto(form, 'top_file', topUri);
-  if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri);
-  if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri);
-  if (outerUri) await appendPhoto(form, 'outer_file', outerUri);
+  await appendPhoto(form, 'person_file', personUri, true);
+  if (topUri) await appendPhoto(form, 'top_file', topUri, true);
+  if (layers.top2Uri) await appendPhoto(form, 'top2_file', layers.top2Uri, true);
+  if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri, true);
+  if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri, true);
+  if (outerUri) await appendPhoto(form, 'outer_file', outerUri, true);
+  if (layers.outer2Uri) await appendPhoto(form, 'outer2_file', layers.outer2Uri, true);
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
+  if (layers.top2Category) form.append('top2_category', layers.top2Category);
+  if (layers.outer2Category) form.append('outer2_category', layers.outer2Category);
   form.append('tuck_mode', tuckMode);
   // The app always asks for 'quality'; 'fast' drafts remain only in older history.
   form.append('quality_mode', qualityMode);

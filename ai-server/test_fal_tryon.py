@@ -324,6 +324,49 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['warning'], app.UNLOCKED_WARNING)
         self.assertEqual((result['identityLocked'], result['faceRestored']), (False, False))
 
+    async def test_layers_go_in_one_call_inner_to_outer(self):
+        result = await app.tryon_generate_look(
+            person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=photo('black'),
+            outer_file=photo('navy'), top2_file=photo('green'), outer2_file=photo('gray'),
+            tuck_mode='auto', compare_mode='false', quality_mode='quality', top_category='Футболка', outer_category='Пиджак',
+            top2_category='Лонгслив', outer2_category='Плащ', request_id='request_000000000009', async_mode='false', fresh='false',
+            device='masha')
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.generate.await_count, 1)
+        _client, model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
+        self.assertEqual(len(garment_urls), 6)
+        self.assertEqual(model.key, fal_tryon.DEFAULT_MODEL, 'six garments go to an editor that takes them all')
+        # Upper layers follow the bottom, inside out, and are described as outerwear:
+        # an editor dropped a "second top" but layered the same garment as outerwear.
+        for index, name in enumerate(('top: a t-shirt', 'lower-body garment', 'outerwear: a long-sleeve t-shirt',
+                                      'second layer, worn over the outerwear: a blazer',
+                                      'outermost layer, worn over everything: a raincoat', 'pair of shoes'), start=2):
+            self.assertIn(f'image {index} is the {name}', prompt)
+        self.assertIn('The result must show all 6 garments at once', prompt)
+        self.assertIn('Wear the outermost layer from image 6 open over the layers beneath it', prompt)
+        self.assertIn('The garment in image 6 is long', prompt)
+        self.assertIn('long_outer', self.protect.await_args.args[3] if self.protect.await_count else ['long_outer'])
+
+    async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
+        with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):
+            result = await app.tryon_generate_look(
+                person_file=photo('white'), top_file=photo('red'), bottom_file=None, shoes_file=None, outer_file=None,
+                top2_file=photo('green'), outer2_file=None, tuck_mode='auto', compare_mode='false', quality_mode='quality',
+                top_category='Футболка', outer_category='', top2_category='Лонгслив', outer2_category='',
+                request_id='request_000000000010', async_mode='false', fresh='false', device='masha')
+        self.assertEqual(result, {'error': 'Многослойные образы доступны только в новой примерке.'})
+        self.fashn.assert_not_awaited()
+
+    async def test_a_narrow_photo_goes_without_side_bands(self):
+        # Side bands made Seedream redraw the person larger and stretched.
+        narrow = BytesIO(); Image.new('RGB', (100, 260), 'white').save(narrow, format='PNG')
+        url = app._prepare_provider_frame(narrow.getvalue(), 1344, 92, fal_tryon.MIN_ASPECT)
+        width, height = Image.open(BytesIO(app._data_url_to_bytes(url)[0])).size
+        self.assertAlmostEqual(width / height, 100 / 260, delta=.01, msg='the photo keeps its own aspect')
+        extreme = BytesIO(); Image.new('RGB', (100, 400), 'white').save(extreme, format='PNG')
+        size = Image.open(BytesIO(app._data_url_to_bytes(app._prepare_provider_frame(extreme.getvalue(), 1344, 92, fal_tryon.MIN_ASPECT))[0])).size
+        self.assertAlmostEqual(size[0] / size[1], 1 / 3, delta=.01, msg='only a photo narrower than 1:3 is padded, to 1:3')
+
     async def test_bria_is_sent_its_short_instruction(self):
         with patch.dict(os.environ, {'TRYON_FAL_MODEL': 'bria-tryon'}):
             result = await self.look(outer=False)

@@ -16,12 +16,17 @@ PROVIDER_RATIO = 24 / 43
 TOLERANCE = .012
 
 
-def pad(image):
-    """Return (padded, box). The untouched original occupies `box` in `padded`."""
+def pad(image, ratio=PROVIDER_RATIO):
+    """Return (padded, box). The untouched original occupies `box` in `padded`.
+
+    `ratio` is the narrowest canvas the provider keeps: FASHN's 24:43 by
+    default. A general editor keeps the photo's own aspect down to about 1:3
+    and redraws a padded person at another scale, so it gets a smaller ratio.
+    """
     width, height = image.size
-    if width / height >= PROVIDER_RATIO * (1 - TOLERANCE):
+    if width / height >= ratio * (1 - TOLERANCE):
         return image, (0, 0, width, height)
-    target = int(round(height * PROVIDER_RATIO))
+    target = int(round(height * ratio))
     left = (target - width) // 2
     right = target - width - left
     pixels = np.asarray(image.convert('RGB'))

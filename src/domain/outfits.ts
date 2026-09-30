@@ -5,7 +5,17 @@ import { pickBeauty } from '../constants/beauty';
 
 export type Precipitation = 'rain' | 'snow' | null;
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
-export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator };
+export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator; now?: number };
+
+// A garment added in the last two weeks gets a head start that fades day by
+// day: without it the long-owned pieces keep every place in the ideas and a
+// newly added one never shows up. Wardrobe item ids are their creation time.
+const NEW_ITEM_DAYS = 14;
+export function noveltyBonus(item: WardrobeItem, now = Date.now()) {
+  if (!/^\d{13}$/.test(item.id)) return 0;
+  const days = (now - Number(item.id)) / 86_400_000;
+  return days < 0 || days >= NEW_ITEM_DAYS ? 0 : 4 * (1 - days / NEW_ITEM_DAYS);
+}
 
 /** Open-Meteo WMO code → осадки. 51–67, 80–82, 95–99 дождь; 71–77, 85–86 снег. */
 export function precipitationFromCode(code: number | null | undefined): Precipitation {
@@ -549,14 +559,15 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     if (context.precipitation === 'snow' && item.section === 'Обувь' && !closedWarmShoes.has(item.category) && hasWinterShoes) return false;
     return true;
   };
-  const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0);
+  const now = options.now ?? Date.now();
+  const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0) + noveltyBonus(item, now);
   const choose = (section: string, limit: number) => {
     if (anchor?.section === section) return [anchor];
     if (anchor && isOnePiece(anchor) && section === 'Низ') return [];
     return wardrobe.filter(item => item.section === section && eligible(item) && !(anchor?.section === 'Низ' && isOnePiece(item)))
       .sort((a, b) => preference(b) - preference(a)).slice(0, limit);
   };
-  const tops = choose('Верх', 6), bottoms = choose('Низ', 6), shoes = choose('Обувь', 4), outer = choose('Верхняя одежда', 4);
+  const tops = choose('Верх', 8), bottoms = choose('Низ', 8), shoes = choose('Обувь', 5), outer = choose('Верхняя одежда', 5);
   const bags = choose('Сумки', 2);
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];

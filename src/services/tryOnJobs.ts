@@ -149,10 +149,15 @@ export class TryOnJobStore {
     this.emit();
     try {
       await this.save();
-      const slot = (section: string) => input.items.find(i => i.section === section && i.imageUri);
-      const uri = (section: string) => { const item = slot(section); return item?.sourceImageUri || item?.imageUri; };
-      const response = await analyzeTryOnGenerateLook(input.modelUri, uri('Верх'), uri('Низ'), uri('Обувь'), job.tuckMode, false, qualityOf(job),
-        uri('Верхняя одежда'), slot('Верх')?.category, slot('Верхняя одежда')?.category, job.id, this.session, Boolean(input.fresh));
+      // Tops and outerwear may come in two layers, in the order they were chosen:
+      // the first is worn closer to the body.
+      const layers = (section: string) => input.items.filter(i => i.section === section && i.imageUri);
+      const uriOf = (item?: { sourceImageUri?: string; imageUri?: string }) => item?.sourceImageUri || item?.imageUri;
+      const [top, top2] = layers('Верх');
+      const [outer, outer2] = layers('Верхняя одежда');
+      const response = await analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
+        qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
+        { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category });
       if (await this.complete(job, response)) return;
     } catch (error: any) {
       if (error instanceof ApiError && error.status && error.status < 500) {

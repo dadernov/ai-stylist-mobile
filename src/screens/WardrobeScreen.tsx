@@ -34,7 +34,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult } from '../services/ai';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
@@ -45,6 +45,8 @@ type WardrobeScreenProps = {
   onItemsChange: (items: WardrobeItem[]) => void;
   onTryOn: (item: WardrobeItem) => void;
   onOpenHistory: (item: WardrobeItem) => void;
+  // Opens the ideas built around this garment.
+  onStyleWith?: (item: WardrobeItem) => void;
   initialDetailId?: string;
 };
 
@@ -271,7 +273,7 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
   );
 }
 
-export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, initialDetailId }: WardrobeScreenProps) {
+export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, onStyleWith, initialDetailId }: WardrobeScreenProps) {
   const Alert = useAppDialog();
   const aiConsent = useAiConsent();
   const styles = useThemedStyles(makeStyles);
@@ -674,6 +676,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                 </View>
               </View>
               {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
+              {onStyleWith ? <PrimaryButton title={t('Подобрать образы с этой вещью')} icon={Sparkles} variant="ghost" onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
               <AppPressable accessibilityRole="button" accessibilityLabel={t('История вещи: {count}', { count: historyCount })}
                 style={[styles.detailToolbar, { minHeight: 52, gap: 12, borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}
                 onPress={() => { setDetailId(null); onOpenHistory(detail); }}>
@@ -756,26 +759,22 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                   value={draftMaterial}
                   onChangeText={setDraftMaterial}
                 />
-                <PrimaryButton
-                  title={t('Сохранить')}
-                  onPress={() => handleSaveItem()}
-                  variant="gold"
-                  size="lg"
-                  disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
-                  style={styles.modalSave}
-                />
-                {!draftExistingId ? <PrimaryButton
-                  title={t('Сохранить и добавить ещё')}
-                  onPress={() => handleSaveItem(true)}
-                  variant="ghost"
-                  disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
-                /> : null}
-                <PrimaryButton
-                  title={t('Отмена')}
-                  onPress={closeDraft}
-                  variant="ghost"
-                  style={styles.modalCancel}
-                />
+                <View style={styles.modalActions}>
+                  <PrimaryButton
+                    title={t('Сохранить')}
+                    onPress={() => handleSaveItem()}
+                    variant="gold"
+                    size="lg"
+                    disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
+                  />
+                  {!draftExistingId ? <PrimaryButton
+                    title={t('Сохранить и добавить ещё')}
+                    onPress={() => handleSaveItem(true)}
+                    variant="primary"
+                    disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
+                  /> : null}
+                  <PrimaryButton title={t('Отмена')} onPress={closeDraft} variant="ghost" />
+                </View>
               </FormScrollView>
             </View>
             {isModalVisible && cropModal}
@@ -824,19 +823,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, i
                   value={editMaterial}
                   onChangeText={setEditMaterial}
                 />
-                <PrimaryButton
-                  title={t('Сохранить')}
-                  onPress={handleSaveEdit}
-                  variant="gold"
-                  size="lg"
-                  style={styles.modalSave}
-                />
-                <PrimaryButton
-                  title={t('Отмена')}
-                  onPress={() => setEditModalVisible(false)}
-                  variant="ghost"
-                  style={styles.modalCancel}
-                />
+                <View style={styles.modalActions}>
+                  <PrimaryButton title={t('Сохранить')} onPress={handleSaveEdit} variant="gold" size="lg" />
+                  <PrimaryButton title={t('Отмена')} onPress={() => setEditModalVisible(false)} variant="ghost" />
+                </View>
               </FormScrollView>
             </View>
           </View>
@@ -1163,11 +1153,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.accentGold,
     marginTop: 10
   },
-  modalSave: {
-    marginTop: 24
-  },
-  modalCancel: {
-    marginTop: 10
+  // Equal spacing between the save, save-and-add and cancel buttons.
+  modalActions: {
+    marginTop: 24,
+    gap: 10
   },
   modalChipsRow: {
     gap: 8,

@@ -179,3 +179,18 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   i18n.setActiveLang('ru');
   console.log('PASS: generated looks are written in the interface language');
 }
+
+{
+  // A garment added a day ago must reach the ideas even when the wardrobe
+  // already has many equally good ones; after two weeks it competes as usual.
+  const { noveltyBonus } = require('../src/domain/outfits.ts');
+  const now = Date.UTC(2026, 8, 30);
+  const tops = Array.from({ length: 12 }, (_, i) => item(`old-top-${i}`, 'Футболка', 'Верх'));
+  const fresh = item(String(now - 86_400_000), 'Футболка', 'Верх');
+  const wardrobe = [...tops, fresh, jeans, shoes];
+  const looks = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'male', false, { now });
+  assert.ok(looks.some(look => look.itemIds.includes(fresh.id)), 'a new top appears in the ideas');
+  assert.ok(noveltyBonus(fresh, now) > 3.5 && noveltyBonus(fresh, now + 20 * 86_400_000) === 0);
+  assert.equal(noveltyBonus(tops[0], now), 0, 'demo and imported ids get no bonus');
+  console.log('PASS: a newly added garment reaches the ideas, the head start fades in two weeks');
+}

@@ -645,6 +645,8 @@ export const en: Record<string, string> = {
   "Не удалось связать лицо с силуэтом человека.": "Couldn't match the face to the person's silhouette.",
   "Не удалось сгенерировать примерку.": "Couldn't generate the try-on.",
   "Надеваем весь образ…": "Putting on the whole look…",
+  "Два слоя верха: первая выбранная вещь надевается ближе к телу, вторая поверх неё.": "Two layered tops: the first one you picked is worn closer to the body, the second over it.",
+  "Подобрать образы с этой вещью": "Find looks with this item",
   "Генератор отклонил фото. Попробуй другое фото или другие вещи.": "The generator rejected the photo. Try another photo or other items.",
   "Генерация заняла слишком много времени. Попробуй ещё раз.": "Generation took too long. Please try again.",
   "Не удалось совместить результат с исходным фото. Исходное фото сохранено.": "Couldn't align the result with the original photo. Your original photo is kept.",

@@ -223,9 +223,9 @@ class AlignmentRejected(ValueError):
         self.frame = frame
 
 
-def _prepare_provider_frame(content: bytes, max_side: int, jpeg_quality: int):
+def _prepare_provider_frame(content: bytes, max_side: int, jpeg_quality: int, ratio=tryon_frame.PROVIDER_RATIO):
     """The photo on the provider's own canvas, so its result maps back 1:1."""
-    padded, _ = tryon_frame.pad(_working_image(content, max_side=min(max_side, 2048) if max_side > 0 else 2048))
+    padded, _ = tryon_frame.pad(_working_image(content, max_side=min(max_side, 2048) if max_side > 0 else 2048), ratio)
     buff = BytesIO()
     padded.convert('RGB').save(buff, format='JPEG', quality=jpeg_quality, optimize=True, icc_profile=image_color.SRGB_BYTES)
     return _bytes_to_data_url(buff.getvalue(), 'image/jpeg')
@@ -242,17 +242,17 @@ def _unlocked_output_url(original_content: bytes, frame: Image.Image):
     return _bytes_to_data_url(buff.getvalue(), 'image/png')
 
 
-def _source_framed(prepared, generated_image: Image.Image):
+def _source_framed(prepared, generated_image: Image.Image, ratio=tryon_frame.PROVIDER_RATIO):
     """A provider frame in the photo's coordinates (the padded canvas cropped away)."""
     original = prepared[0]
-    padded, box = tryon_frame.pad(original)
+    padded, box = tryon_frame.pad(original, ratio)
     return tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
 
 
-def _face_only_output_url(generated_image: Image.Image, prepared):
+def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_frame.PROVIDER_RATIO):
     """The editor's whole frame with the photo's own face, or None to fall back to the full lock."""
     try:
-        framed = _source_framed(prepared, generated_image)
+        framed = _source_framed(prepared, generated_image, ratio)
     except Exception as exc:
         print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
         return None
@@ -656,10 +656,10 @@ FAL_GARMENT_SIDE = 1024
 FAL_JPEG_QUALITY = 92
 
 
-async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed):
+async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None):
     """One call for the whole look: the photo first, then each garment."""
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
-    person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY)
+    person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY, fal_tryon.MIN_ASPECT)
     decoded = _data_url_to_bytes(person_url)
     frame_size = Image.open(BytesIO(decoded[0])).size if decoded else None
     garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
@@ -667,7 +667,7 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     if model.family == 'bria':
         prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
     else:
-        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS)
+        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories)
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
@@ -1259,11 +1259,16 @@ async def tryon_generate_look(
     bottom_file: UploadFile | None = File(None),
     shoes_file: UploadFile | None = File(None),
     outer_file: UploadFile | None = File(None),
+    # A second layer worn over the first top or the first outerwear.
+    top2_file: UploadFile | None = File(None),
+    outer2_file: UploadFile | None = File(None),
     tuck_mode: str = Form("auto"),
     compare_mode: str = Form("false"),
     quality_mode: str = Form("quality"),
     top_category: str = Form(""),
     outer_category: str = Form(""),
+    top2_category: str = Form(""),
+    outer2_category: str = Form(""),
     request_id: str = Form(""),
     async_mode: str = Form("false"),
     fresh: str = Form("false"),
@@ -1297,12 +1302,20 @@ async def tryon_generate_look(
         bottom_content, bottom_mime = await read_upload(bottom_file, "bottom_file")
         shoes_content, shoes_mime = await read_upload(shoes_file, "shoes_file")
         outer_content, outer_mime = await read_upload(outer_file, "outer_file")
+        # Optional layers, as the request_id below: a direct call gets Form/File defaults.
+        top2_content, top2_mime = await read_upload(top2_file if isinstance(top2_file, UploadFile) else None, "top2_file")
+        outer2_content, outer2_mime = await read_upload(outer2_file if isinstance(outer2_file, UploadFile) else None, "outer2_file")
+        top2_category = top2_category if isinstance(top2_category, str) else ''
+        outer2_category = outer2_category if isinstance(outer2_category, str) else ''
+        layered = bool(top2_content or outer2_content)
 
-        if not any((top_content, bottom_content, shoes_content, outer_content)):
+        if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content)):
             return {"error": "Выбери хотя бы одну вещь для примерки."}
         # With TRYON_PROVIDER=fal the whole look is one call to a general editor
         # (fal_tryon); otherwise FASHN dresses one garment per call.
-        fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content) if content)) if use_fal else None
+        if layered and not use_fal:
+            return {"error": "Многослойные образы доступны только в новой примерке."}
+        fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content) if content)) if use_fal else None
         if fal_model:
             look_model_name = f'fal:{fal_model.key}'
 
@@ -1319,6 +1332,9 @@ async def tryon_generate_look(
             base_prompt,
             f'{profile.name}|{profile.mode}|{profile.resolution}',
             f"{top_category.strip()}|{outer_category.strip()}"
+            + (f"|{top2_category.strip()}|{outer2_category.strip()}|"
+               + '|'.join(hashlib.sha256(content).hexdigest() if content else '-' for content in (top2_content, outer2_content))
+               if layered else '')
         )
         request_id = request_id if isinstance(request_id, str) else ''
         if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
@@ -1328,8 +1344,11 @@ async def tryon_generate_look(
         seed = int(hashlib.sha256(job_id.encode()).hexdigest()[:8], 16) % 2147483647
         garments = {slot: (content, mime) for slot, content, mime in [
             ('top', top_content, top_mime), ('bottom', bottom_content, bottom_mime),
-            ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime)
+            ('outer', outer_content, outer_mime), ('shoes', shoes_content, shoes_mime),
+            ('top2', top2_content, top2_mime), ('outer2', outer2_content, outer2_mime)
         ] if content}
+        slot_categories = {'top': top_category.strip(), 'outer': outer_category.strip(),
+                           'top2': top2_category.strip(), 'outer2': outer2_category.strip()}
         stage_total = 1 if fal_model or _look_strategy() == 'collage' else len(garments)
         # Layers shared with an earlier look of this person are taken from the
         # layer cache instead of being paid for again. `fresh` is set by the app
@@ -1390,7 +1409,7 @@ async def tryon_generate_look(
                     jobs.attempt(device, job_id, cost)
                     step_started = time.monotonic()
                     result = await _run_fal_look(client, fal_model, person_content, garments, top_category.strip(),
-                                                 outer_category.strip(), tuck_mode_normalized, seed)
+                                                 outer_category.strip(), tuck_mode_normalized, seed, slot_categories)
                     elapsed = round(time.monotonic() - step_started, 2)
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
@@ -1439,8 +1458,9 @@ async def tryon_generate_look(
                             preview_url = None
                 await publish(names, stage='composite', preview_url=preview_url)
 
-            changed_slots = sorted(tryon_policy.composite_slot(slot, outer_category if slot == 'outer' else top_category)
-                                   for slot in garments)
+            # A second layer changes the same body region as the first one.
+            changed_slots = sorted({tryon_policy.composite_slot(slot.rstrip('2'), slot_categories.get(slot, '') if slot != 'bottom' and slot != 'shoes' else '')
+                                    for slot in garments})
 
             composite_started = time.monotonic()
             warning = None
@@ -1450,7 +1470,7 @@ async def tryon_generate_look(
                 if fal_model and fal_tryon.face_only():
                     # The editor's scene is kept whole; only the face is the photo's.
                     frame = last_frame or await _load_image_from_url_or_data_url(output_client, current_model)
-                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity) if frame is not None else None
+                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT) if frame is not None else None
                     if restored:
                         locked_output_url, face_restored, locked = restored, True, False
                         print('Try-on composite: face-restored', flush=True)
