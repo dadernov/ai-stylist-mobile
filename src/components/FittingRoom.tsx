@@ -1,7 +1,7 @@
 import { usePhotoPicker } from './usePhotoPicker';
 import { useMemo, useState } from 'react';
 import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { ArrowUpRight, Check, Layers2, Pencil, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, Pencil, Save, Search, UserRound, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook, TryOnHistoryItem } from '../types/looks';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -47,7 +47,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   const t = useT();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
-  const [mode, setMode] = useState<'single' | 'outfit'>(initialItemIds?.length ? 'outfit' : 'single');
   const [selectedIds, setSelectedIds] = useState<string[]>(initialItemIds || (initialItemId ? [initialItemId] : []));
   const [section, setSection] = useState('Все');
   const [search, setSearch] = useState('');
@@ -61,7 +60,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   const toggle = (item: WardrobeItem) => {
     setSelectedIds(previous => {
       if (previous.includes(item.id)) return previous.filter(id => id !== item.id);
-      if (mode === 'single') return [item.id];
       // Two tops can be chosen; the server layers them in their natural order.
       // One more of a full section replaces the oldest of it.
       const layers = LAYERS[item.section] || 1;
@@ -87,17 +85,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           <Text style={styles.muted}>{t(modelUri ? 'Из профиля' : 'Фото ещё не добавлено')}</Text>
         </View>
         <IconButton icon={modelUri ? Pencil : ArrowUpRight} label={t(modelUri ? 'Заменить фото' : 'Добавить фото')} onPress={() => { void pickModel(); }} />
-      </View>
-      <View style={styles.modes} accessibilityRole="tablist">
-        {(['single', 'outfit'] as const).map(value => (
-          <AppPressable key={value} accessibilityRole="tab" accessibilityState={{ selected: mode === value }} style={[styles.mode, mode === value && styles.activeMode]} onPress={() => {
-            setMode(value);
-            if (value === 'single') setSelectedIds(ids => ids.slice(-1));
-          }}>
-            {value === 'single' ? <Shirt size={17} strokeWidth={1.5} color={mode === value ? colors.accentGold : colors.muted} /> : <Layers2 size={17} strokeWidth={1.5} color={mode === value ? colors.accentGold : colors.muted} />}
-            <Text style={[styles.text, mode === value && { color: colors.accentGold, fontWeight: '600' }]}>{t(value === 'single' ? 'Одна вещь' : 'Комплект')}</Text>
-          </AppPressable>
-        ))}
       </View>
       <View style={styles.row}>
         <Text style={styles.heading}>{t('Вещи для примерки')}</Text>
@@ -209,9 +196,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingBottom: 16, borderBottomWidth: 1, borderColor: c.border },
   person: { width: 68, height: 88, backgroundColor: c.surface, borderRadius: 6 },
   personEmpty: { width: 68, height: 88, backgroundColor: c.surface, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  modes: { flexDirection: 'row', borderBottomWidth: 1, borderColor: c.border, paddingBottom: 16, gap: 10 },
-  mode: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 12, borderRadius: 6 },
-  activeMode: { backgroundColor: c.accentGoldSoft },
   search: { color: c.text, borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 12, fontSize: 14 },
   searchBar: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: c.surface, borderRadius: 8, paddingHorizontal: 14, height: 44 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
