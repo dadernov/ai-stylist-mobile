@@ -475,6 +475,13 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tryon_policy.upper_roles(3), tryon_policy.UPPER_ROLES)
         self.assertEqual(tryon_policy.upper_roles(4)[2], 'third layer, worn over the second layer')
 
+    def test_the_person_always_faces_the_camera_in_their_own_size(self):
+        # A back-print T-shirt turned the body round; a bulky coat in the photo made everything broad.
+        prompt = tryon_policy.look_prompt(['top', 'bottom', 'shoes'], 'Футболка', '', 'auto', {}, {})
+        self.assertIn('Never turn the person or show them from behind', prompt)
+        self.assertIn('its back print, back pockets and back seams stay on the person\'s back', prompt)
+        self.assertIn('never make the person broader', prompt)
+
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):
             result = await app.tryon_generate_look(

@@ -133,7 +133,17 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
                  'size and angle in the frame, so the result can be laid over image 1 pixel for pixel. '
                  'Do not crop, zoom, move, turn, slim or retouch the person. '
                  # A pendant from a bare-chested photo kept showing on top of every new top.
-                 'Remove any necklace, chain or pendant the person wears in image 1: no jewellery is visible on the new clothes. ')
+                 'Remove any necklace, chain or pendant the person wears in image 1: no jewellery is visible on the new clothes. '
+                 # A T-shirt photographed from the back turned the whole body round:
+                 # back pockets and elbows to the front under the user's own face.
+                 'The person faces the camera exactly as in image 1: the face, chest, stomach, knees and toes point forward, '
+                 'and the arms and hands keep their pose. Never turn the person or show them from behind. A garment image may show '
+                 'the back of the garment: then its back print, back pockets and back seams stay on the person\'s back, out of sight, '
+                 'and the front of the garment is what shows. '
+                 # A bulky coat in the photo made every new garment as broad as the coat.
+                 'Every garment fits the person\'s real body closely, as it would in life, in the person\'s own size: the shoulders, '
+                 'chest, waist and hips keep the person\'s own width. The volume of the clothes worn in image 1 is not part of the body: '
+                 'never make the person broader. ')
 
 
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
