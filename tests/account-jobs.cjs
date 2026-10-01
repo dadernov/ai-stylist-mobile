@@ -217,7 +217,7 @@ async function run() {
     assert.equal(sent[7], 'data:image/png;base64,coat');
     assert.deepEqual(sent.at(-2), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
       outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет',
-      top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined });
+      top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined, legwearUri: undefined });
     await store.start({ modelUri: 'person', context: 'four tops', tuckMode: 'auto', items: [
       garment('hoodie', 'Верх', 'Худи'), garment('tee', 'Верх', 'Футболка'), garment('shirt', 'Верх', 'Рубашка'),
       garment('sweater', 'Верх', 'Свитер')] });
@@ -242,6 +242,19 @@ async function run() {
       'by slot, without "auto" and without what a garment cannot do');
     const job = store.getSnapshot().jobs.find(entry => entry.context === 'options');
     assert.deepEqual(job.options, { tee: { tuck: 'tucked' }, shirt: { fasten: 'open' }, coat: { fasten: 'closed' } }, 'kept for another variant');
+    store.deactivate();
+  });
+  await test('tights go under the skirt as their own layer, never as the bottom', async () => {
+    let sent;
+    submit = async (...args) => { sent = args; return response; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const garment = (id, section, category) => ({ ...item, id, name: id, section, category, imageUri: `data:image/png;base64,${id}` });
+    // Picked first, the tights still are not the skirt.
+    await store.start({ modelUri: 'person', context: 'tights', tuckMode: 'auto', items: [garment('tights', 'Низ', 'Колготки'),
+      garment('skirt', 'Низ', 'Юбка'), garment('blouse', 'Верх', 'Блуза'), garment('boots', 'Обувь', 'Сапоги')] });
+    assert.equal(sent[2], 'data:image/png;base64,skirt', 'the skirt is the bottom');
+    assert.equal(sent.at(-2).legwearUri, 'data:image/png;base64,tights');
     store.deactivate();
   });
   await test('in-flight generation survives screen/account unmount and charges one request', async () => {

@@ -400,6 +400,7 @@ export const en: Record<string, string> = {
   "Брюки": "Trousers",
   "Шорты": "Shorts",
   "Леггинсы": "Leggings",
+  "Колготки": "Tights",
   "Джоггеры": "Joggers",
   "Кроссовки": "Sneakers",
   "Кеды": "Canvas shoes",

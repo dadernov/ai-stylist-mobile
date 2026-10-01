@@ -16,6 +16,7 @@ import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
 import { RecentTryOns } from './RecentTryOns';
 import { PhotoAdvice } from './PhotoAdvice';
+import { isLegwear } from '../domain/legwear';
 
 type Props = {
   items: WardrobeItem[];
@@ -72,8 +73,10 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       // Upper layers can be combined; the server puts them on in their natural order.
       // One more of a full section, or of a full upper body, replaces the oldest of it.
       const sectionOf = (id: string) => items.find(candidate => candidate.id === id)?.section || '';
+      // Tights pair with a skirt or a dress instead of replacing them.
+      const groupOf = (candidate?: WardrobeItem) => candidate ? isLegwear(candidate) ? 'legwear' : candidate.section : '';
       const layers = LAYERS[item.section] || 1;
-      const sameSection = previous.filter(id => sectionOf(id) === item.section);
+      const sameSection = previous.filter(id => groupOf(items.find(candidate => candidate.id === id)) === groupOf(item));
       const dropped = new Set(sameSection.slice(0, Math.max(0, sameSection.length - layers + 1)));
       if (UPPER.includes(item.section)) {
         const upper = previous.filter(id => UPPER.includes(sectionOf(id)) && !dropped.has(id));
@@ -82,8 +85,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       return [...previous.filter(id => {
         const current = items.find(candidate => candidate.id === id);
         if (!current || dropped.has(id)) return false;
-        if (onePiece.has(item.category) && ['Верх', 'Низ'].includes(current.section) && current.id !== item.id) return false;
-        if (onePiece.has(current.category) && ['Верх', 'Низ'].includes(item.section)) return false;
+        if (onePiece.has(item.category) && ['Верх', 'Низ'].includes(current.section) && !isLegwear(current) && current.id !== item.id) return false;
+        if (onePiece.has(current.category) && ['Верх', 'Низ'].includes(item.section) && !isLegwear(item)) return false;
         return true;
       }), item.id];
     });

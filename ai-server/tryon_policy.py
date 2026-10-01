@@ -115,6 +115,9 @@ def garment_prompt(slot, category='', tuck='auto', keep_outer_open=False):
 
 
 def composite_slot(slot, category=''):
+    if slot == 'legwear':
+        # Tights change the legs, as trousers would.
+        return 'bottom'
     if slot == 'outer' and category in LONG_OUTER:
         return 'long_outer'
     if slot == 'top' and category in ONE_PIECE:
@@ -122,11 +125,17 @@ def composite_slot(slot, category=''):
     return slot
 
 
+# The classifier's names describe a typical photo of each category; in a prompt
+# they become orders. "A crop top" cut a long sleeveless top off at the ribs.
+PROMPT_NOUNS = {'Топ': 'a sleeveless top'}
+
+
 # A general image editor sees the photo and every garment at once (fal_tryon).
 # One instruction names each image by its position and carries the same rules
 # as the single-garment prompts above.
 LOOK_NAMES = {'top': 'top', 'top2': 'outerwear', 'top3': 'outerwear', 'top4': 'outerwear', 'bottom': 'lower-body garment',
-              'outer': 'outerwear', 'outer2': 'outermost layer, worn over the outerwear', 'shoes': 'pair of shoes'}
+              'outer': 'outerwear', 'outer2': 'outermost layer, worn over the outerwear', 'shoes': 'pair of shoes',
+              'legwear': 'pair of tights'}
 LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same canvas, framing, camera angle and zoom, '
                  'pose, face, expression, hair, skin, body shape, hands and background. '
                  'Image 1 is the exact canvas of the result: the head, face and body keep exactly the same position, '
@@ -137,7 +146,10 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
                  # A T-shirt photographed from the back turned the whole body round:
                  # back pockets and elbows to the front under the user's own face.
                  'The person faces the camera exactly as in image 1: the face, chest, stomach, knees and toes point forward, '
-                 'and the arms and hands keep their pose. Never turn the person or show them from behind. A garment image may show '
+                 # Told only "keep their pose", hands clasped at the waist came out as arms folded on the chest in three runs of six.
+                 'and the arms and hands stay exactly where they are in image 1: hands held together in front stay together at the '
+                 'same height, hands in pockets stay in the pockets, hanging arms keep hanging; the arms are never folded, crossed or '
+                 'moved to another place. Never turn the person or show them from behind. A garment image may show '
                  'the back of the garment: then its back print, back pockets and back seams stay on the person\'s back, out of sight, '
                  'and the front of the garment is what shows. '
                  # A bulky coat in the photo made every new garment as broad as the coat.
@@ -190,12 +202,22 @@ def garment_options(raw, categories):
     return chosen
 
 
-def fasten_instruction(state, noun, image, under=None):
+# A tailored jacket closes at the waist under open lapels: told to close "up to
+# the collar", a blazer stayed wide open over the top.
+TAILORED = {'Пиджак'}
+
+
+def fasten_instruction(state, noun, image, under=None, category=''):
     """How a garment the user chose to fasten or open is worn; `under` names what it closes over.
 
     Said right after the outfit, as part of it: told last, "fully closed" left a
     trench open as in its photo, the editor keeping the shirt under it in sight.
     """
+    if state == 'closed' and category in TAILORED:
+        over = f' over the {under}' if under else ''
+        shown = f'only the neckline of the {under}' if under else 'only the neckline'
+        return (f'The {noun} from image {image} is worn buttoned{over}: its front button is fastened at the waist, the two fronts '
+                f'overlap there and fall closed to the hem; above the button the lapels open in a V that shows {shown}. ')
     if state == 'closed':
         if under:
             # Overlapping panels describe a buttoned coat; a zipped jacket told so stayed open or half zipped.
@@ -207,6 +229,20 @@ def fasten_instruction(state, noun, image, under=None):
                 'only the top button may stay open. ')
     return (f'The {noun} from image {image} is worn open: every button or the zip is undone '
             'and its front panels hang apart, showing the clothes under it. ')
+
+
+def legwear_instruction(image, shoes):
+    """Tights go on the bare legs: under the skirt or dress, into the shoes.
+
+    Told only not to shorten the dress, the editor showed the tights anyway: it
+    cut a midi skirt above the knee or turned its tulle see-through.
+    """
+    return (f'The tights from image {image} are worn on both legs from the waist down to the toes, under the skirt, dress or shorts '
+            f'and {"inside the shoes" if shoes else "over the feet"}. They show only where the legs show, below the hem; a long skirt '
+            'or dress simply hides them. The skirt or dress keeps exactly its own length, fullness and opacity from its image: it is '
+            'never shortened, lifted or made see-through to show the tights. '
+            f'The tights keep the colour, sheerness and texture of image {image}: through sheer tights the skin shows as a soft even '
+            f'tint, opaque tights hide it; the light and shadow on the legs in image {image} are no stripes or pattern. ')
 
 
 def layer_tuck_instruction(state, noun, image):
@@ -243,7 +279,8 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]
     fastening = ''.join(
         fasten_instruction(options[slot]['fasten'], noun_of(slot), image[slot],
-                           under=noun_of(stack[stack.index(slot) - 1]) if stack.index(slot) > 0 else None)
+                           under=noun_of(stack[stack.index(slot) - 1]) if stack.index(slot) > 0 else None,
+                           category=categories.get(slot, ''))
         for slot in stack if options.get(slot, {}).get('fasten'))
     text = ('Virtual try-on. Image 1 is a full-length photo of a person. '
             f'Dress this person in the outfit from the other images: {"; ".join(described)}. {fastening}'
@@ -268,6 +305,8 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
                  'below that hem only the trousers show. ')
     if 'bottom' in slots:
         text += TROUSERS
+    if 'legwear' in slots:
+        text += legwear_instruction(image['legwear'], 'shoes' in slots)
     # A sweater or a hoodie over other tops goes on over the head: the layers
     # under it are closed and show only at its neckline, the ones over it are
     # open over it. Looks without one read exactly as before.

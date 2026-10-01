@@ -281,9 +281,11 @@ def _similarity(source, target):
 
 
 HEAD_LABELS = [1, 2, 3, 11]  # hat, hair, sunglasses, face in the clothes parsing
+CLOTHES_LABELS = [4, 5, 6, 7, 17]  # upper clothes, skirt, pants, dress, scarf
 
 
-def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face, source_labels=None, generated_labels=None):
+def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face, source_labels=None, generated_labels=None,
+                    relaxed=False):
     """Put the photo's own face into a frame whose head moved or resized a little.
 
     A general image editor redraws the whole picture: the head comes back ~10%
@@ -315,8 +317,11 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     residual = np.linalg.norm(source @ matrix[:, :2].T + matrix[:, 2] - target, axis=1).max()
     # Measured on Seedream frames: scale .87-1.10, residual under 3% of the face
     # width. A turned head or another expression moves the landmarks apart.
-    if not .8 <= scale <= 1.25 or angle > 10 or residual > max(3., width * .05):
-        raise AlignmentError('face-transplant-mismatch')
+    # `relaxed` is the second try before the full lock, which relights the whole
+    # frame: a residual of 5.3% sent a look there and turned black tights green.
+    low, high, turn, spread = (.75, 1.33, 15, .09) if relaxed else (.8, 1.25, 10, .05)
+    if not low <= scale <= high or angle > turn or residual > max(3., width * spread):
+        raise AlignmentError(f'face-transplant-mismatch scale={scale:.2f} angle={angle:.1f} residual={residual / max(width, 1):.3f}')
     mask = Image.new('L', original.size, 0)
     centre_x, centre_y = x + width / 2, y + height * .56
     ImageDraw.Draw(mask).ellipse((centre_x - width * .44, centre_y - height * .56,
@@ -330,19 +335,45 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         extent = (xx >= x - .65 * width) & (xx <= x + 1.65 * width) & (yy >= y - .9 * height) & (yy <= y + height)
         region |= np.isin(source_labels, HEAD_LABELS) & extent
     alpha = cv2.warpAffine(region.astype(np.float32), matrix, generated.size, flags=cv2.INTER_LINEAR)
+    ghost = None
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # The editor's own hair outside the photo's head would stay as a second
         # outline; the photo's scene there (a wall, mostly) covers it.
         gx, gy, gw, gh = faces[0].box
         yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
         extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + gh)
-        alpha = np.maximum(alpha, (np.isin(generated_labels, HEAD_LABELS) & extent).astype(np.float32))
+        ghost = np.isin(generated_labels, HEAD_LABELS) & extent
     # Grow the mask before feathering: a feather that starts at the hair line
     # leaves the editor's strands half visible, a ghost beside the real hair.
     grow = max(3, round(width * .08))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 2 + 1, grow * 2 + 1))
-    alpha = cv2.dilate((alpha > .5).astype(np.uint8), kernel).astype(np.float32)
-    alpha = cv2.GaussianBlur(alpha, (0, 0), max(2., width * .04))
+    feather = lambda mask: cv2.GaussianBlur(cv2.dilate(mask.astype(np.uint8), kernel).astype(np.float32), (0, 0), max(2., width * .04))
+    alpha = feather(alpha > .5)
+    if ghost is not None:
+        # Long hair below the jaw fades back to the editor's instead of ending
+        # at a hard line across both sides of the head.
+        alpha = np.maximum(alpha, feather(ghost) * np.clip((gy + gh - yy) / (.45 * gh), 0, 1))
+    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
+        # A hood or a high collar now hugs the jaw: the photo's wall there came
+        # back as white patches beside the chin. Only the photo's own head may
+        # cover the new clothes, and the photo's scene may cover only the
+        # editor's stray hair or background, never its skin or clothes.
+        generated_labels = np.asarray(generated_labels)
+        own_head = region if source_labels is None or np.asarray(source_labels).shape != region.shape \
+            else np.isin(source_labels, HEAD_LABELS)
+        own_head = cv2.warpAffine(own_head.astype(np.uint8), matrix, generated.size, flags=cv2.INTER_NEAREST).astype(bool)
+        # The photo's outline is half wall: over the new clothes it shows as a light rim.
+        rim = max(2, round(width * .03))
+        own_head = cv2.erode(own_head.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (rim * 2 + 1, rim * 2 + 1))).astype(bool)
+        keep = np.isin(generated_labels, CLOTHES_LABELS) & ~own_head
+        if source_labels is not None and np.asarray(source_labels).shape == region.shape:
+            scene = ~cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
+                                    flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
+            # Below the mouth the editor's dark "background" beside the jaw is the
+            # inside of a hood or a collar the parser cannot tell from a shadow.
+            below_mouth = np.arange(alpha.shape[0])[:, None] > target[3:, 1].mean()
+            keep |= scene & (~np.isin(generated_labels, (0, 2)) | (below_mouth & (generated_labels == 0)))
+        alpha *= 1 - cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
     frame = np.asarray(generated.convert('RGB'))

@@ -2,6 +2,7 @@ import { WardrobeItem } from '../data/mock';
 import { GeneratedLook } from '../types/looks';
 import { Gender } from '../types/profile';
 import { pickBeauty } from '../constants/beauty';
+import { isLegwear } from './legwear';
 
 export type Precipitation = 'rain' | 'snow' | null;
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
@@ -9,8 +10,8 @@ export type RecommendationOptions = { anchorId?: string; excludedIds?: string[];
   // Cores (lookCore) of looks the user put aside with "Not now": they sink, not vanish.
   dismissed?: string[] };
 
-/** What makes a look itself: its tops and bottom. The same core with other shoes is the same look. */
-export const lookCore = (items: WardrobeItem[]) => items.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => item.id).sort().join(',');
+/** What makes a look itself: its tops and bottom. The same core with other shoes or tights is the same look. */
+export const lookCore = (items: WardrobeItem[]) => items.filter(item => ['Верх', 'Низ'].includes(item.section) && !isLegwear(item)).map(item => item.id).sort().join(',');
 
 // A garment added in the last two weeks gets a head start that fades day by
 // day: without it the long-owned pieces keep every place in the ideas and a
@@ -69,6 +70,7 @@ const garments: Record<string, Garment> = {
   Брюки: { section: 'Низ', formality: 4, warmth: 2, volume: 2 },
   Шорты: { section: 'Низ', formality: 1, warmth: 0, volume: 2, sporty: true },
   Леггинсы: { section: 'Низ', formality: 1, warmth: 1, volume: 1, sporty: true },
+  Колготки: { section: 'Низ', formality: 3, warmth: 1, volume: 1 },
   Джоггеры: { section: 'Низ', formality: 1, warmth: 2, volume: 3, sporty: true },
   Кроссовки: { section: 'Обувь', formality: 2, warmth: 2, volume: 2, sporty: true },
   Кеды: { section: 'Обувь', formality: 2, warmth: 1, volume: 2 },
@@ -86,6 +88,11 @@ const garments: Record<string, Garment> = {
 const fallbackGarment: Garment = { section: 'Верх', formality: 3, warmth: 2, volume: 2 };
 const describe = (item: WardrobeItem): Garment => garments[item.category] || fallbackGarment;
 const isOnePiece = (item: WardrobeItem) => Boolean(describe(item).onePiece);
+// Trousers, a skirt or shorts: the look's bottom. Tights are worn under one.
+const isBottom = (item: WardrobeItem) => item.section === 'Низ' && !isLegwear(item);
+// What tights go with: a skirt or a dress, not trousers or a jumpsuit.
+const SKIRTS = new Set(['Юбка', 'Мини-юбка', 'Миди-юбка', 'Макси-юбка', 'Платье', 'Сарафан']);
+const TIGHTS_BELOW = 15;
 // Кавычки тоже зависят от языка: «ёлочки» в русском, “лапки” в английском и китайском.
 const named = (item: WardrobeItem, t: Translator) => t('«{name}»', { name: item.name });
 const list = (items: WardrobeItem[], t: Translator) => items.map(item => named(item, t)).join(', ');
@@ -341,6 +348,8 @@ function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, t
     if (section === 'Сумки' || warmthOf(item) > Math.max(0, comfort - 3)) return false;
     if (section === 'Верх' && warmOuter) return false;
     if (section === 'Низ' && temperature > -12 && !['Шорты', 'Юбка'].includes(item.category)) return false;
+    // Tights under the skirt keep the legs warm down to a light frost.
+    if (item.category === 'Юбка' && temperature > -5 && items.some(isLegwear)) return false;
     return true;
   });
   const tooWarm = items.filter(item => warmthOf(item) >= comfort + 3);
@@ -378,7 +387,7 @@ function precipitationAdvice(outer: WardrobeItem | undefined, shoes: WardrobeIte
 
 export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
   const top = items.find(item => item.section === 'Верх');
-  const bottom = items.find(item => item.section === 'Низ');
+  const bottom = items.find(isBottom);
   const shoes = items.find(item => item.section === 'Обувь');
   const outer = items.find(item => item.section === 'Верхняя одежда');
   const completePiece = items.some(isOnePiece);
@@ -440,7 +449,7 @@ const statusOf = (value: number): CriterionStatus => value >= 0.8 ? 'good' : val
 export function evaluateLook(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
   const wearables = items.filter(item => describe(item).section !== 'Сумки');
   const top = items.find(item => item.section === 'Верх');
-  const bottom = items.find(item => item.section === 'Низ');
+  const bottom = items.find(isBottom);
   const shoes = items.find(item => item.section === 'Обувь');
   const outer = items.find(item => item.section === 'Верхняя одежда');
   const onePiece = items.some(isOnePiece);
@@ -528,15 +537,15 @@ export function wardrobeGaps(items: WardrobeItem[], context: OutfitContext, t: T
   const has = (predicate: (item: WardrobeItem) => boolean) => items.some(predicate);
   const gaps: string[] = [];
   if (!has(item => item.section === 'Верх')) gaps.push(t('верха'));
-  if (!has(item => item.section === 'Низ' || isOnePiece(item))) gaps.push(t('брюк, юбки или платья'));
+  if (!has(item => isBottom(item) || isOnePiece(item))) gaps.push(t('брюк, юбки или платья'));
   if (!has(item => item.section === 'Обувь')) gaps.push(t('обуви'));
   if (context.event === 'Спортзал') {
     if (!has(item => item.section === 'Верх' && Boolean(describe(item).sporty))) gaps.push(t('спортивного верха'));
-    if (!has(item => item.section === 'Низ' && Boolean(describe(item).sporty))) gaps.push(t('спортивного низа'));
+    if (!has(item => isBottom(item) && Boolean(describe(item).sporty))) gaps.push(t('спортивного низа'));
     if (!has(item => item.section === 'Обувь' && Boolean(describe(item).sporty))) gaps.push(t('кроссовок'));
   } else if (targetFormality(context) >= 4) {
     if (!has(item => item.section === 'Верх' && describe(item).formality >= 4)) gaps.push(t('рубашки или блузы'));
-    if (!has(item => (item.section === 'Низ' || isOnePiece(item)) && describe(item).formality >= 4)) gaps.push(t('брюк, юбки или платья построже'));
+    if (!has(item => (isBottom(item) || isOnePiece(item)) && describe(item).formality >= 4)) gaps.push(t('брюк, юбки или платья построже'));
     if (!has(item => item.section === 'Обувь' && describe(item).formality >= 4)) gaps.push(t('строгой обуви (лоферы, туфли)'));
   }
   if (context.temperature !== null && context.temperature < 5 && !has(item => item.section === 'Верхняя одежда' && warmthOf(item) >= 4)) gaps.push(t('тёплой верхней одежды'));
@@ -585,6 +594,8 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   const context: OutfitContext = { style, event, temperature, gender, precipitation: options.precipitation ?? null, wind: options.wind ?? null };
   const wardrobe = Array.from(new Map(items.map(item => [item.id, item])).values()).filter(item => !options.excludedIds?.includes(item.id));
   const anchor = wardrobe.find(item => item.id === options.anchorId);
+  // Ideas around tights are skirts and dresses worn with them.
+  const tightsAnchor = anchor && isLegwear(anchor) ? anchor : null;
   const hasWinterShoes = wardrobe.some(item => item.section === 'Обувь' && closedWarmShoes.has(item.category));
   const hasWarmOuter = wardrobe.some(item => item.section === 'Верхняя одежда' && warmthOf(item) >= 4);
   const eligible = (item: WardrobeItem) => {
@@ -602,11 +613,15 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   const now = options.now ?? Date.now();
   const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0) + noveltyBonus(item, now);
   const choose = (section: string, limit: number) => {
-    if (anchor?.section === section) return [anchor];
+    if (anchor?.section === section && !tightsAnchor) return [anchor];
     if (anchor && isOnePiece(anchor) && section === 'Низ') return [];
-    return wardrobe.filter(item => item.section === section && eligible(item) && !(anchor?.section === 'Низ' && isOnePiece(item)))
+    return wardrobe.filter(item => item.section === section && eligible(item) && !isLegwear(item)
+        && !(anchor?.section === 'Низ' && !tightsAnchor && isOnePiece(item)) && !(tightsAnchor && section === 'Низ' && !SKIRTS.has(item.category)))
       .sort((a, b) => preference(b) - preference(a)).slice(0, limit);
   };
+  // Tights join a skirt or a dress on a cool day, or always when asked for.
+  const tights = tightsAnchor || (temperature !== null && temperature < TIGHTS_BELOW && event !== 'Спортзал'
+    ? wardrobe.filter(item => isLegwear(item) && eligible(item)).sort((a, b) => preference(b) - preference(a))[0] : undefined);
   // A vest asked for as the base of the ideas goes over a top that suits it.
   const anchorOver = anchor?.section === 'Верх' && needsBase(anchor, gender) ? anchor : null;
   const tops = anchorOver ? wardrobe.filter(item => item.section === 'Верх' && eligible(item) && canLayer(item, anchorOver))
@@ -627,6 +642,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     for (const shoe of optional(shoes)) for (const layer of anchor?.section === 'Верхняя одежда' ? outer : [null, ...outer]) {
       const selection = [top, mid, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
       if (!selection.length) continue;
+      if (tightsAnchor && !selection.some(item => SKIRTS.has(item.category))) continue;
       let score = selection.reduce((total, item) => total + preference(item), 0) + paletteScore(selection);
       if (top) score += 12;
       if (top && mid) {
@@ -693,6 +709,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   const sunk = (look: GeneratedLook) => Boolean(options.dismissed?.includes(lookCore(look.itemIds.map(id => wardrobe.find(item => item.id === id)!).filter(Boolean))));
   return selected.map((candidate, index) => {
     const selection = [...candidate.items];
+    if (tights && selection.some(item => SKIRTS.has(item.category))) selection.push(tights);
     if (bags.length && (anchor?.section === 'Сумки' || (event !== 'Спортзал' && itemScore(bags[0], context) >= -4))) selection.push(bags[0]);
     const t = options.t || originalText;
     const advice = getOutfitAdvice(selection, context, t);
@@ -714,7 +731,7 @@ export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem
   for (const from of selection) {
     if (from.id === anchorId) continue;
     for (const to of wardrobe) {
-      if (current.has(to.id) || to.section !== from.section || isOnePiece(from) !== isOnePiece(to)) continue;
+      if (current.has(to.id) || to.section !== from.section || isOnePiece(from) !== isOnePiece(to) || isLegwear(from) !== isLegwear(to)) continue;
       if (context.event === 'Спортзал' && !describe(to).sporty) continue;
       const replaced = selection.map(item => item.id === from.id ? to : item);
       const gain = itemScore(to, context) - itemScore(from, context) + paletteScore(replaced) - paletteScore(selection);

@@ -376,6 +376,27 @@ class FaceTransplant(unittest.TestCase):
         np.testing.assert_array_equal(result[700, 50], [30, 160, 60], 'hair, body and background stay the generator\'s')
         np.testing.assert_array_equal(result[20, 380], [30, 160, 60])
 
+    def test_a_hood_around_the_jaw_stays_the_new_garment(self):
+        # The photo's white wall beside the chin came back over a black hood.
+        original = np.full((800, 400, 3), 250, np.uint8)
+        original[64:114, 180:220] = (200, 150, 120)
+        source_labels = np.zeros((800, 400), np.uint8)
+        source_labels[64:114, 180:220] = 11
+        generated = np.full((800, 400, 3), 250, np.uint8)
+        generated[50:160, 160:240] = (10, 10, 10)
+        generated[64:114, 180:220] = (190, 140, 110)
+        generated_labels = np.zeros((800, 400), np.uint8)
+        generated_labels[50:160, 160:240] = 4
+        generated_labels[64:114, 180:220] = 11
+        generated_labels[104:120, 168:180] = 0  # the dark inside of the hood, read as background
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]):
+            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
+                                                           source_labels, generated_labels)).astype(int)
+        self.assertLess(result[119, 200].max(), 40, f'the hood under the chin, got {result[119, 200]}')
+        self.assertLess(result[100, 176].max(), 40, f'the hood beside the jaw, got {result[100, 176]}')
+        self.assertLess(result[112, 174].max(), 40, f'the inside of the hood below the mouth, got {result[112, 174]}')
+        self.assertGreater(result[90, 200][0], 180, 'the face itself is still the photo\'s')
+
     def test_a_turned_head_or_other_expression_is_refused(self):
         original, generated = self.scene()
         points = face().landmarks.copy()
@@ -383,6 +404,21 @@ class FaceTransplant(unittest.TestCase):
         with patch.object(face_guard, 'detect_faces', return_value=[self.moved(1., (0, 0), points)]), \
                 self.assertRaises(face_guard.AlignmentError):
             face_guard.transplant_face(original, generated, face())
+
+    def test_a_slightly_different_expression_passes_only_the_relaxed_try(self):
+        # Just over the strict limit the full lock relit the frame and turned black tights green.
+        original, generated = self.scene()
+        points = face().landmarks.copy()
+        points[3] += (0, 6)  # a mouth corner lower: a residual of 3.5 px on a 40 px face
+        with patch.object(face_guard, 'detect_faces', return_value=[self.moved(1., (0, 0), points)]):
+            with self.assertRaisesRegex(face_guard.AlignmentError, 'face-transplant-mismatch'):
+                face_guard.transplant_face(original, generated, face())
+            face_guard.transplant_face(original, generated, face(), relaxed=True)
+        turned = face().landmarks.copy()
+        turned[2] += (9, 0)
+        with patch.object(face_guard, 'detect_faces', return_value=[self.moved(1., (0, 0), turned)]), \
+                self.assertRaises(face_guard.AlignmentError):
+            face_guard.transplant_face(original, generated, face(), relaxed=True)
 
     def test_a_much_larger_head_is_refused(self):
         original, generated = self.scene()

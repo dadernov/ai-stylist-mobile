@@ -47,6 +47,7 @@ CATEGORIES = [
     ("Брюки", "Низ", "tailored trousers or chinos"),
     ("Шорты", "Низ", "shorts"),
     ("Леггинсы", "Низ", "tight athletic leggings"),
+    ("Колготки", "Низ", "sheer nylon tights or pantyhose"),
     ("Джоггеры", "Низ", "sweatpants or joggers with elastic cuffs"),
     ("Кроссовки", "Обувь", "athletic sneakers or running shoes"),
     ("Кеды", "Обувь", "canvas sneakers with a flat rubber sole"),
@@ -71,7 +72,7 @@ PATTERNS = [
 SHORT_NAMES = ["a t-shirt", "a polo shirt", "a long-sleeve t-shirt", "a button-up shirt", "a blouse", "a crop top", "a tank top",
                "a turtleneck", "a sweater", "a hoodie", "a sweatshirt", "a cardigan", "a vest", "a blazer", "a bomber jacket",
                "a jacket", "an overcoat", "a trench coat", "a raincoat", "a puffer jacket", "a parka", "a dress", "a sundress",
-               "a jumpsuit", "a skirt", "jeans", "trousers", "shorts", "leggings", "sweatpants", "sneakers", "canvas shoes",
+               "a jumpsuit", "a skirt", "jeans", "trousers", "shorts", "leggings", "tights", "sweatpants", "sneakers", "canvas shoes",
                "loafers", "dress shoes", "ankle boots", "sandals", "knee-high boots", "ballet flats", "a handbag", "a backpack", "a clutch bag"]
 
 SCENES = ['a person wearing clothes', 'a clothing product alone without a person']
@@ -165,7 +166,7 @@ def extract_palette(image: Image.Image, mask: Image.Image, count=5):
 def _season_for(category, section):
     if category in {"Пуховик", "Парка", "Шуба"}:
         return "Зима"
-    if section == "Верхняя одежда" or category in {"Ботинки", "Сапоги", "Свитер", "Водолазка"}:
+    if section == "Верхняя одежда" or category in {"Ботинки", "Сапоги", "Свитер", "Водолазка", "Колготки"}:
         return "Демисезон"
     if category in {"Шорты", "Сарафан", "Сандалии", "Топ", "Майка"}:
         return "Лето"

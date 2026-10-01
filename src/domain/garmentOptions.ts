@@ -1,4 +1,5 @@
 import { WardrobeItem } from '../data/mock';
+import { isLegwear } from './legwear';
 
 /**
  * How a garment is worn in a try-on, set per garment: a top tucked in or out,
@@ -14,9 +15,9 @@ export type GarmentOptions = Record<string, GarmentOption>;
 const TUCKABLE = new Set(['Футболка', 'Поло', 'Лонгслив', 'Рубашка', 'Блуза', 'Топ', 'Майка', 'Водолазка', 'Свитер', 'Свитшот']);
 const FASTENABLE = new Set(['Рубашка', 'Блуза', 'Кардиган', 'Жилет', 'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 'Тренч', 'Плащ', 'Пуховик', 'Парка', 'Шуба']);
 
-/** A top can be tucked only into trousers or a skirt of the same look. */
+/** A top can be tucked only into trousers or a skirt of the same look; tights are no waistband for it. */
 export const canTuck = (item: WardrobeItem, look: WardrobeItem[]) =>
-  TUCKABLE.has(item.category) && look.some(other => other.section === 'Низ');
+  TUCKABLE.has(item.category) && look.some(other => other.section === 'Низ' && !isLegwear(other));
 export const canFasten = (item: WardrobeItem) => FASTENABLE.has(item.category);
 
 /** The choices that mean something for this look, without 'auto'. */

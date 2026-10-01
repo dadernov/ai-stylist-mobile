@@ -265,3 +265,37 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   }
   console.log('PASS: layers only in real pairs, no vest on bare skin, no shorts or sandals on cool days');
 }
+
+{
+  // Tights: kept with the bottoms, worn under a skirt or a dress, never as trousers.
+  const { canTuck } = require('../src/domain/garmentOptions.ts');
+  const tights = item('tights', 'Колготки', 'Низ', { color: 'Черный' }), skirt = item('skirt', 'Юбка', 'Низ', { color: 'Черный' });
+  const trousers = item('trousers', 'Брюки', 'Низ', { color: 'Черный' }), dress = item('dress2', 'Платье', 'Верх', { color: 'Черный' });
+  const blouse = item('blouse', 'Блуза', 'Верх'), boots = item('boots', 'Сапоги', 'Обувь', { color: 'Черный' });
+  const wardrobe = [tights, skirt, trousers, dress, blouse, boots];
+  const byId = Object.fromEntries(wardrobe.map(entry => [entry.id, entry]));
+  for (const temperature of [-3, 8, 25]) {
+    for (const look of buildLooks(wardrobe, 'Классика', 'Работа', '', temperature, 'female')) {
+      const categories = look.itemIds.map(id => byId[id].category);
+      if (look.itemIds.includes('tights')) {
+        assert.ok(categories.some(category => ['Юбка', 'Платье'].includes(category)), `tights only with a skirt or a dress: ${categories}`);
+        assert.ok(!categories.includes('Брюки'), 'never under trousers');
+        assert.ok(temperature < 15, 'tights wait for a cool day');
+      } else if (temperature < 15) {
+        assert.ok(!categories.some(category => ['Юбка', 'Платье'].includes(category)), `a skirt on a cool day comes with the tights: ${categories}`);
+      }
+      assert.ok(!(categories.includes('Колготки') && !categories.includes('Юбка') && !categories.includes('Платье') && categories.includes('Блуза')),
+        'tights are never the bottom of a blouse');
+    }
+  }
+  for (const look of buildLooks(wardrobe, 'Классика', 'Работа', '', 20, 'female', false, { anchorId: 'tights' })) {
+    assert.ok(look.itemIds.includes('tights'), 'the ideas around tights wear them');
+    assert.ok(look.itemIds.some(id => ['Юбка', 'Платье'].includes(byId[id].category)), 'with a skirt or a dress');
+  }
+  assert.ok(!canTuck(blouse, [blouse, tights]), 'a blouse is not tucked into tights');
+  assert.ok(canTuck(blouse, [blouse, tights, skirt]));
+  const cold = getOutfitAdvice([blouse, skirt, tights, boots], { style: '', event: '', temperature: 2 });
+  const bare = getOutfitAdvice([blouse, skirt, boots], { style: '', event: '', temperature: 2 });
+  assert.ok(all(cold).length < all(bare).length || !all(cold).includes(skirt.name), 'tights keep the legs of a skirt warm');
+  console.log('PASS: tights go with skirts and dresses on cool days, never as the bottom');
+}

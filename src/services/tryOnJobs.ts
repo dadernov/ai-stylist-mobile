@@ -8,6 +8,7 @@ import { accountKey } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
 import { effectiveOptions, GarmentOptions } from '../domain/garmentOptions';
+import { isLegwear } from '../domain/legwear';
 
 export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
   // A draft ('fast') or the final ('quality'). Jobs saved before drafts existed have none and were finals.
@@ -175,14 +176,18 @@ export class TryOnJobStore {
       const uriOf = (item?: { sourceImageUri?: string; imageUri?: string }) => item?.sourceImageUri || item?.imageUri;
       const [top, top2, top3, top4] = layers('Верх');
       const [outer, outer2] = layers('Верхняя одежда');
+      // Tights go under the skirt or dress, not in its place.
+      const bottom = layers('Низ').find(item => !isLegwear(item));
+      const legwear = layers('Низ').find(isLegwear);
       // The server takes each garment's choices by its upload slot.
       const chosen = effectiveOptions(input.items, input.options);
       const slotOptions = Object.fromEntries(([['top', top], ['top2', top2], ['top3', top3], ['top4', top4], ['outer', outer], ['outer2', outer2]] as const)
         .filter(([, item]) => item && chosen[item.id]).map(([slot, item]) => [slot, chosen[item!.id]]));
-      const response = await withTimeout(analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
+      const response = await withTimeout(analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(bottom), uriOf(layers('Обувь')[0]), job.tuckMode, false,
         qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
         { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category,
-          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category }, slotOptions),
+          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category,
+          legwearUri: uriOf(legwear) }, slotOptions),
         SUBMIT_TIMEOUT_MS, SUBMIT_TIMEOUT_ERROR);
       if (await this.complete(job, response)) return;
     } catch (error: any) {

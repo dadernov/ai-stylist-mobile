@@ -288,7 +288,9 @@ export async function analyzeTryOnGenerateLook(
   fresh = false,
   // Further tops and a second outer layer, worn over the first ones.
   layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string;
-    top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string } = {},
+    top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string;
+    // Tights, worn under the skirt or dress.
+    legwearUri?: string } = {},
   // How each garment is worn, by upload slot: { top: { tuck: 'tucked' }, outer: { fasten: 'closed' } }.
   garmentOptions: Record<string, { tuck?: string; fasten?: string }> = {}
 ): Promise<TryOnGenerateResult> {
@@ -299,6 +301,7 @@ export async function analyzeTryOnGenerateLook(
   if (layers.top3Uri) await appendPhoto(form, 'top3_file', layers.top3Uri, true);
   if (layers.top4Uri) await appendPhoto(form, 'top4_file', layers.top4Uri, true);
   if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri, true);
+  if (layers.legwearUri) await appendPhoto(form, 'legwear_file', layers.legwearUri, true);
   if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri, true);
   if (outerUri) await appendPhoto(form, 'outer_file', outerUri, true);
   if (layers.outer2Uri) await appendPhoto(form, 'outer2_file', layers.outer2Uri, true);

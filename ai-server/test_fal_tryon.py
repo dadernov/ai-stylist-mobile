@@ -481,6 +481,9 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Never turn the person or show them from behind', prompt)
         self.assertIn('its back print, back pockets and back seams stay on the person\'s back', prompt)
         self.assertIn('never make the person broader', prompt)
+        # Hands clasped at the waist came out as arms folded on the chest.
+        self.assertIn('hands held together in front stay together at the same height', prompt)
+        self.assertIn('the arms are never folded, crossed or moved to another place', prompt)
 
     async def options_look(self, request, options, bottom=True, **layers):
         fields = dict(top_file=None, top2_file=None, top3_file=None, top4_file=None, outer_file=None, outer2_file=None,
@@ -536,6 +539,43 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
                                               top_file=photo('white'), top_category='Футболка')
         self.assertNotIn('tuck the top', no_trousers.lower(), 'nothing to tuck into without trousers')
 
+    async def test_a_buttoned_blazer_closes_at_the_waist_under_open_lapels(self):
+        # Told to close "up to the collar", a blazer stayed wide open over the top.
+        prompt = await self.options_look('request_000000000088', {'outer': {'fasten': 'closed'}},
+                                         top_file=photo('black'), top_category='Топ', outer_file=photo('navy'), outer_category='Пиджак')
+        self.assertIn('The blazer from image 4 is worn buttoned over the sleeveless top: its front button is fastened at the waist', prompt)
+        self.assertIn('the lapels open in a V that shows only the neckline of the sleeveless top', prompt)
+        self.assertNotIn('zipped or buttoned all the way up', prompt)
+
+    async def test_a_top_is_not_called_a_crop_top(self):
+        # Named so, a long sleeveless top was cut off at the ribs.
+        prompt = await self.options_look('request_000000000089', {}, top_file=photo('black'), top_category='Топ')
+        self.assertIn('image 2 is the top: a sleeveless top', prompt)
+        self.assertNotIn('crop top', prompt)
+
+    async def test_tights_go_under_the_dress_and_into_the_shoes(self):
+        result = await app.tryon_generate_look(
+            person_file=photo('white'), top_file=photo('red'), bottom_file=None, shoes_file=photo('black'), outer_file=None,
+            legwear_file=photo('gray'), tuck_mode='auto', compare_mode='false', quality_mode='quality',
+            top_category='Платье', outer_category='', request_id='request_000000000090', async_mode='false', fresh='false', device='masha')
+        self.assertEqual(result['status'], 'succeeded', result)
+        _client, _model, _person, garment_urls, prompt, _seed = self.generate.await_args.args
+        self.assertEqual(len(garment_urls), 3)
+        self.assertIn('image 2 is the top: one-piece garment; image 3 is the pair of tights; image 4 is the pair of shoes', prompt)
+        self.assertIn('The tights from image 3 are worn on both legs from the waist down to the toes', prompt)
+        self.assertIn('inside the shoes', prompt)
+        self.assertIn('never shortened, lifted or made see-through to show the tights', prompt)
+        self.assertEqual(self.protect.await_args.args[3], ['bottom', 'one_piece', 'shoes'], 'tights change the legs')
+
+    async def test_a_skirt_with_tights_keeps_both(self):
+        await app.tryon_generate_look(
+            person_file=photo('white'), top_file=photo('red'), bottom_file=photo('blue'), shoes_file=None, outer_file=None,
+            legwear_file=photo('gray'), tuck_mode='auto', compare_mode='false', quality_mode='quality',
+            top_category='Блуза', outer_category='', request_id='request_000000000091', async_mode='false', fresh='false', device='masha')
+        prompt = self.generate.await_args.args[4]
+        self.assertIn('image 3 is the lower-body garment; image 4 is the pair of tights', prompt)
+        self.assertIn('over the feet', prompt, 'without shoes the tights cover the feet')
+
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):
             result = await app.tryon_generate_look(
@@ -545,6 +585,12 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
                 request_id='request_000000000010', async_mode='false', fresh='false', device='masha')
         self.assertEqual(result, {'error': 'Многослойные образы доступны только в новой примерке.'})
         self.fashn.assert_not_awaited()
+        with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):
+            tights = await app.tryon_generate_look(
+                person_file=photo('white'), top_file=photo('red'), bottom_file=None, shoes_file=None, outer_file=None,
+                legwear_file=photo('gray'), tuck_mode='auto', compare_mode='false', quality_mode='quality',
+                top_category='Платье', outer_category='', request_id='request_000000000011', async_mode='false', fresh='false', device='masha')
+        self.assertEqual(tights, {'error': 'Многослойные образы доступны только в новой примерке.'}, 'tights need the new try-on too')
 
     async def test_a_narrow_photo_goes_without_side_bands(self):
         # Side bands made Seedream redraw the person larger and stretched.
@@ -569,6 +615,31 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             result = await self.look()
         self.assertEqual(result, {'error': 'FASHN_API_KEY is not set'})
         self.generate.assert_not_awaited()
+
+
+
+class FaceRestore(unittest.TestCase):
+    def test_a_face_just_over_the_limit_is_tried_again_before_the_full_lock(self):
+        # The full lock relit the whole frame and turned black tights green for a residual of 5.3% against 5%.
+        import numpy as np
+        import face_guard
+        labels = np.zeros((128, 64), np.uint8)
+        prepared = (Image.new('RGB', (64, 128)), None, [face_guard.Face((20, 10, 20, 24), np.zeros((5, 2)))], labels)
+        calls = []
+
+        def transplant(*args, relaxed=False):
+            calls.append(relaxed)
+            if not relaxed:
+                raise face_guard.AlignmentError('face-transplant-mismatch scale=0.93 angle=2.1 residual=0.053')
+            return Image.new('RGB', (64, 128))
+        with patch.object(app.face_guard, 'transplant_face', side_effect=transplant), \
+                patch.object(app.footwear_guard, 'parse', return_value=labels):
+            self.assertTrue(app._face_restored_output_url(Image.new('RGB', (64, 128)), prepared).startswith('data:image/png'))
+            self.assertEqual(calls, [False, True])
+        calls.clear()
+        with patch.object(app.face_guard, 'transplant_face', side_effect=face_guard.AlignmentError('face-not-found')), \
+                patch.object(app.footwear_guard, 'parse', return_value=labels):
+            self.assertIsNone(app._face_restored_output_url(Image.new('RGB', (64, 128)), prepared), 'no face is not retried')
 
 
 if __name__ == '__main__':
