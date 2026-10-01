@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, Modal, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Check, Download, RefreshCw, Share2, X } from 'lucide-react-native';
+import { Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
@@ -88,7 +88,7 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                 {/* While the look generates the cross folds the window into the corner. */}
                 <AppPressable accessibilityRole="button" accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close}
                   style={[styles.close, { borderColor: c.border }]}>
-                  <X size={20} color={c.text} />
+                  {busy ? <ChevronDown size={22} color={c.text} /> : <X size={20} color={c.text} />}
                 </AppPressable>
               </View>
 

@@ -419,16 +419,19 @@ export function AiTryOnPreview({
       ) : null}
       {/* One button: every try-on is the full-quality look (one call, one price).
           Drafts made earlier stay labelled in the history. */}
+      {/* While the look generates the button brings its window back: the window
+          may have been folded away, and this is the way to it from here. */}
       <AppPressable
-        style={[styles.button, (!canGenerate || isBusy) && styles.buttonDisabled]}
-        onPress={() => void run('quality', Boolean(resultUri))}
-        disabled={!canGenerate || isBusy}
+        style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
+        onPress={() => pendingJob ? dock.open(pendingJob.id) : void run('quality', Boolean(resultUri))}
+        disabled={pendingJob ? false : !canGenerate || isBusy}
         accessibilityRole="button"
-        accessibilityState={{ disabled: !canGenerate || isBusy, busy: isBusy }}
+        accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
       >
         {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
-        <Text style={styles.buttonText}>{isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+        <Text style={styles.buttonText}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
       </AppPressable>
+      {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
 
 
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>

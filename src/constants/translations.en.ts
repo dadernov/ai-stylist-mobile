@@ -660,6 +660,7 @@ export const en: Record<string, string> = {
   "Очередь: {position}": "Queue: {position}",
   "Развернуть примерку: {name}": "Expand the try-on: {name}",
   "Отправка…": "Sending…",
+  "Открыть генерацию": "Open the generation",
   "Ошибка": "Error",
   "Убрать из списка": "Remove from the list",
   "Отправляем фото…": "Sending the photos…",

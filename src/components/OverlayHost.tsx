@@ -34,6 +34,11 @@ class OverlayStore {
 }
 
 const StoreContext = createContext<OverlayStore | null>(null);
+// Where a window is drawn: over the screens at the app root, or over a sheet.
+const PlaceContext = createContext<'root' | 'sheet'>('root');
+
+/** 'sheet' when drawn inside a sheet's outlet: a floating window then sits at the sheet's own bottom. */
+export const useOverlayPlace = () => useContext(PlaceContext);
 
 export function OverlayProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => new OverlayStore());
@@ -62,5 +67,7 @@ export function OverlayOutlet() {
 function Outlet({ store, id }: { store: OverlayStore; id: string | null }) {
   useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
   if (store.top() !== id) return null;
-  return <>{store.nodes().map(([key, node]) => <Fragment key={key}>{node}</Fragment>)}</>;
+  return <PlaceContext.Provider value={id === null ? 'root' : 'sheet'}>
+    {store.nodes().map(([key, node]) => <Fragment key={key}>{node}</Fragment>)}
+  </PlaceContext.Provider>;
 }

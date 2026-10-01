@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertCircle, Check, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
 import { useT } from '../constants/i18n';
@@ -12,7 +13,7 @@ import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
 import { GenerationStage } from './GenerationStage';
-import { useOverlay } from './OverlayHost';
+import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
 
 type DockApi = { open: (jobId: string) => void };
@@ -118,12 +119,16 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     />
   ) : null;
   const inline = useOverlay('generation-stage', stage);
+  // The folded window floats over whatever is on top too: drawn under the
+  // try-on sheet it could be neither seen nor reached until the sheet closed.
+  const mini = dockJobs.length > 0 && !openJob ? (
+    <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={open} onDismiss={dismiss} />
+  ) : null;
+  const miniInline = useOverlay('generation-mini', mini);
   return (
     <DockContext.Provider value={api}>
       {children}
-      {dockJobs.length && !openJob ? (
-        <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={open} onDismiss={dismiss} />
-      ) : null}
+      {miniInline ? mini : null}
       {inline ? stage : null}
     </DockContext.Provider>
   );
@@ -134,6 +139,9 @@ function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }
   onOpen: (id: string) => void; onDismiss: (id: string) => void;
 }) {
   const { colors: c } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Over the screens it sits above the tab bar; over a sheet, at the sheet's own bottom.
+  const offset = useOverlayPlace() === 'root' ? bottom : insets.bottom + 24;
   const [page, setPage] = useState(0);
   const appear = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -143,7 +151,7 @@ function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) =>
     setPage(Math.round(event.nativeEvent.contentOffset.x / MINI_WIDTH));
   return (
-    <Animated.View style={[styles.mini, SHADOWS.floating, { bottom, backgroundColor: c.card, borderColor: c.border, opacity: appear,
+    <Animated.View style={[styles.mini, SHADOWS.floating, { bottom: offset, backgroundColor: c.card, borderColor: c.border, opacity: appear,
       transform: [{ scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }] }]}>
       <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32}>
         {jobs.map(job => <MiniPage key={job.id} job={job} modelUri={modelUri} startedAt={startedAt[job.id]} onOpen={onOpen} onDismiss={onDismiss} />)}
