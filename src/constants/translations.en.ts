@@ -257,6 +257,7 @@ export const en: Record<string, string> = {
   "Не видно лица. Выбери фото, где ты в полный рост и лицом к камере, иначе лицо может получиться не твоим.": "Your face is not visible. Pick a full-length photo facing the camera, or the face may not come out as yours.",
   "Не видно стоп, поэтому обувь не примерится. Сними себя целиком, с полом под ногами.": "Your feet are not visible, so shoes can't be tried on. Take a full-length photo with the floor under your feet.",
   "Рука поднята к голове, поэтому куртки и рубашки могут лечь криво. Лучше опусти руки вдоль тела.": "An arm is raised to your head, so jackets and shirts may sit badly. Better keep your arms down by your sides.",
+  "Кисти спрятаны в рукавах или карманах, поэтому на примерке их тоже не будет видно. Лучше фото, где руки свободны.": "Your hands are hidden in sleeves or pockets, so they won't show in the try-on either. A photo with your hands free works better.",
   "Ты далеко от камеры. Подойди ближе, чтобы фигура занимала почти весь кадр.": "You are far from the camera. Come closer so your figure fills most of the frame.",
   "+ Добавить фото модели": "+ Add model photo",
   "Заменить фото": "Replace photo",

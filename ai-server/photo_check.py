@@ -24,10 +24,14 @@ MIN_HEIGHT = .5
 # A figure that reaches the bottom row with barely any shoe in sight is cut at the ankles.
 MIN_SHOES = .002
 EDGE_ROWS = 2
+# Hands hidden in long sleeves stay hidden in every look: the editor never draws
+# hands it did not see, and shorter sleeves then end in empty cuffs (tested on
+# the user's own photo). Visible hands are 3-20% of a figure, hidden ones ~0.
+MIN_HANDS = .005
 
 
 def issues(image: Image.Image):
-    """Codes of what may spoil a try-on: person, people, head, face, feet, arms, small."""
+    """Codes of what may spoil a try-on: person, people, head, face, feet, arms, hands, small."""
     image = image.convert('RGB')
     image.thumbnail((MAX_SIDE, MAX_SIDE))
     labels = footwear_guard.parse(image)
@@ -54,6 +58,8 @@ def issues(image: Image.Image):
         arms = np.flatnonzero(np.isin(labels, ARMS).any(axis=1))
         if arms.size and arms[0] < y + h:
             found.append('arms')
+    if np.isin(labels, ARMS).sum() / person.sum() < MIN_HANDS:
+        found.append('hands')
     if (rows[-1] - rows[0]) / height < MIN_HEIGHT:
         found.append('small')
     return found

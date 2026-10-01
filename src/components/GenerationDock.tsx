@@ -12,6 +12,7 @@ import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
 import { GenerationStage } from './GenerationStage';
+import { useOverlay } from './OverlayHost';
 import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
 
 type DockApi = { open: (jobId: string) => void };
@@ -96,30 +97,34 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   };
 
   const failed = openJob && (openJob.status === 'failed' || openJob.status === 'retry');
+  // The window opens over the sheet the try-on was started from (OverlayHost):
+  // drawn at the app root it would never show on iOS while that sheet is up.
+  const stage = openJob ? (
+    <GenerationStage
+      key={openJob.id}
+      title={openJob.garments?.map(garment => garment.name).join(' + ') || openJob.name}
+      busy={openJob.status === 'pending'}
+      busyLabel={tryOnStatusLabel(openJob.progress, t)}
+      startedAt={startedAt.current[openJob.id]}
+      photoUri={openJob.progress?.previewUrl || modelUri || null}
+      resultUri={resultOf(openJob)}
+      error={actionError || (failed ? t(openJob.error || 'Не удалось сгенерировать примерку') : null)}
+      warning={openJob.result?.warning ? openJob.result.warning.split(' · ').map(part => t(part)).join(' · ') : null}
+      saveState={saveStates[openJob.id] || 'idle'}
+      onSave={() => { void save(openJob); }}
+      onShare={() => { const uri = resultOf(openJob); if (uri) void shareTryOn(uri, login); }}
+      onRegenerate={() => { void again(openJob); }}
+      onClose={close}
+    />
+  ) : null;
+  const inline = useOverlay('generation-stage', stage);
   return (
     <DockContext.Provider value={api}>
       {children}
       {dockJobs.length && !openJob ? (
         <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={open} onDismiss={dismiss} />
       ) : null}
-      {openJob ? (
-        <GenerationStage
-          key={openJob.id}
-          title={openJob.garments?.map(garment => garment.name).join(' + ') || openJob.name}
-          busy={openJob.status === 'pending'}
-          busyLabel={tryOnStatusLabel(openJob.progress, t)}
-          startedAt={startedAt.current[openJob.id]}
-          photoUri={openJob.progress?.previewUrl || modelUri || null}
-          resultUri={resultOf(openJob)}
-          error={actionError || (failed ? t(openJob.error || 'Не удалось сгенерировать примерку') : null)}
-          warning={openJob.result?.warning ? openJob.result.warning.split(' · ').map(part => t(part)).join(' · ') : null}
-          saveState={saveStates[openJob.id] || 'idle'}
-          onSave={() => { void save(openJob); }}
-          onShare={() => { const uri = resultOf(openJob); if (uri) void shareTryOn(uri, login); }}
-          onRegenerate={() => { void again(openJob); }}
-          onClose={close}
-        />
-      ) : null}
+      {inline ? stage : null}
     </DockContext.Provider>
   );
 }

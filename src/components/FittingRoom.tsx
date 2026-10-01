@@ -1,4 +1,5 @@
 import { usePhotoPicker } from './usePhotoPicker';
+import { OverlayOutlet } from './OverlayHost';
 import { useMemo, useState, useEffect } from 'react';
 import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { ArrowUpRight, Check, Pencil, Save, Search, UserRound, X } from 'lucide-react-native';
@@ -196,6 +197,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
         </FormScrollView>
       </View>
     </View>
+    <OverlayOutlet />
   </Modal>;
 }
 

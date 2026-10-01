@@ -7,6 +7,7 @@ import { privacyUrl } from '../constants/ai';
 import { hasAiConsent, saveAiConsent } from '../services/aiConsent';
 import { PrimaryButton } from './ui/PrimaryButton';
 import { AppPressable } from './AppPressable';
+import { useOverlay } from './OverlayHost';
 
 type Api = { ensure: () => Promise<boolean>; revoke: () => Promise<void> };
 const Context = createContext<Api | null>(null);
@@ -34,11 +35,9 @@ export function AiConsentProvider({ login, children }: { login: string; children
     t('Загружай только свои фото или фото людей, которые на это согласились.'),
     t('Данные не используются для рекламы и не продаются. Согласие можно отозвать в профиле.'),
   ];
-  return <Context.Provider value={value}>
-    {children}
-    {/* Mounted only while asking: consent is requested from inside other modals
-        (try-on, item editor), and a modal created later is presented on top of them. */}
-    {open ? <Modal transparent visible animationType="fade" onRequestClose={() => void answer(false)}>
+  // Consent is asked from inside sheets (try-on, item editor): the window is
+  // drawn in the topmost one, or iOS would never show it (OverlayHost).
+  const prompt = open ? <Modal transparent visible animationType="fade" onRequestClose={() => void answer(false)}>
       <View style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityViewIsModal>
           <ScrollView contentContainerStyle={{ gap: 14 }}>
@@ -53,7 +52,11 @@ export function AiConsentProvider({ login, children }: { login: string; children
           </ScrollView>
         </View>
       </View>
-    </Modal> : null}
+    </Modal> : null;
+  const inline = useOverlay('ai-consent', prompt);
+  return <Context.Provider value={value}>
+    {children}
+    {inline ? prompt : null}
   </Context.Provider>;
 }
 

@@ -45,6 +45,12 @@ class Rules(unittest.TestCase):
         # A hand at the hair spoiled the jacket in every run of the photo test.
         self.assertEqual(self.check(figure(arm_top=14)), ['arms'])
 
+    def test_hands_hidden_in_sleeves_are_noticed(self):
+        # Long coat sleeves over the hands: no try-on can show the hands then.
+        labels = figure()
+        labels[np.isin(labels, (14, 15))] = 4
+        self.assertEqual(self.check(labels), ['hands'])
+
     def test_feet_cut_off_at_the_bottom_are_noticed(self):
         self.assertEqual(self.check(figure(bottom=H, shoes=False)), ['feet'])
 

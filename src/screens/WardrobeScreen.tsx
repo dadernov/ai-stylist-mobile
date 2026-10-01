@@ -22,6 +22,7 @@ import { AppPressable } from '../components/AppPressable';
 import { DragHandle } from '../components/DragHandle';
 import { isAutoItemName, suggestItemName } from '../domain/itemName';
 import { useAiConsent } from '../components/AiConsentContext';
+import { OverlayOutlet } from '../components/OverlayHost';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -692,6 +693,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             </ScrollView>}
           </View>
         </View>
+        <OverlayOutlet />
       </Modal>
 
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={closeDraft}>
@@ -785,6 +787,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             {isModalVisible && cropModal}
           </View>
         </View>
+        <OverlayOutlet />
       </Modal>
 
       <Modal
@@ -836,6 +839,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             </View>
           </View>
         </View>
+        <OverlayOutlet />
       </Modal>
     </View>
   );
