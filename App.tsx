@@ -33,6 +33,7 @@ import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
+import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
 import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
@@ -227,7 +228,8 @@ function SessionGate() {
     setOnboarding(false);
     void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
   }} />;
-  if (session) return <TryOnJobsProvider key={session.login} session={session}><AiConsentProvider login={session.login}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></TryOnJobsProvider>;
+  // App-wide windows (consent, generation) are drawn in the topmost sheet: see OverlayHost.
+  if (session) return <TryOnJobsProvider key={session.login} session={session}><OverlayProvider><AiConsentProvider login={session.login}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></OverlayProvider></TryOnJobsProvider>;
   return <SafeAreaView style={styles.container}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
     {claim ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 20, maxWidth: 480, width: '100%', alignSelf: 'center' }}>
