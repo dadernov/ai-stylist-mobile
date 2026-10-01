@@ -200,7 +200,7 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 // What may spoil a try-on on this photo, found by the server's local models
 // before any paid generation: nobody, several people, a cut-off head, a hidden
 // face, cut-off feet, a raised arm or a figure too far away.
-export type PhotoIssue = 'person' | 'people' | 'head' | 'face' | 'feet' | 'arms' | 'hands' | 'small';
+export type PhotoIssue = 'person' | 'people' | 'head' | 'face' | 'feet' | 'arms' | 'hands' | 'coat' | 'small';
 
 export async function checkTryOnPhoto(uri: string): Promise<PhotoIssue[]> {
   const form = new FormData();

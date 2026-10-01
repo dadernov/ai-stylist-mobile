@@ -28,10 +28,17 @@ EDGE_ROWS = 2
 # hands it did not see, and shorter sleeves then end in empty cuffs (tested on
 # the user's own photo). Visible hands are 3-20% of a figure, hidden ones ~0.
 MIN_HANDS = .005
+# A long coat hides the body: every look then came out as broad as the coat
+# (shoulders 3.4-3.9 face widths on the user's coat photo, 3.1-3.3 on his
+# own photo). What the editor cannot see it cannot fit, so the photo is the fix.
+# Measured as the share of the thighs the upper garment covers: 0.52 in a long
+# coat, at most 0.34 on other photos (parser noise on bare legs and dresses).
+MAX_COAT = .45
+UPPER_CLOTHES, SKIRT, DRESS = 4, 5, 7
 
 
 def issues(image: Image.Image):
-    """Codes of what may spoil a try-on: person, people, head, face, feet, arms, hands, small."""
+    """Codes of what may spoil a try-on: person, people, head, face, feet, arms, hands, coat, small."""
     image = image.convert('RGB')
     image.thumbnail((MAX_SIDE, MAX_SIDE))
     labels = footwear_guard.parse(image)
@@ -60,6 +67,11 @@ def issues(image: Image.Image):
             found.append('arms')
     if np.isin(labels, ARMS).sum() / person.sum() < MIN_HANDS:
         found.append('hands')
+    figure = rows[-1] - rows[0]
+    thighs = slice(int(rows[0] + .5 * figure), int(rows[0] + .75 * figure))
+    covered = (labels[thighs] == UPPER_CLOTHES).sum() / max(1, person[thighs].sum())
+    if covered >= MAX_COAT and np.isin(labels[thighs], (SKIRT, DRESS)).mean() < .1:
+        found.append('coat')
     if (rows[-1] - rows[0]) / height < MIN_HEIGHT:
         found.append('small')
     return found

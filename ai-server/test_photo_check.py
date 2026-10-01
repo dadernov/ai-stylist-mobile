@@ -48,8 +48,16 @@ class Rules(unittest.TestCase):
     def test_hands_hidden_in_sleeves_are_noticed(self):
         # Long coat sleeves over the hands: no try-on can show the hands then.
         labels = figure()
-        labels[np.isin(labels, (14, 15))] = 4
+        arms = np.isin(labels, (14, 15))
+        labels[arms] = 4
+        labels[50:][arms[50:]] = 0  # the sleeves end above the thighs: a jacket, not a long coat
         self.assertEqual(self.check(labels), ['hands'])
+
+    def test_a_long_coat_over_the_body_is_noticed(self):
+        # The editor cannot fit clothes to a body it does not see.
+        labels = figure()
+        labels[55:80, 18:42] = 4
+        self.assertEqual(self.check(labels), ['coat'])
 
     def test_feet_cut_off_at_the_bottom_are_noticed(self):
         self.assertEqual(self.check(figure(bottom=H, shoes=False)), ['feet'])
