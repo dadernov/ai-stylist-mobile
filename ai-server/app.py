@@ -1606,7 +1606,8 @@ async def tryon_generate_look(
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
                           f'usd={result.get("costUsd")}; error={result.get("error")}; '
-                          f'layers={",".join(f"{slot}:{slot_categories.get(slot) or slot}" for slot in fal_tryon.LOOK_ORDER if slot in garments)}', flush=True)
+                          f'layers={",".join(f"{slot}:{slot_categories.get(slot) or slot}" for slot in fal_tryon.LOOK_ORDER if slot in garments)}; '
+                          f'options={json.dumps(slot_options, ensure_ascii=False, sort_keys=True) if slot_options else "-"}', flush=True)
                     if result.get('error') or not result.get('outputUrl'):
                         return {'error': fal_tryon.user_error(result), 'steps': steps}
                     current_model = result['outputUrl']

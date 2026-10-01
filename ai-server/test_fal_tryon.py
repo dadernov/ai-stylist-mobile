@@ -498,9 +498,10 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
                                          top_file=photo('white'), top_category='Рубашка', top2_file=photo('black'), top2_category='Футболка',
                                          outer_file=photo('navy'), outer_category='Тренч')
         # Told with the outfit, naming what each one closes over.
-        self.assertIn('The button-up shirt from image 4 is worn closed over the t-shirt', prompt)
-        self.assertIn('The trench coat from image 5 is worn closed over the button-up shirt: it is buttoned or zipped from the collar down', prompt)
-        self.assertLess(prompt.index('worn closed over'), prompt.index('Replace the matching original clothes'))
+        self.assertIn('The button-up shirt from image 4 is worn fully closed over the t-shirt, zipped or buttoned all the way up', prompt)
+        self.assertIn('The trench coat from image 5 is worn fully closed over the button-up shirt', prompt)
+        self.assertIn('any print on the button-up shirt stays covered', prompt)
+        self.assertLess(prompt.index('worn fully closed over'), prompt.index('Replace the matching original clothes'))
         self.assertIn('image 5 is the second layer, worn over the outerwear: a trench coat, worn fastened shut', prompt)
         self.assertNotIn('Wear the outerwear fully open and unfastened', prompt)
 
@@ -517,7 +518,14 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         prompt = await self.options_look('request_000000000087', {'top': {'tuck': 'tucked'}, 'outer': {'fasten': 'closed'}},
                                          top_file=photo('white'), top_category='Рубашка', outer_file=photo('navy'), outer_category='Тренч')
         self.assertNotIn('Fully tuck the top', prompt)
-        self.assertIn('worn closed over the button-up shirt', prompt)
+        self.assertIn('worn fully closed over the button-up shirt', prompt)
+
+    def test_layers_over_the_top_keep_full_sleeves(self):
+        # A jacket over a long-sleeve came out with sleeves ending mid-forearm.
+        prompt = tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], 'Лонгслив', 'Куртка', 'auto', {}, {})
+        self.assertIn('The sleeves of the garment in image 4 keep their full length down to the wrists', prompt)
+        vest = tryon_policy.look_prompt(['top', 'bottom', 'top2', 'shoes'], 'Рубашка', '', 'auto', {}, {'top2': 'Жилет'})
+        self.assertNotIn('sleeves of the garment in image 4', vest, 'a vest has no sleeves')
 
     async def test_choices_that_make_no_sense_are_ignored(self):
         plain = await self.options_look('request_000000000083', {}, top_file=photo('white'), top_category='Футболка')

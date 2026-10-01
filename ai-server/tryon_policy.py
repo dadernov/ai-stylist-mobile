@@ -146,6 +146,10 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
                  'never make the person broader. ')
 
 
+# Layers without sleeves of their own: a knit vest, a waistcoat.
+SLEEVELESS_LAYERS = {'Жилет', 'Майка', 'Топ'}
+
+
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
 # reliably when it was called outerwear and dropped it as a "second top", so
 # every layer over the base top is described in outerwear terms.
@@ -194,9 +198,11 @@ def fasten_instruction(state, noun, image, under=None):
     """
     if state == 'closed':
         if under:
-            return (f'The {noun} from image {image} is worn closed over the {under}: it is buttoned or zipped from the collar down '
-                    f'to the hem, its front panels overlap with no gap between them anywhere, and a belt, if it has one, is tied; '
-                    f'above it only the collar of the {under} shows, and below it only what reaches past its hem. ')
+            # Overlapping panels describe a buttoned coat; a zipped jacket told so stayed open or half zipped.
+            return (f'The {noun} from image {image} is worn fully closed over the {under}, zipped or buttoned all the way up: '
+                    f'there is no opening down its front anywhere from the hem to the neck, the zip pull or the top button sits right '
+                    f'under its collar, and a belt, if it has one, is tied; of the {under} only the neckline shows above the collar '
+                    f'of the {noun}, any print on the {under} stays covered, and below it only what reaches past its hem. ')
         return (f'The {noun} from image {image} is buttoned all the way down the front, its two sides closed over the body; '
                 'only the top button may stay open. ')
     return (f'The {noun} from image {image} is worn open: every button or the zip is undone '
@@ -298,6 +304,10 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += sentence
         if categories.get(slot) in LONG_OUTER:
             text += f'The garment in image {image[slot]} is long: keep its full length below the hips and never shorten it. '
+        if categories.get(slot) not in SLEEVELESS_LAYERS:
+            # A jacket over a long-sleeve came out with sleeves ending mid-forearm, the inner cuffs showing below.
+            text += (f'The sleeves of the garment in image {image[slot]} keep their full length down to the wrists, '
+                     'and the sleeves of the layers under it stay inside them. ')
     if 'shoes' in slots:
         text += 'Put the reference shoes on both feet, keeping each foot at its original position. '
     else:
