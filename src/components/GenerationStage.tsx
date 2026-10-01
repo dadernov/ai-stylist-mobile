@@ -1,12 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, Modal, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Image, Modal, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { EXPECTED_TRYON_MS } from './tryOnStatus';
+import { TryOnOptions } from './TryOnOptions';
+import { WardrobeItem } from '../data/mock';
+import { GarmentOptions } from '../domain/garmentOptions';
+
+/** Before the try-on: how each garment is worn, and the button that starts it. */
+export type StageSetup = {
+  items: WardrobeItem[];
+  options: GarmentOptions;
+  onOptions: (options: GarmentOptions) => void;
+  onGenerate: () => void;
+  starting?: boolean;
+};
 
 type Props = {
   title: string;
@@ -24,6 +36,8 @@ type Props = {
   onShare: () => void;
   onRegenerate: () => void;
   onClose: () => void;
+  /** Set while the look is being prepared: the window asks how to wear it, then turns into the try-on. */
+  setup?: StageSetup;
 };
 
 /**
@@ -31,7 +45,7 @@ type Props = {
  * shows the photo under a scanning shimmer with the current step, and the
  * finished look fades in over it. Closing it early keeps the try-on running.
  */
-export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate, onClose }: Props) {
+export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate, onClose, setup }: Props) {
   const t = useT();
   const { colors: c } = useTheme();
   const { height, width } = useWindowDimensions();
@@ -92,6 +106,22 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                 </AppPressable>
               </View>
 
+              {setup ? <>
+                {/* First how each garment is worn; the try-on starts from here and plays in this same window. */}
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.setup}>
+                  <Text style={[styles.setupTitle, { color: c.text }]}>{t('Как надеть')}</Text>
+                  <TryOnOptions items={setup.items} options={setup.options} onChange={setup.onOptions} disabled={setup.starting} />
+                  {error ? <Text style={[styles.note, { color: c.danger }]}>{error}</Text> : null}
+                </ScrollView>
+                <View style={styles.actions}>
+                  <AppPressable accessibilityRole="button" onPress={setup.onGenerate} disabled={setup.starting}
+                    accessibilityState={{ disabled: setup.starting, busy: setup.starting }}
+                    style={[styles.primary, { backgroundColor: c.buttonPrimaryBg }, setup.starting && { opacity: 0.6 }]}>
+                    {setup.starting ? <ActivityIndicator size="small" color={c.buttonPrimaryText} /> : <ArrowUpRight size={18} color={c.buttonPrimaryText} />}
+                    <Text style={[styles.primaryText, { color: c.buttonPrimaryText }]}>{t('Примерить')}</Text>
+                  </AppPressable>
+                </View>
+              </> : <>
               <View style={[styles.frame, { width: frameWidth, backgroundColor: c.surface }]}>
                 {photoUri ? (
                   // The photo gives way to the result, so no edge of it shows around a finished look.
@@ -164,6 +194,7 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                   </View>
                 </View>
               ) : null}
+              </>}
             </SafeAreaView>
           </Animated.View>
         </View>
@@ -189,6 +220,8 @@ const styles = StyleSheet.create({
   bar: { height: 6, borderRadius: 3 },
   note: { fontSize: 13, lineHeight: 18 },
   actions: { gap: 10, paddingTop: 12, paddingBottom: 8 },
+  setup: { gap: 14, paddingBottom: 16 },
+  setupTitle: { fontSize: 15, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 10 },
   primary: { minHeight: 50, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryText: { fontSize: 16, fontWeight: '600' },

@@ -14,10 +14,10 @@ import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { TryOnOptions } from './TryOnOptions';
 import { FormScrollView } from './ui/FormScrollView';
-import { canFasten, canTuck, GarmentOptions } from '../domain/garmentOptions';
+import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X, Share2 } from 'lucide-react-native';
+import { ArrowUpRight, Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 
 type AiTryOnPreviewProps = {
@@ -98,7 +98,6 @@ export function AiTryOnPreview({
   const pendingJob = matchingJobs.find(job => job.status === 'pending');
   const history = [...new Map([...suppliedHistory, ...matchingJobs.flatMap(job => job.result ? [job.result] : [])]
     .sort((a, b) => b.updatedAt - a.updatedAt).map(item => [item.imageUri, item])).values()].slice(0, 8);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [isLoading, setLoading] = useState(false);
   const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
@@ -117,7 +116,6 @@ export function AiTryOnPreview({
   const [garmentOptions, setGarmentOptions] = useState<GarmentOptions>(() =>
     baseTop && tuckMode && tuckMode !== 'auto' ? { [baseTop.id]: { tuck: tuckMode } } : {});
   const effectiveTuckMode: TuckMode = (baseTop && garmentOptions[baseTop.id]?.tuck) || 'auto';
-  const adjustable = items.some(item => canTuck(item, items) || canFasten(item));
   // What the shown picture is: a cheap draft ('fast') or the final ('quality').
   // Results saved before drafts existed carry no mode and were finals.
   const [resultQuality, setResultQuality] = useState<TryOnQualityMode>(qualityMode || 'quality');
@@ -331,7 +329,10 @@ export function AiTryOnPreview({
           may have been folded away, and this is the way to it from here. */}
       <AppPressable
         style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
-        onPress={() => pendingJob ? dock.open(pendingJob.id) : void run('quality', Boolean(resultUri))}
+        onPress={() => pendingJob ? dock.open(pendingJob.id)
+          // The sheet already shows the choices; anywhere else the window opens on them first.
+          : variant === 'sheet' ? void run('quality', Boolean(resultUri))
+          : context ? dock.prepare({ items, context, fresh: Boolean(resultUri), options: garmentOptions }) : undefined}
         disabled={pendingJob ? false : !canGenerate || isBusy}
         accessibilityRole="button"
         accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
@@ -452,12 +453,6 @@ export function AiTryOnPreview({
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
       {errorsBlock}
       {warning ? <Text style={styles.hint}>{warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
-      {adjustable ? <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
-        <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
-        <Text style={styles.settingsLabel}>{t('Настройки примерки')}</Text>
-        {settingsOpen ? <ChevronUp size={16} color={colors.muted} /> : <ChevronDown size={16} color={colors.muted} />}
-      </AppPressable> : null}
-      {settingsOpen && adjustable ? <TryOnOptions items={items} options={garmentOptions} onChange={setGarmentOptions} disabled={isBusy} /> : null}
       {warningsBlock}
       {historyBlock}
       {mainButton}

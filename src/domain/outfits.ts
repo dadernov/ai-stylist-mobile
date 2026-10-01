@@ -550,15 +550,17 @@ export function wardrobeGaps(items: WardrobeItem[], context: OutfitContext, t: T
 // (Man of Many, The Rake, Permanent Style, Who What Wear): light under heavy,
 // one collar at most, the inner top showing at the neckline or the open front.
 // Ordering by thickness alone once suggested a polo under a shirt: two collars.
-// A polo stays a top of its own; a hoodie is never a middle layer.
+// A polo stays a top of its own; a hoodie is never a middle layer; and a shirt
+// is never put over another top - the user finds a T-shirt under a shirt wrong,
+// whatever the overshirt guides say. A shirt goes under a sweater, a cardigan or a vest.
 const LAYER_PAIRS: Record<string, string[]> = {
-  Майка: ['Рубашка', 'Кардиган'],
-  Топ: ['Рубашка', 'Кардиган'],
-  // A T-shirt under an open overshirt, a fine sweater, a cardigan or a knit vest.
-  Футболка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'],
-  Лонгслив: ['Рубашка', 'Кардиган', 'Жилет'],
-  // A thin turtleneck under a shirt or a sweater.
-  Водолазка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'],
+  Майка: ['Кардиган'],
+  Топ: ['Кардиган'],
+  // A T-shirt under a fine sweater, a cardigan or a knit vest.
+  Футболка: ['Свитер', 'Кардиган', 'Жилет'],
+  Лонгслив: ['Кардиган', 'Жилет'],
+  // A thin turtleneck under a sweater.
+  Водолазка: ['Свитер', 'Кардиган', 'Жилет'],
   // The shirt collar stays inside the sweater's neckline.
   Рубашка: ['Свитер', 'Кардиган', 'Жилет', 'Свитшот'],
   Блуза: ['Свитер', 'Кардиган', 'Жилет'],

@@ -244,7 +244,7 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
     it('Джинсы', 'Низ', 'Синий'), it('Брюки', 'Низ', 'Черный'), it('Шорты', 'Низ', 'Бежевый'), it('Кроссовки', 'Обувь', 'Белый'),
     it('Лоферы', 'Обувь', 'Коричневый'), it('Сандалии', 'Обувь', 'Бежевый'), it('Куртка', 'Верхняя одежда', 'Черный'), it('Пальто', 'Верхняя одежда', 'Бежевый')];
   const byId = Object.fromEntries(W.map(entry => [entry.id, entry]));
-  const allowed = { Майка: ['Рубашка', 'Кардиган'], Футболка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'], Рубашка: ['Свитер', 'Кардиган', 'Жилет', 'Свитшот'] };
+  const allowed = { Майка: ['Кардиган'], Футболка: ['Свитер', 'Кардиган', 'Жилет'], Рубашка: ['Свитер', 'Кардиган', 'Жилет', 'Свитшот'] };
   const { EVENTS, STYLES } = require('../src/domain/outfits.ts');
   for (const event of EVENTS) for (const style of STYLES) for (const temperature of [-5, 8, 12, 25]) {
     for (const look of buildLooks(W, style, event, '', temperature, 'male')) {

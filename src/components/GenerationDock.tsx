@@ -7,6 +7,8 @@ import { useT } from '../constants/i18n';
 import { useTheme } from '../constants/ThemeContext';
 import { SHADOWS } from '../constants/theme';
 import { TryOnJob, tryOnContext } from '../services/tryOnJobs';
+import { TuckMode } from '../services/ai';
+import { GarmentOptions } from '../domain/garmentOptions';
 import { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { saveTryOnToGallery, shareTryOn } from '../services/tryOnExport';
 import { useTryOnJobs } from './TryOnJobsContext';
@@ -16,10 +18,12 @@ import { GenerationStage } from './GenerationStage';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
 
-type DockApi = { open: (jobId: string) => void };
-const DockContext = createContext<DockApi>({ open: () => {} });
+/** A look about to be tried on: the window first asks how to wear each garment. */
+export type TryOnRequest = { items: WardrobeItem[]; context: string; fresh: boolean; options?: GarmentOptions };
+type DockApi = { open: (jobId: string) => void; prepare: (request: TryOnRequest) => void };
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {} });
 
-/** Opens a try-on in the big generation window; closing it leaves the try-on in the dock. */
+/** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -43,6 +47,11 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const [openId, setOpenId] = useState<string | null>(null);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  // The look being prepared in the window, before its try-on exists.
+  const [setup, setSetup] = useState<(TryOnRequest & { options: GarmentOptions }) | null>(null);
+  const [starting, setStarting] = useState(false);
+  // One window for setup and try-on: the key changes only when a new window opens.
+  const [windowKey, setWindowKey] = useState(0);
   // When this app session first saw each try-on running, for the progress bar and the timer.
   const startedAt = useRef<Record<string, number>>({});
   for (const job of jobs) {
@@ -50,38 +59,61 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     else delete startedAt.current[job.id];
   }
 
-  const open = useCallback((id: string) => {
+  const show = useCallback((id: string) => {
     setDocked(previous => [id, ...previous.filter(current => current !== id)]);
+    setSetup(null);
     setOpenId(id);
     setActionError(null);
   }, []);
-  const api = useMemo(() => ({ open }), [open]);
+  const open = useCallback((id: string) => { setWindowKey(key => key + 1); show(id); }, [show]);
+  const prepare = useCallback((request: TryOnRequest) => {
+    setWindowKey(key => key + 1);
+    setOpenId(null);
+    setActionError(null);
+    setSetup({ ...request, options: request.options || {} });
+  }, []);
+  const api = useMemo(() => ({ open, prepare }), [open, prepare]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   const openJob = openId ? byId.get(openId) : undefined;
 
   const close = () => {
+    setSetup(null);
     setOpenId(null);
     // A finished look the user has just seen leaves the dock; a running one stays there.
     if (openJob && openJob.status !== 'pending') setDocked(previous => previous.filter(id => id !== openJob.id));
   };
   const dismiss = (id: string) => setDocked(previous => previous.filter(current => current !== id));
 
+  // "Another variant" goes back to the setup step in the same window, with the choices of this one.
   const again = async (job: TryOnJob) => {
     const garments = job.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
     if (!modelUri || !garments.length || garments.length !== job.itemIds.length) {
       setActionError(t('Некоторых вещей из этого образа уже нет в гардеробе.')); return;
     }
-    if (!(await aiConsent.ensure())) return;
+    const context = await tryOnContext(modelUri, garments);
+    if (job.status !== 'pending') dismiss(job.id);
+    setOpenId(null);
     setActionError(null);
-    dismiss(job.id);
+    // A finished look asks for a new variant; a failed one is simply sent again.
+    setSetup({ items: garments, context, fresh: job.status === 'succeeded', options: job.options || {} });
+  };
+
+  const generate = async () => {
+    if (!setup || !modelUri || starting) return;
+    if (!(await aiConsent.ensure())) return;
+    setStarting(true);
+    setActionError(null);
+    const base = setup.items.find(item => item.section === 'Верх' && item.imageUri);
+    const tuckMode: TuckMode = (base && setup.options[base.id]?.tuck) || 'auto';
     try {
-      const context = await tryOnContext(modelUri, garments);
-      // A finished look asks for a new variant; a failed one is simply sent again.
-      await store.start({ modelUri, items: garments, context, tuckMode: job.tuckMode, quality: 'quality', fresh: job.status === 'succeeded', onJob: open,
-        options: job.options });
+      // The window stays and turns into the try-on the moment the job exists.
+      await store.start({ modelUri, items: setup.items, context: setup.context, tuckMode, quality: 'quality', fresh: setup.fresh,
+        options: setup.options, onJob: show });
     } catch (error: any) {
       setActionError(error?.message || t('Не удалось сгенерировать примерку'));
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -101,9 +133,26 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const failed = openJob && (openJob.status === 'failed' || openJob.status === 'retry');
   // The window opens over the sheet the try-on was started from (OverlayHost):
   // drawn at the app root it would never show on iOS while that sheet is up.
-  const stage = openJob ? (
+  const stage = setup ? (
     <GenerationStage
-      key={openJob.id}
+      key={windowKey}
+      title={setup.items.map(item => item.name).join(' + ')}
+      busy={false}
+      busyLabel=""
+      photoUri={null}
+      resultUri={null}
+      error={actionError}
+      saveState="idle"
+      onSave={() => {}}
+      onShare={() => {}}
+      onRegenerate={() => {}}
+      onClose={close}
+      setup={{ items: setup.items, options: setup.options, starting,
+        onOptions: options => setSetup(current => current && { ...current, options }), onGenerate: () => { void generate(); } }}
+    />
+  ) : openJob ? (
+    <GenerationStage
+      key={windowKey}
       title={openJob.garments?.map(garment => garment.name).join(' + ') || openJob.name}
       busy={openJob.status === 'pending'}
       busyLabel={tryOnStatusLabel(openJob.progress, t)}
@@ -122,7 +171,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const inline = useOverlay('generation-stage', stage);
   // The folded window floats over whatever is on top too: drawn under the
   // try-on sheet it could be neither seen nor reached until the sheet closed.
-  const mini = dockJobs.length > 0 && !openJob ? (
+  const mini = dockJobs.length > 0 && !openJob && !setup ? (
     <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={open} onDismiss={dismiss} />
   ) : null;
   const miniInline = useOverlay('generation-mini', mini);
