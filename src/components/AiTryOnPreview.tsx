@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View, Platform, Share } from 'react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
@@ -12,6 +12,9 @@ import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
+import { TryOnOptions } from './TryOnOptions';
+import { FormScrollView } from './ui/FormScrollView';
+import { canFasten, canTuck, GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, Check, ChevronDown, ChevronUp, Download, SlidersHorizontal, X, Share2 } from 'lucide-react-native';
@@ -27,6 +30,12 @@ type AiTryOnPreviewProps = {
   qualityMode?: TryOnQualityMode;
   history?: TryOnHistoryItem[];
   showSourcePhoto?: boolean;
+  // 'sheet': the try-on sheet of the fitting room - how each garment is worn
+  // on top, the button pinned at the bottom, the look itself in the generation window.
+  variant?: 'card' | 'sheet';
+  /** Sheet only: more content under the options, and actions next to the button. */
+  sheetContent?: ReactNode;
+  sheetFooter?: ReactNode;
   onSelectHistory?: (payload: TryOnHistoryItem) => void;
   onGenerated?: (payload: {
     imageUri: string;
@@ -65,6 +74,9 @@ export function AiTryOnPreview({
   qualityMode,
   history: suppliedHistory = [],
   showSourcePhoto = false,
+  variant = 'card',
+  sheetContent,
+  sheetFooter,
   onGenerated,
   onSelectHistory
 }: AiTryOnPreviewProps) {
@@ -99,8 +111,13 @@ export function AiTryOnPreview({
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [tuckOverride, setTuckOverride] = useState<TuckMode | null>(null);
-  const effectiveTuckMode: TuckMode = tuckOverride ?? tuckMode ?? 'auto';
+  // How each garment is worn (tucked, buttoned), by item id; the base top's tuck
+  // also goes as the look's tuck mode, as before these options existed.
+  const baseTop = items.find(item => item.section === 'Верх' && item.imageUri);
+  const [garmentOptions, setGarmentOptions] = useState<GarmentOptions>(() =>
+    baseTop && tuckMode && tuckMode !== 'auto' ? { [baseTop.id]: { tuck: tuckMode } } : {});
+  const effectiveTuckMode: TuckMode = (baseTop && garmentOptions[baseTop.id]?.tuck) || 'auto';
+  const adjustable = items.some(item => canTuck(item, items) || canFasten(item));
   // What the shown picture is: a cheap draft ('fast') or the final ('quality').
   // Results saved before drafts existed carry no mode and were finals.
   const [resultQuality, setResultQuality] = useState<TryOnQualityMode>(qualityMode || 'quality');
@@ -259,13 +276,112 @@ export function AiTryOnPreview({
     setWarning(null);
     try {
       // The try-on opens in the app-wide generation window, which can fold into the corner.
-      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh, onJob: dock.open });
+      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh, onJob: dock.open, options: garmentOptions });
     } catch (e: any) {
       if (mounted.current) setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
       if (mounted.current) setLoading(false);
     }
   };
+
+  const historyBlock = history.length ? (
+        <View style={styles.historyWrap}>
+          <Text style={styles.compareTitle}>{t('История генераций')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
+            {history.slice(0, 8).map((item) => (
+              <AppPressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={t('Примерка от {date}', { date: shortDateTime(item.updatedAt) })}
+                style={styles.historyCard}
+                onPress={() => {
+                  const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
+                  setResultUri(anchored);
+                  setResultQuality(item.qualityMode || 'quality');
+                  setWarning(item.warning || null);
+                  setResultImageError(null);
+                  setShowOriginal(false);
+                  onSelectHistory?.(item);
+                  setPreviewUri(anchored);
+                  setPreviewOpen(true);
+                }}
+              >
+                <View style={styles.historyImageWrap}>
+                  <Image
+                    source={{ uri: reanchorTryOnUri(item.imageUri) || item.imageUri }}
+                    style={styles.historyImage}
+                    resizeMode="cover"
+                    onError={() => setBrokenHistoryUris((prev) => ({ ...prev, [item.imageUri]: true }))}
+                  />
+                  {brokenHistoryUris[item.imageUri] ? (
+                    <View style={styles.historyImageError}>
+                      <Text style={styles.historyImageErrorText}>{t('Недоступно')}</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.historyText}>{shortDateTime(item.updatedAt)}</Text>
+                {item.qualityMode === 'fast' ? <Text style={styles.historyText}>{t('черновик')}</Text> : null}
+              </AppPressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null;
+  const mainButton = <>
+      {/* While the look generates the button brings its window back: the window
+          may have been folded away, and this is the way to it from here. */}
+      <AppPressable
+        style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
+        onPress={() => pendingJob ? dock.open(pendingJob.id) : void run('quality', Boolean(resultUri))}
+        disabled={pendingJob ? false : !canGenerate || isBusy}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
+      >
+        {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
+        <Text style={styles.buttonText}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+      </AppPressable>
+      {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
+  </>;
+  const warningsBlock = readinessWarnings.length > 0 ? <View style={styles.qualityCard}>
+    {readinessWarnings.map((item) => (
+      <Text key={item} style={styles.qualityText}>• {item}</Text>
+    ))}
+  </View> : null;
+  const errorsBlock = <>
+    {error ? <Text style={styles.error}>{error}</Text> : null}
+    {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
+  </>;
+  const previewModal = <>
+      <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
+        <View style={styles.previewBackdrop}>
+          {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" /> : null}
+          <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
+            <X size={22} color={colors.text} />
+          </AppPressable>
+        </View>
+      </Modal>
+  </>;
+
+  if (variant === 'sheet') {
+    // The sheet asks how to wear the look and leaves the look itself to the
+    // generation window: no profile photo here, and the button never scrolls away.
+    return (
+      <View style={styles.sheetWrap}>
+        <FormScrollView style={{ flex: 1 }} contentContainerStyle={styles.sheetContent}>
+          <Text style={styles.sheetTitle}>{t('Как надеть')}</Text>
+          <TryOnOptions items={items} options={garmentOptions} onChange={setGarmentOptions} disabled={isBusy} />
+          {warningsBlock}
+          {errorsBlock}
+          {historyBlock}
+          {sheetContent}
+        </FormScrollView>
+        <View style={styles.sheetFooter}>
+          {mainButton}
+          {sheetFooter}
+        </View>
+        {previewModal}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap}>
@@ -334,119 +450,31 @@ export function AiTryOnPreview({
         </AppPressable> : null}
       </View>) : null}
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
+      {errorsBlock}
       {warning ? <Text style={styles.hint}>{warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
-      {topGarment?.imageUri && !['Платье', 'Сарафан', 'Комбинезон'].includes(topGarment.category) && <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
+      {adjustable ? <AppPressable style={styles.settingsToggle} accessibilityRole="button" accessibilityState={{ expanded: settingsOpen }} onPress={() => setSettingsOpen(open => !open)}>
         <SlidersHorizontal size={17} color={colors.muted} strokeWidth={1.5} />
         <Text style={styles.settingsLabel}>{t('Настройки примерки')}</Text>
         {settingsOpen ? <ChevronUp size={16} color={colors.muted} /> : <ChevronDown size={16} color={colors.muted} />}
-      </AppPressable>}
-      {settingsOpen && <View style={styles.settingsContent}>
-      {topGarment?.imageUri ? (
-        <View style={styles.qualityCard}>
-          <Text style={styles.qualityTitle}>{t('Посадка верха')}</Text>
-          <View style={styles.optionsRow}>
-            {(['auto', 'tucked', 'untucked'] as TuckMode[]).map((mode) => {
-              const active = effectiveTuckMode === mode;
-              const label = mode === 'auto' ? 'Авто' : mode === 'tucked' ? 'Заправить' : 'Навыпуск';
-              return (
-                <AppPressable
-                  key={mode}
-                  haptics
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: active, disabled: isBusy }}
-                  aria-checked={active}
-                  accessibilityLabel={t(label)}
-                  disabled={isBusy}
-                  style={[styles.optionPill, active && styles.optionPillActive]}
-                  onPress={() => setTuckOverride(mode)}
-                >
-                  <Text style={[styles.optionPillText, active && styles.optionPillTextActive]}>{t(label)}</Text>
-                </AppPressable>
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-      </View>}
-      {readinessWarnings.length > 0 && <View style={styles.qualityCard}>
-        {readinessWarnings.map((item) => (
-          <Text key={item} style={styles.qualityText}>• {item}</Text>
-        ))}
-      </View>}
-      {history.length ? (
-        <View style={styles.historyWrap}>
-          <Text style={styles.compareTitle}>{t('История генераций')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
-            {history.slice(0, 8).map((item) => (
-              <AppPressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={t('Примерка от {date}', { date: shortDateTime(item.updatedAt) })}
-                style={styles.historyCard}
-                onPress={() => {
-                  const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
-                  setResultUri(anchored);
-                  setResultQuality(item.qualityMode || 'quality');
-                  setWarning(item.warning || null);
-                  setResultImageError(null);
-                  setShowOriginal(false);
-                  onSelectHistory?.(item);
-                  setPreviewUri(anchored);
-                  setPreviewOpen(true);
-                }}
-              >
-                <View style={styles.historyImageWrap}>
-                  <Image
-                    source={{ uri: reanchorTryOnUri(item.imageUri) || item.imageUri }}
-                    style={styles.historyImage}
-                    resizeMode="cover"
-                    onError={() => setBrokenHistoryUris((prev) => ({ ...prev, [item.imageUri]: true }))}
-                  />
-                  {brokenHistoryUris[item.imageUri] ? (
-                    <View style={styles.historyImageError}>
-                      <Text style={styles.historyImageErrorText}>{t('Недоступно')}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={styles.historyText}>{shortDateTime(item.updatedAt)}</Text>
-                {item.qualityMode === 'fast' ? <Text style={styles.historyText}>{t('черновик')}</Text> : null}
-              </AppPressable>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
+      </AppPressable> : null}
+      {settingsOpen && adjustable ? <TryOnOptions items={items} options={garmentOptions} onChange={setGarmentOptions} disabled={isBusy} /> : null}
+      {warningsBlock}
+      {historyBlock}
+      {mainButton}
       {/* One button: every try-on is the full-quality look (one call, one price).
           Drafts made earlier stay labelled in the history. */}
-      {/* While the look generates the button brings its window back: the window
-          may have been folded away, and this is the way to it from here. */}
-      <AppPressable
-        style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
-        onPress={() => pendingJob ? dock.open(pendingJob.id) : void run('quality', Boolean(resultUri))}
-        disabled={pendingJob ? false : !canGenerate || isBusy}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
-      >
-        {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
-        <Text style={styles.buttonText}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
-      </AppPressable>
-      {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
 
 
-      <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
-        <View style={styles.previewBackdrop}>
-          {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" /> : null}
-          <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
-            <X size={22} color={colors.text} />
-          </AppPressable>
-        </View>
-      </Modal>
+      {previewModal}
     </View>
   );
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  sheetWrap: { flex: 1, gap: 12 },
+  sheetContent: { gap: 14, paddingBottom: 16 },
+  sheetTitle: { color: c.text, fontSize: 15, fontWeight: '600' },
+  sheetFooter: { gap: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.border },
   wrap: {
     gap: 14,
     marginTop: 6,

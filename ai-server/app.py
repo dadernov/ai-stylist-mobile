@@ -724,7 +724,7 @@ FAL_GARMENT_SIDE = 1024
 FAL_JPEG_QUALITY = 92
 
 
-async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None):
+async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None, options=None):
     """One call for the whole look: the photo first, then each garment."""
     categories = dict(categories or {})
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
@@ -736,7 +736,7 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     if model.family == 'bria':
         prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
     else:
-        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories)
+        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options)
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
@@ -1410,6 +1410,8 @@ async def tryon_generate_look(
     outer2_category: str = Form(""),
     top3_category: str = Form(""),
     top4_category: str = Form(""),
+    # Per garment, keyed by the upload field's slot: {"top": {"tuck": "tucked"}, "outer": {"fasten": "closed"}}.
+    garment_options: str = Form(""),
     request_id: str = Form(""),
     async_mode: str = Form("false"),
     fresh: str = Form("false"),
@@ -1453,14 +1455,34 @@ async def tryon_generate_look(
         outer2_category = outer2_category if isinstance(outer2_category, str) else ''
         top3_category = top3_category if isinstance(top3_category, str) else ''
         top4_category = top4_category if isinstance(top4_category, str) else ''
+        garment_options = garment_options if isinstance(garment_options, str) else ''
+        try:
+            requested = json.loads(garment_options) if garment_options.strip() else {}
+        except ValueError:
+            requested = {}
+        requested = requested if isinstance(requested, dict) else {}
+        option_of = lambda slot: requested[slot] if isinstance(requested.get(slot), dict) else {}
         # Layers go on in their natural order, whatever order they were picked
-        # in: a T-shirt picked after a long-sleeve still goes under it.
-        (top_content, top_mime, top_category), (top2_content, top2_mime, top2_category), \
-            (top3_content, top3_mime, top3_category), (top4_content, top4_mime, top4_category) = tryon_policy.natural_layers(
-                [(top_content, top_mime, top_category), (top2_content, top2_mime, top2_category),
-                 (top3_content, top3_mime, top3_category), (top4_content, top4_mime, top4_category)], tryon_policy.TOP_LAYER_ORDER)
-        (outer_content, outer_mime, outer_category), (outer2_content, outer2_mime, outer2_category) = tryon_policy.natural_layers(
-            [(outer_content, outer_mime, outer_category), (outer2_content, outer2_mime, outer2_category)], tryon_policy.OUTER_LAYER_ORDER)
+        # in: a T-shirt picked after a long-sleeve still goes under it. The
+        # user's tuck and fasten choices travel with their garment.
+        (top_content, top_mime, top_category, top_options), (top2_content, top2_mime, top2_category, top2_options), \
+            (top3_content, top3_mime, top3_category, top3_options), (top4_content, top4_mime, top4_category, top4_options) = tryon_policy.natural_layers(
+                [(top_content, top_mime, top_category, option_of('top')), (top2_content, top2_mime, top2_category, option_of('top2')),
+                 (top3_content, top3_mime, top3_category, option_of('top3')), (top4_content, top4_mime, top4_category, option_of('top4'))],
+                tryon_policy.TOP_LAYER_ORDER)
+        (outer_content, outer_mime, outer_category, outer_options), (outer2_content, outer2_mime, outer2_category, outer2_options) = \
+            tryon_policy.natural_layers([(outer_content, outer_mime, outer_category, option_of('outer')),
+                                         (outer2_content, outer2_mime, outer2_category, option_of('outer2'))], tryon_policy.OUTER_LAYER_ORDER)
+        slot_options = tryon_policy.garment_options(
+            {'top': top_options, 'top2': top2_options, 'top3': top3_options, 'top4': top4_options, 'outer': outer_options, 'outer2': outer2_options},
+            {'top': top_category.strip(), 'top2': top2_category.strip(), 'top3': top3_category.strip(), 'top4': top4_category.strip(),
+             'outer': outer_category.strip(), 'outer2': outer2_category.strip()})
+        if not bottom_content:
+            # Tucking needs trousers or a skirt to tuck into.
+            slot_options = {slot: {key: value for key, value in option.items() if key != 'tuck'} for slot, option in slot_options.items()}
+            slot_options = {slot: option for slot, option in slot_options.items() if option}
+        if slot_options.get('top', {}).get('tuck'):
+            tuck_mode_normalized = slot_options['top']['tuck']
         upper_count = sum(1 for content in (top_content, top2_content, top3_content, top4_content, outer_content, outer2_content) if content)
         layered = bool(top2_content or outer2_content or top3_content or top4_content)
 
@@ -1496,6 +1518,7 @@ async def tryon_generate_look(
             + (f"|{top3_category.strip()}|{top4_category.strip()}|"
                + '|'.join(hashlib.sha256(content).hexdigest() if content else '-' for content in (top3_content, top4_content))
                if top3_content or top4_content else '')
+            + (f"|{json.dumps(slot_options, sort_keys=True)}" if slot_options else '')
         )
         request_id = request_id if isinstance(request_id, str) else ''
         if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
@@ -1577,7 +1600,8 @@ async def tryon_generate_look(
                     step_started = time.monotonic()
                     result = await _run_fal_look(client, fal_model, person_content,
                                                  {slot: value for slot, value in garments.items() if slot not in upper},
-                                                 top_category.strip(), outer_category.strip(), tuck_mode_normalized, seed, slot_categories)
+                                                 top_category.strip(), outer_category.strip(), tuck_mode_normalized, seed, slot_categories,
+                                                 slot_options)
                     elapsed = round(time.monotonic() - step_started, 2)
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '

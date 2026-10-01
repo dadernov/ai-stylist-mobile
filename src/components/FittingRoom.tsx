@@ -14,7 +14,6 @@ import { PrimaryButton } from './ui/PrimaryButton';
 import { GarmentTile } from './GarmentTile';
 import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
-import { FormScrollView } from './ui/FormScrollView';
 import { RecentTryOns } from './RecentTryOns';
 import { PhotoAdvice } from './PhotoAdvice';
 
@@ -172,29 +171,28 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
           </View>
           <IconButton icon={X} label={t('Закрыть примерку')} onPress={onClose} />
         </View>
-        <FormScrollView contentContainerStyle={styles.content}>
-    <AiTryOnPreview modelUri={modelUri} items={items} history={history} showSourcePhoto resultUri={latest?.imageUri}
-      updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
-      const entry = { ...payload, id: String(payload.updatedAt) };
-      setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
-      setSelected(entry);
-      setSaved(false);
-    }} onSelectHistory={entry => {
-      setSelected(entry); setSaved(false);
-      setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
-        .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
-    }} />
-    <TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />
-    <PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
-      onSave({
-        id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
-        itemIds: items.map(item => item.id), createdAt: Date.now(),
-        tryOnImageUri: latest?.imageUri, tryOnWarning: latest?.warning, tryOnUpdatedAt: latest?.updatedAt,
-        tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
-      });
-      setSaved(true);
-    }} />
-        </FormScrollView>
+        {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
+        <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri}
+          updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
+            const entry = { ...payload, id: String(payload.updatedAt) };
+            setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
+            setSelected(entry);
+            setSaved(false);
+          }} onSelectHistory={entry => {
+            setSelected(entry); setSaved(false);
+            setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
+              .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
+          }}
+          sheetContent={<TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
+          sheetFooter={<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
+            onSave({
+              id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
+              itemIds: items.map(item => item.id), createdAt: Date.now(),
+              tryOnImageUri: latest?.imageUri, tryOnWarning: latest?.warning, tryOnUpdatedAt: latest?.updatedAt,
+              tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
+            });
+            setSaved(true);
+          }} />} />
       </View>
     </View>
     <OverlayOutlet />

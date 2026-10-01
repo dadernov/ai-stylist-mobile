@@ -7,10 +7,13 @@ import { ApiError } from './http';
 import { accountKey } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
+import { effectiveOptions, GarmentOptions } from '../domain/garmentOptions';
 
 export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
   // A draft ('fast') or the final ('quality'). Jobs saved before drafts existed have none and were finals.
   quality?: TryOnQualityMode;
+  // How each garment was worn (tucked, buttoned), by item id: "another variant" keeps it.
+  options?: GarmentOptions;
   status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string;
   // Live stage of a running job (kept in memory only; previews are throwaway frames).
   progress?: TryOnProgress };
@@ -19,7 +22,9 @@ type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMo
   // Generate every layer anew instead of building on layers the server kept from an earlier look.
   fresh?: boolean;
   // Told the job's id at once, before the photos are sent: the generation window follows it.
-  onJob?: (id: string) => void };
+  onJob?: (id: string) => void;
+  // How each garment is worn, by item id ('auto' choices are left out).
+  options?: GarmentOptions };
 // Preparing and sending the photos never takes this long on a working connection;
 // past it the job says so instead of spinning with no request on the server.
 export const SUBMIT_TIMEOUT_MS = 150000;
@@ -148,11 +153,14 @@ export class TryOnJobStore {
     // A draft and the final of the same look are separate jobs: one may run while the other is shown.
     const existing = this.snapshot.jobs.find(job => job.context === input.context && qualityOf(job) === input.quality && job.status === 'pending');
     if (existing) { request.onJob?.(existing.id); void this.poll(existing); return; }
+    // A failed send is sent again under its own id only with the same choices: new ones are a new look.
+    const sameOptions = (job: TryOnJob) => JSON.stringify(job.options || {}) === JSON.stringify(effectiveOptions(input.items, input.options));
     const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode
-      && qualityOf(job) === input.quality && job.status === 'retry');
+      && qualityOf(job) === input.quality && job.status === 'retry' && sameOptions(job));
     const job: TryOnJob = retry || { id: Crypto.randomUUID(), context: input.context, itemIds: input.items.map(i => i.id),
       garments: input.items.map(i => ({ id: i.id, name: i.name })),
-      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality };
+      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality,
+      options: effectiveOptions(input.items, input.options) };
     request.onJob?.(job.id);
     if (this.working.has(job.id)) return;
     this.working.add(job.id);
@@ -167,10 +175,14 @@ export class TryOnJobStore {
       const uriOf = (item?: { sourceImageUri?: string; imageUri?: string }) => item?.sourceImageUri || item?.imageUri;
       const [top, top2, top3, top4] = layers('Верх');
       const [outer, outer2] = layers('Верхняя одежда');
+      // The server takes each garment's choices by its upload slot.
+      const chosen = effectiveOptions(input.items, input.options);
+      const slotOptions = Object.fromEntries(([['top', top], ['top2', top2], ['top3', top3], ['top4', top4], ['outer', outer], ['outer2', outer2]] as const)
+        .filter(([, item]) => item && chosen[item.id]).map(([slot, item]) => [slot, chosen[item!.id]]));
       const response = await withTimeout(analyzeTryOnGenerateLook(input.modelUri, uriOf(top), uriOf(layers('Низ')[0]), uriOf(layers('Обувь')[0]), job.tuckMode, false,
         qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
         { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category,
-          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category }),
+          top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category }, slotOptions),
         SUBMIT_TIMEOUT_MS, SUBMIT_TIMEOUT_ERROR);
       if (await this.complete(job, response)) return;
     } catch (error: any) {

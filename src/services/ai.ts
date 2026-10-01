@@ -288,7 +288,9 @@ export async function analyzeTryOnGenerateLook(
   fresh = false,
   // Further tops and a second outer layer, worn over the first ones.
   layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string;
-    top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string } = {}
+    top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string } = {},
+  // How each garment is worn, by upload slot: { top: { tuck: 'tucked' }, outer: { fasten: 'closed' } }.
+  garmentOptions: Record<string, { tuck?: string; fasten?: string }> = {}
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
   await appendPhoto(form, 'person_file', personUri, true);
@@ -307,6 +309,7 @@ export async function analyzeTryOnGenerateLook(
   if (layers.top3Category) form.append('top3_category', layers.top3Category);
   if (layers.top4Category) form.append('top4_category', layers.top4Category);
   form.append('tuck_mode', tuckMode);
+  if (Object.keys(garmentOptions).length) form.append('garment_options', JSON.stringify(garmentOptions));
   // The app always asks for 'quality'; 'fast' drafts remain only in older history.
   form.append('quality_mode', qualityMode);
   if (fresh) form.append('fresh', 'true');

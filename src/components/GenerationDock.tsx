@@ -78,7 +78,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     try {
       const context = await tryOnContext(modelUri, garments);
       // A finished look asks for a new variant; a failed one is simply sent again.
-      await store.start({ modelUri, items: garments, context, tuckMode: job.tuckMode, quality: 'quality', fresh: job.status === 'succeeded', onJob: open });
+      await store.start({ modelUri, items: garments, context, tuckMode: job.tuckMode, quality: 'quality', fresh: job.status === 'succeeded', onJob: open,
+        options: job.options });
     } catch (error: any) {
       setActionError(error?.message || t('Не удалось сгенерировать примерку'));
     }

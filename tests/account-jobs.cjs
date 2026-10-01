@@ -215,22 +215,39 @@ async function run() {
     assert.equal(sent[1], 'data:image/png;base64,tee', 'the first top is the base layer');
     assert.equal(sent[8], 'Футболка');
     assert.equal(sent[7], 'data:image/png;base64,coat');
-    assert.deepEqual(sent.at(-1), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
+    assert.deepEqual(sent.at(-2), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
       outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет',
       top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined });
     await store.start({ modelUri: 'person', context: 'four tops', tuckMode: 'auto', items: [
       garment('hoodie', 'Верх', 'Худи'), garment('tee', 'Верх', 'Футболка'), garment('shirt', 'Верх', 'Рубашка'),
       garment('sweater', 'Верх', 'Свитер')] });
     assert.equal(sent[1], 'data:image/png;base64,hoodie');
-    assert.deepEqual([sent.at(-1).top2Uri, sent.at(-1).top3Uri, sent.at(-1).top4Uri],
+    assert.deepEqual([sent.at(-2).top2Uri, sent.at(-2).top3Uri, sent.at(-2).top4Uri],
       ['data:image/png;base64,tee', 'data:image/png;base64,shirt', 'data:image/png;base64,sweater'], 'all four tops reach the server');
-    assert.deepEqual([sent.at(-1).top3Category, sent.at(-1).top4Category], ['Рубашка', 'Свитер']);
+    assert.deepEqual([sent.at(-2).top3Category, sent.at(-2).top4Category], ['Рубашка', 'Свитер']);
+    assert.deepEqual(sent.at(-1), {}, 'no choices, nothing sent');
+    store.deactivate();
+  });
+  await test('each garment is worn as chosen: the choice reaches the server by its slot', async () => {
+    let sent;
+    submit = async (...args) => { sent = args; return response; };
+    const store = new TryOnJobStore(alice);
+    await store.activate(alice);
+    const garment = (id, section, category) => ({ ...item, id, name: id, section, category, imageUri: `data:image/png;base64,${id}` });
+    const look = [garment('tee', 'Верх', 'Футболка'), garment('shirt', 'Верх', 'Рубашка'), garment('jeans', 'Низ', 'Джинсы'),
+      garment('coat', 'Верхняя одежда', 'Тренч')];
+    await store.start({ modelUri: 'person', context: 'options', tuckMode: 'auto', items: look, options: {
+      tee: { tuck: 'tucked', fasten: 'closed' }, shirt: { tuck: 'auto', fasten: 'open' }, coat: { fasten: 'closed' }, jeans: { tuck: 'tucked' } } });
+    assert.deepEqual(sent.at(-1), { top: { tuck: 'tucked' }, top2: { fasten: 'open' }, outer: { fasten: 'closed' } },
+      'by slot, without "auto" and without what a garment cannot do');
+    const job = store.getSnapshot().jobs.find(entry => entry.context === 'options');
+    assert.deepEqual(job.options, { tee: { tuck: 'tucked' }, shirt: { fasten: 'open' }, coat: { fasten: 'closed' } }, 'kept for another variant');
     store.deactivate();
   });
   await test('in-flight generation survives screen/account unmount and charges one request', async () => {
     const pending = deferred();
     let calls = 0;
-    submit = async (...args) => { calls++; assert.equal(args.at(-3).login, 'alice'); return pending.promise; };
+    submit = async (...args) => { calls++; assert.equal(args.at(-4).login, 'alice'); return pending.promise; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'context', tuckMode: 'auto' };
@@ -346,7 +363,7 @@ async function run() {
   });
   await test('regenerate gets a new ID; a rejected protected result is not displayed', async () => {
     const ids = [];
-    submit = async (...args) => { ids.push(args.at(-4)); return response; };
+    submit = async (...args) => { ids.push(args.at(-5)); return response; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const input = { modelUri: 'person', items: [item], context: 'ctx', tuckMode: 'auto' };
@@ -421,7 +438,7 @@ async function run() {
   });
   await test('a draft goes out as fast, the final as quality, and each result remembers which it was', async () => {
     const sent = [];
-    submit = async (...args) => { sent.push({ quality: args[6], fresh: args.at(-2) }); return { ...response, updatedAt: 1000 + sent.length }; };
+    submit = async (...args) => { sent.push({ quality: args[6], fresh: args.at(-3) }); return { ...response, updatedAt: 1000 + sent.length }; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const look = { modelUri: 'person', items: [item], context: 'draft-final', tuckMode: 'auto' };
@@ -465,7 +482,7 @@ async function run() {
   });
   await test('fresh reaches the server only when asked', async () => {
     const flags = [];
-    submit = async (...args) => { flags.push(args.at(-2)); return response; };
+    submit = async (...args) => { flags.push(args.at(-3)); return response; };
     const store = new TryOnJobStore(alice);
     await store.activate(alice);
     const look = { modelUri: 'person', items: [item], context: 'fresh', tuckMode: 'auto', quality: 'fast' };

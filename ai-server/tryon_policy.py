@@ -162,14 +162,68 @@ def upper_roles(count):
     return UPPER_ROLES[:2] + ('third layer, worn over the second layer',) * (count - 3) + UPPER_ROLES[2:]
 
 
-def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None):
+# What the user can set per garment in the app: tuck a top in or out, wear
+# something that fastens open or closed. "Auto" sends nothing and the look
+# reads exactly as without these options.
+TUCKABLE = {'Футболка', 'Поло', 'Лонгслив', 'Рубашка', 'Блуза', 'Топ', 'Майка', 'Водолазка', 'Свитер', 'Свитшот'}
+FASTENABLE = {'Рубашка', 'Блуза', 'Кардиган', 'Жилет', 'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 'Тренч', 'Плащ', 'Пуховик', 'Парка', 'Шуба'}
+
+
+def garment_options(raw, categories):
+    """The per-garment choices that apply: {slot: {'tuck': ..., 'fasten': ...}} without 'auto' or nonsense."""
+    chosen = {}
+    for slot, value in (raw or {}).items():
+        if not isinstance(value, dict):
+            continue
+        category = categories.get(slot, '')
+        option = {}
+        if value.get('tuck') in ('tucked', 'untucked') and category in TUCKABLE:
+            option['tuck'] = value['tuck']
+        if value.get('fasten') in ('open', 'closed') and category in FASTENABLE:
+            option['fasten'] = value['fasten']
+        if option:
+            chosen[slot] = option
+    return chosen
+
+
+def fasten_instruction(state, noun, image, under=None):
+    """How a garment the user chose to fasten or open is worn; `under` names what it closes over.
+
+    Said right after the outfit, as part of it: told last, "fully closed" left a
+    trench open as in its photo, the editor keeping the shirt under it in sight.
+    """
+    if state == 'closed':
+        if under:
+            return (f'The {noun} from image {image} is worn closed over the {under}: it is buttoned or zipped from the collar down '
+                    f'to the hem, its front panels overlap with no gap between them anywhere, and a belt, if it has one, is tied; '
+                    f'above it only the collar of the {under} shows, and below it only what reaches past its hem. ')
+        return (f'The {noun} from image {image} is buttoned all the way down the front, its two sides closed over the body; '
+                'only the top button may stay open. ')
+    return (f'The {noun} from image {image} is worn open: every button or the zip is undone '
+            'and its front panels hang apart, showing the clothes under it. ')
+
+
+def layer_tuck_instruction(state, noun, image):
+    if state == 'tucked':
+        return f'Tuck the {noun} from image {image} into the trousers or skirt all around the waist. '
+    return f'Wear the {noun} from image {image} untucked: its hem hangs loose over the trousers at its full length. '
+
+
+def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None, options=None):
     """`slots` in the order their images follow the photo; `names` maps a category to an English noun.
 
     `categories` maps a slot to its wardrobe category; the two arguments before
     it are the categories of `top` and `outer` for callers without layers.
+    `options` holds the user's per-garment choices (garment_options); the
+    base top's tuck comes in `tuck`.
     """
     names = names or {}
     categories = {'top': top_category, 'outer': outer_category, **(categories or {})}
+    options = options or {}
+    noun_of = lambda slot: _bare(names.get(categories.get(slot, ''), '')) or 'garment'
+    layer_order = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]
+    closed_over = lambda slot: any(options.get(over, {}).get('fasten') == 'closed'
+                                   for over in layer_order[layer_order.index(slot) + 1:]) if slot in layer_order else False
     upper = [slot for slot in UPPER_LAYERS if slot in slots]
     role = dict(zip(upper, upper_roles(len(upper))))
     image = {slot: index for index, slot in enumerate(slots, start=2)}
@@ -177,9 +231,16 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     for slot in slots:
         category = categories.get(slot, '')
         noun = 'one-piece garment' if slot == 'top' and category in ONE_PIECE else names.get(category, '')
-        described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else ''))
+        worn = {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
+        described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
+    # The user's fastening choices belong to the outfit itself, so they are told with it.
+    stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]
+    fastening = ''.join(
+        fasten_instruction(options[slot]['fasten'], noun_of(slot), image[slot],
+                           under=noun_of(stack[stack.index(slot) - 1]) if stack.index(slot) > 0 else None)
+        for slot in stack if options.get(slot, {}).get('fasten'))
     text = ('Virtual try-on. Image 1 is a full-length photo of a person. '
-            f'Dress this person in the outfit from the other images: {"; ".join(described)}. '
+            f'Dress this person in the outfit from the other images: {"; ".join(described)}. {fastening}'
             'Replace the matching original clothes completely and reproduce every reference garment faithfully: '
             'exact colour, print, lettering, fabric, cut, length and fit. '
             'Ignore backgrounds, hangers, mannequins and people in the garment images. '
@@ -192,7 +253,8 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += 'Show the complete one-piece garment down to its hem; do not cut it off at the waist. '
     elif 'top' in slots:
         text += 'Use only the new neckline and sleeves; no collar, cuffs or hem of the old top may remain. '
-        text += fit_instruction(tuck)
+        # Under a coat worn closed a tuck does not show; asked for anyway, it made the editor open the coat.
+        text += '' if closed_over('top') else fit_instruction(tuck)
     if 'top' in slots and 'top2' in slots:
         # The inner top may peek out at the neck, never below the hem of the one over it.
         text += (f'The top in image {image["top"]} is worn under the garment in image {image["top2"]}: it may show only at the '
@@ -211,21 +273,29 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
                  + ', '.join(f'the {noun(slot)} (image {image[slot]})' for slot in stack) + '. ')
     for index, slot in enumerate(upper):
         if pullover and upper.index(slot) < upper.index(pullover):
-            text += (f'The {noun(slot)} from image {image[slot]} is worn closed under the {noun(pullover)} from image {image[pullover]}: '
-                     f'only its collar shows at the neckline of the {noun(pullover)}, and nothing of it shows below the hem of the {noun(pullover)}. ')
+            sentence = (f'The {noun(slot)} from image {image[slot]} is worn closed under the {noun(pullover)} from image {image[pullover]}: '
+                        f'only its collar shows at the neckline of the {noun(pullover)}, and nothing of it shows below the hem of the {noun(pullover)}. ')
         elif pullover and upper.index(slot) > upper.index(pullover):
-            text += (f'Wear the {noun(slot)} from image {image[slot]} open over the {noun(pullover)}, '
-                     f'which stays clearly visible at the front. ')
+            sentence = (f'Wear the {noun(slot)} from image {image[slot]} open over the {noun(pullover)}, '
+                        f'which stays clearly visible at the front. ')
         elif index == 0:
-            text += ('Wear the outerwear fully open and unfastened, with the new top and its print clearly visible. '
-                     if 'top' in slots else 'Match the open or closed state of the outerwear reference. ')
-            text += 'Do not tuck the outerwear. '
+            sentence = ('Wear the outerwear fully open and unfastened, with the new top and its print clearly visible. '
+                        if 'top' in slots else 'Match the open or closed state of the outerwear reference. ')
+            sentence += 'Do not tuck the outerwear. '
         elif slot == pullover:
-            text += (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} pulled on over the layers beneath it: '
-                     f'they may show only at its neckline and never below its hem. ')
+            sentence = (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} pulled on over the layers beneath it: '
+                        f'they may show only at its neckline and never below its hem. ')
         else:
-            text += (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} open over the layers beneath it, '
-                     'so each of them stays visible at the front, collar or hem. ')
+            sentence = (f'Wear the {role[slot].split(",")[0]} from image {image[slot]} open over the layers beneath it, '
+                        'so each of them stays visible at the front, collar or hem. ')
+        # The user's own choice for this garment replaces what is assumed for it.
+        chosen = options.get(slot, {})
+        if chosen.get('fasten'):
+            # Already told with the outfit; the assumed open or closed state no longer applies.
+            sentence = 'Do not tuck the outerwear. ' if index == 0 and not chosen.get('tuck') else ''
+        if chosen.get('tuck') and not closed_over(slot):
+            sentence = sentence.replace('Do not tuck the outerwear. ', '') + layer_tuck_instruction(chosen['tuck'], noun_of(slot), image[slot])
+        text += sentence
         if categories.get(slot) in LONG_OUTER:
             text += f'The garment in image {image[slot]} is long: keep its full length below the hips and never shorten it. '
     if 'shoes' in slots:
@@ -285,10 +355,14 @@ OUTER_LAYER_ORDER = {'Пиджак': 0, 'Бомбер': 1, 'Куртка': 1, '�
 
 
 def natural_layers(layers, order):
-    """(content, mime, category) layers inside out, the empty ones last as (None, None, '')."""
+    """(content, mime, category, ...) layers inside out, the empty ones last as (None, None, '', {}...).
+
+    Anything after the category (the user's options) travels with its garment.
+    """
     present = [layer for layer in layers if layer[0]]
     present.sort(key=lambda layer: order.get((layer[2] or '').strip(), 99))
-    return present + [(None, None, '')] * (len(layers) - len(present))
+    empty = (None, None, '') + tuple({} for _ in range(len(layers[0]) - 3))
+    return present + [empty] * (len(layers) - len(present))
 
 
 # Garments usually worn open over another top.

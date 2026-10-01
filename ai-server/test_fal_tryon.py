@@ -482,6 +482,52 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('its back print, back pockets and back seams stay on the person\'s back', prompt)
         self.assertIn('never make the person broader', prompt)
 
+    async def options_look(self, request, options, bottom=True, **layers):
+        fields = dict(top_file=None, top2_file=None, top3_file=None, top4_file=None, outer_file=None, outer2_file=None,
+                      top_category='', top2_category='', top3_category='', top4_category='', outer_category='', outer2_category='')
+        fields.update(layers)
+        await app.tryon_generate_look(
+            person_file=photo('white'), bottom_file=photo('blue') if bottom else None, shoes_file=None, tuck_mode='auto', compare_mode='false',
+            quality_mode='quality', request_id=request, async_mode='false', fresh='false', device='masha',
+            garment_options=options if isinstance(options, str) else json.dumps(options), **fields)
+        return self.generate.await_args.args[4]
+
+    async def test_a_garment_is_buttoned_or_opened_as_the_user_chose(self):
+        # The shirt was picked first and goes over the T-shirt: its choice goes with it.
+        prompt = await self.options_look('request_000000000081', {'top': {'fasten': 'closed'}, 'outer': {'fasten': 'closed'}},
+                                         top_file=photo('white'), top_category='Рубашка', top2_file=photo('black'), top2_category='Футболка',
+                                         outer_file=photo('navy'), outer_category='Тренч')
+        # Told with the outfit, naming what each one closes over.
+        self.assertIn('The button-up shirt from image 4 is worn closed over the t-shirt', prompt)
+        self.assertIn('The trench coat from image 5 is worn closed over the button-up shirt: it is buttoned or zipped from the collar down', prompt)
+        self.assertLess(prompt.index('worn closed over'), prompt.index('Replace the matching original clothes'))
+        self.assertIn('image 5 is the second layer, worn over the outerwear: a trench coat, worn fastened shut', prompt)
+        self.assertNotIn('Wear the outerwear fully open and unfastened', prompt)
+
+    async def test_a_coat_worn_open_and_a_shirt_tucked_in(self):
+        prompt = await self.options_look('request_000000000082', {'top': {'tuck': 'tucked'}, 'top2': {'tuck': 'untucked'}, 'outer': {'fasten': 'open'}},
+                                         top_file=photo('black'), top_category='Футболка', top2_file=photo('white'), top2_category='Рубашка',
+                                         outer_file=photo('navy'), outer_category='Куртка')
+        self.assertIn('Fully tuck the top into the trousers', prompt)
+        self.assertIn('Wear the button-up shirt from image 4 untucked', prompt)
+        self.assertIn('The jacket from image 5 is worn open: every button or the zip is undone', prompt)
+
+    async def test_a_tuck_under_a_closed_coat_is_not_asked_for(self):
+        # It does not show, and asked for anyway it made the editor open the coat.
+        prompt = await self.options_look('request_000000000087', {'top': {'tuck': 'tucked'}, 'outer': {'fasten': 'closed'}},
+                                         top_file=photo('white'), top_category='Рубашка', outer_file=photo('navy'), outer_category='Тренч')
+        self.assertNotIn('Fully tuck the top', prompt)
+        self.assertIn('worn closed over the button-up shirt', prompt)
+
+    async def test_choices_that_make_no_sense_are_ignored(self):
+        plain = await self.options_look('request_000000000083', {}, top_file=photo('white'), top_category='Футболка')
+        self.assertEqual(await self.options_look('request_000000000084', {'top': {'fasten': 'closed'}, 'x': 'y'},
+                                                 top_file=photo('white'), top_category='Футболка'), plain, 'a T-shirt has nothing to fasten')
+        self.assertEqual(await self.options_look('request_000000000085', 'not json', top_file=photo('white'), top_category='Футболка'), plain)
+        no_trousers = await self.options_look('request_000000000086', {'top': {'tuck': 'tucked'}}, bottom=False,
+                                              top_file=photo('white'), top_category='Футболка')
+        self.assertNotIn('tuck the top', no_trousers.lower(), 'nothing to tuck into without trousers')
+
     async def test_fashn_refuses_a_layered_look_instead_of_dropping_a_garment(self):
         with patch.dict(os.environ, {'TRYON_PROVIDER': 'fashn', 'FASHN_API_KEY': 'key'}):
             result = await app.tryon_generate_look(
