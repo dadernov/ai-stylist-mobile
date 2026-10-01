@@ -233,3 +233,35 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.equal(lookCore(wardrobe.filter(entry => later.at(-1).itemIds.includes(entry.id))), core, 'it sinks to the end, it is not banned');
   console.log('PASS: a look put aside with "Not now" sinks in later ideas');
 }
+
+{
+  // Reasonable advice only (the user: "a polo with a shirt - what nonsense?"): layers come
+  // from the pairs stylists wear, a vest never goes on bare skin, shorts wait for warm days.
+  let n = 0;
+  const it = (category, section, color, extra = {}) => item(`r${++n}`, category, section, { color, ...extra });
+  const W = [it('Футболка', 'Верх', 'Белый'), it('Поло', 'Верх', 'Синий'), it('Рубашка', 'Верх', 'Голубой'), it('Худи', 'Верх', 'Серый'),
+    it('Свитер', 'Верх', 'Бежевый'), it('Кардиган', 'Верх', 'Коричневый'), it('Жилет', 'Верх', 'Графит'), it('Майка', 'Верх', 'Белый'),
+    it('Джинсы', 'Низ', 'Синий'), it('Брюки', 'Низ', 'Черный'), it('Шорты', 'Низ', 'Бежевый'), it('Кроссовки', 'Обувь', 'Белый'),
+    it('Лоферы', 'Обувь', 'Коричневый'), it('Сандалии', 'Обувь', 'Бежевый'), it('Куртка', 'Верхняя одежда', 'Черный'), it('Пальто', 'Верхняя одежда', 'Бежевый')];
+  const byId = Object.fromEntries(W.map(entry => [entry.id, entry]));
+  const allowed = { Майка: ['Рубашка', 'Кардиган'], Футболка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'], Рубашка: ['Свитер', 'Кардиган', 'Жилет', 'Свитшот'] };
+  const { EVENTS, STYLES } = require('../src/domain/outfits.ts');
+  for (const event of EVENTS) for (const style of STYLES) for (const temperature of [-5, 8, 12, 25]) {
+    for (const look of buildLooks(W, style, event, '', temperature, 'male')) {
+      const tops = look.itemIds.map(id => byId[id]).filter(entry => entry.section === 'Верх').map(entry => entry.category);
+      if (tops.length === 2) assert.ok(allowed[tops[0]]?.includes(tops[1]), `${tops.join(' under ')} is a pair stylists wear`);
+      if (tops.length === 1) assert.ok(!['Жилет', 'Кардиган'].includes(tops[0]), `${tops[0]} is never worn alone in a man's look`);
+      if (temperature < 15 && event !== 'Спортзал') {
+        assert.ok(!look.itemIds.some(id => ['Шорты', 'Сандалии'].includes(byId[id].category)), `no shorts or sandals at ${temperature}°C`);
+        assert.ok(!(tops.length === 1 && tops[0] === 'Майка'), 'a tank top is no top of its own on a cool day');
+      }
+    }
+  }
+  // A vest chosen as the base of the ideas goes over a top that suits it.
+  const vest = W.find(entry => entry.category === 'Жилет');
+  for (const look of buildLooks(W, 'Кэжуал', 'Прогулка', '', 25, 'male', false, { anchorId: vest.id })) {
+    assert.ok(look.itemIds.includes(vest.id));
+    assert.ok(look.itemIds.some(id => ['Футболка', 'Рубашка'].includes(byId[id].category)), 'the vest has a top under it');
+  }
+  console.log('PASS: layers only in real pairs, no vest on bare skin, no shorts or sandals on cool days');
+}

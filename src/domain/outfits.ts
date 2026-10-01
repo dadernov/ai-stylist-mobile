@@ -546,20 +546,38 @@ export function wardrobeGaps(items: WardrobeItem[], context: OutfitContext, t: T
   return [...new Set(gaps)];
 }
 
-// A second top over the first, inside out as the try-on puts them on
-// (ai-server tryon_policy.TOP_LAYER_ORDER): a T-shirt under a sweater, a shirt
-// under a cardigan. Layers are for cool days, when one top is too little.
-const TOP_LAYER_ORDER: Record<string, number> = { Майка: 0, Топ: 0, Футболка: 1, Поло: 1, Лонгслив: 2, Водолазка: 2,
-  Рубашка: 3, Блуза: 3, Свитер: 4, Худи: 4, Свитшот: 4, Кардиган: 5, Жилет: 5 };
-const MID_LAYERS = new Set(['Рубашка', 'Свитер', 'Худи', 'Свитшот', 'Кардиган', 'Жилет']);
+// A second top over the first, only in the pairs stylists actually wear
+// (Man of Many, The Rake, Permanent Style, Who What Wear): light under heavy,
+// one collar at most, the inner top showing at the neckline or the open front.
+// Ordering by thickness alone once suggested a polo under a shirt: two collars.
+// A polo stays a top of its own; a hoodie is never a middle layer.
+const LAYER_PAIRS: Record<string, string[]> = {
+  Майка: ['Рубашка', 'Кардиган'],
+  Топ: ['Рубашка', 'Кардиган'],
+  // A T-shirt under an open overshirt, a fine sweater, a cardigan or a knit vest.
+  Футболка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'],
+  Лонгслив: ['Рубашка', 'Кардиган', 'Жилет'],
+  // A thin turtleneck under a shirt or a sweater.
+  Водолазка: ['Рубашка', 'Свитер', 'Кардиган', 'Жилет'],
+  // The shirt collar stays inside the sweater's neckline.
+  Рубашка: ['Свитер', 'Кардиган', 'Жилет', 'Свитшот'],
+  Блуза: ['Свитер', 'Кардиган', 'Жилет'],
+};
+const MID_LAYERS = new Set(Object.values(LAYER_PAIRS).flat());
 const LAYER_MAX_TEMPERATURE = 17;
-const canLayer = (inner: WardrobeItem, over: WardrobeItem) => inner.id !== over.id && MID_LAYERS.has(over.category) && !isOnePiece(inner)
-  && (TOP_LAYER_ORDER[inner.category] ?? 99) < (TOP_LAYER_ORDER[over.category] ?? -1);
-// Pairs that read as a mistake rather than a style: a hoodie over a shirt, a sweatshirt over a blouse.
-// Two bulky knits on top of each other too.
-const awkwardLayer = (inner: WardrobeItem, over: WardrobeItem) => (over.category === 'Худи' && ['Рубашка', 'Блуза', 'Поло'].includes(inner.category))
-  || (over.category === 'Свитшот' && inner.category === 'Блуза')
-  || (['Кардиган', 'Жилет'].includes(over.category) && describe(inner).volume === 3);
+// A knit vest is worn over something, never on bare skin; so is a cardigan in a
+// man's wardrobe (a buttoned one is a top of its own in a woman's).
+const needsBase = (item: WardrobeItem, gender: Gender) => item.category === 'Жилет' || (item.category === 'Кардиган' && gender !== 'female');
+// Shorts, sandals and sleeveless tops belong to warm days: with a parka they read as a mistake.
+const WARM_ONLY = new Set(['Шорты', 'Сандалии']);
+const SLEEVELESS = new Set(['Майка', 'Топ']);
+const WARM_ONLY_BELOW = 15;
+const canLayer = (inner: WardrobeItem, over: WardrobeItem) => inner.id !== over.id && Boolean(LAYER_PAIRS[inner.category]?.includes(over.category));
+// Light inside, dark outside reads as depth; the reverse looks accidental.
+const layerShade = (inner: WardrobeItem, over: WardrobeItem) => {
+  const a = itemColor(inner), b = itemColor(over);
+  return a && b ? (a.lightness >= b.lightness ? 2 : -2) : 0;
+};
 
 export function buildLooks(items: WardrobeItem[], style: string, event: string, weather: string, temperature: number | null, gender: Gender = 'unspecified', beautyAdvice = false, options: RecommendationOptions = {}): GeneratedLook[] {
   const context: OutfitContext = { style, event, temperature, gender, precipitation: options.precipitation ?? null, wind: options.wind ?? null };
@@ -571,7 +589,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     if (item.id === anchor?.id) return true;
     if (event === 'Спортзал') return Boolean(describe(item).sporty) && item.section !== 'Верхняя одежда';
     if (temperature !== null && temperature >= 24 && (item.season === 'Зима' || ['Пуховик', 'Шуба', 'Парка'].includes(item.category))) return false;
-    if (temperature !== null && temperature < 5 && ['Шорты', 'Сандалии'].includes(item.category)) return false;
+    if (temperature !== null && temperature < WARM_ONLY_BELOW && WARM_ONLY.has(item.category)) return false;
     if (temperature !== null && temperature < 0 && openShoes.has(item.category)) return false;
     // В мороз лёгкий плащ вместо пуховика — не вариант, если есть тёплая верхняя одежда.
     if (temperature !== null && temperature < 0 && item.section === 'Верхняя одежда' && warmthOf(item) < 4 && hasWarmOuter) return false;
@@ -587,14 +605,22 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     return wardrobe.filter(item => item.section === section && eligible(item) && !(anchor?.section === 'Низ' && isOnePiece(item)))
       .sort((a, b) => preference(b) - preference(a)).slice(0, limit);
   };
-  const tops = choose('Верх', 8), bottoms = choose('Низ', 8), shoes = choose('Обувь', 5), outer = choose('Верхняя одежда', 5);
-  const layering = temperature !== null && temperature <= LAYER_MAX_TEMPERATURE && !['Спортзал', 'Пляж'].includes(event);
-  const mids = layering ? wardrobe.filter(item => item.section === 'Верх' && MID_LAYERS.has(item.category) && eligible(item))
+  // A vest asked for as the base of the ideas goes over a top that suits it.
+  const anchorOver = anchor?.section === 'Верх' && needsBase(anchor, gender) ? anchor : null;
+  const tops = anchorOver ? wardrobe.filter(item => item.section === 'Верх' && eligible(item) && canLayer(item, anchorOver))
+      .sort((a, b) => preference(b) - preference(a)).slice(0, 8)
+    : choose('Верх', 8);
+  const bottoms = choose('Низ', 8), shoes = choose('Обувь', 5), outer = choose('Верхняя одежда', 5);
+  const layering = Boolean(anchorOver) || (temperature !== null && temperature <= LAYER_MAX_TEMPERATURE && !['Спортзал', 'Пляж'].includes(event));
+  const mids = anchorOver ? [anchorOver] : layering ? wardrobe.filter(item => item.section === 'Верх' && MID_LAYERS.has(item.category) && eligible(item))
     .sort((a, b) => preference(b) - preference(a)).slice(0, 4) : [];
+  // A top that cannot be worn alone here: a vest, a man's cardigan, a tank top on a cool day.
+  const alone = (top: WardrobeItem) => top.id === anchor?.id
+    || (!needsBase(top, gender) && !(SLEEVELESS.has(top.category) && temperature !== null && temperature < WARM_ONLY_BELOW));
   const bags = choose('Сумки', 2);
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];
-  for (const top of optional(tops)) for (const mid of top ? [null, ...mids.filter(item => canLayer(top, item))] : [null])
+  for (const top of optional(tops)) for (const mid of top ? [...(alone(top) && !anchorOver ? [null] : []), ...mids.filter(item => canLayer(top, item))] : [null])
   for (const bottom of top && isOnePiece(top) ? [null] : optional(bottoms)) {
     for (const shoe of optional(shoes)) for (const layer of anchor?.section === 'Верхняя одежда' ? outer : [null, ...outer]) {
       const selection = [top, mid, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
@@ -605,7 +631,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
         // Two tops warm like one warmer top: the pair belongs to a cool day, the colder
         // the more. The second top counts half, or any look would win by one more garment.
         score += (temperature !== null && temperature < 8 ? 6 : 3) - preference(mid) / 2;
-        if (awkwardLayer(top, mid)) score -= 14;
+        score += layerShade(top, mid);
         // A bulky knit under a blazer breaks its line.
         if (layer?.category === 'Пиджак' && describe(mid).volume === 3) score -= 8;
       }
