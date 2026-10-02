@@ -23,7 +23,7 @@ export function IconButton({ icon: Icon, label, onPress, danger = false, variant
 
 const styles = StyleSheet.create({
   wrap: { position: 'relative', zIndex: 2 },
-  button: { width: 44, height: 44, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  button: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   quiet: { backgroundColor: 'transparent', borderWidth: 0, borderRadius: 22 },
-  tooltip: { position: 'absolute', top: 48, right: 0, minWidth: 110, padding: 8, borderRadius: 4, zIndex: 5 }
+  tooltip: { position: 'absolute', top: 48, right: 0, minWidth: 110, padding: 8, borderRadius: 16, zIndex: 5 }
 });

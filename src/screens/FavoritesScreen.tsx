@@ -1,4 +1,4 @@
-import { ArrowUpRight } from 'lucide-react-native';
+import { ArrowUpRight, Palette, Scissors, Sparkles, Trash2 } from 'lucide-react-native';
 import { FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
 import { useAppDialog } from '../components/AppDialog';
 import { memo, useCallback, useState } from 'react';
@@ -49,6 +49,7 @@ type FavoriteLookCardProps = {
 // несвязанном обновлении экрана.
 const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById, onRemove, onPreview, onTryOn, beautyAdvice }: FavoriteLookCardProps) {
   const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const t = useT();
   const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
   const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
@@ -61,15 +62,16 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>{look.title.split(' + ').map(part => t(part)).join(' + ')}</Text>
-          <AppPressable style={styles.deleteButton} haptics onPress={() => onRemove(look.id)}>
-            <Text style={styles.deleteText}>{t('Удалить')}</Text>
+          <AppPressable style={styles.deleteButton} haptics accessibilityRole="button" accessibilityLabel={t('Удалить')} onPress={() => onRemove(look.id)}>
+            <Trash2 size={17} strokeWidth={1.6} color={colors.muted} />
           </AppPressable>
         </View>
         <View style={styles.metaRow}>
           <Text style={styles.cardMeta}>{meta}</Text>
           {tryOnUri ? (
             <View style={styles.tryOnBadge}>
-              <Text style={styles.tryOnBadgeText}>✨ {t('Примерка')}</Text>
+              <Sparkles size={12} strokeWidth={1.8} color={colors.accentGold} />
+              <Text style={styles.tryOnBadgeText}>{t('Примерка')}</Text>
             </View>
           ) : null}
         </View>
@@ -96,7 +98,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
             {look.makeup ? (
               <View style={styles.beautyRow}>
                 <View style={styles.beautyIcon}>
-                  <Text style={styles.beautyEmoji}>💄</Text>
+                  <Palette size={17} strokeWidth={1.6} color={colors.accentGold} />
                 </View>
                 <View style={styles.beautyBody}>
                   <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
@@ -108,7 +110,7 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
             {look.hair ? (
               <View style={styles.beautyRow}>
                 <View style={styles.beautyIcon}>
-                  <Text style={styles.beautyEmoji}>💇‍♀️</Text>
+                  <Scissors size={17} strokeWidth={1.6} color={colors.accentGold} />
                 </View>
                 <View style={styles.beautyBody}>
                   <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
@@ -220,21 +222,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   cardTitle: {
     color: c.text,
     fontFamily: SERIF,
-    fontSize: 21,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    fontSize: 24,
+    lineHeight: 28,
+    letterSpacing: -0.2,
     flex: 1
   },
   deleteButton: {
-    backgroundColor: c.dangerSoft,
-    borderRadius: 999,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6
-  },
-  deleteText: {
-    color: c.danger,
-    fontSize: 12,
-    fontWeight: '700'
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: c.surface,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   metaRow: {
     flexDirection: 'row',
@@ -249,9 +248,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1
   },
   tryOnBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
     borderRadius: 999,
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: 4
@@ -309,9 +309,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderColor: c.goldHairline,
     alignItems: 'center',
     justifyContent: 'center'
-  },
-  beautyEmoji: {
-    fontSize: 16
   },
   beautyBody: {
     flex: 1,

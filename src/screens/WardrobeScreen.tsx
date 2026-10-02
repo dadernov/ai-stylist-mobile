@@ -560,7 +560,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             style={[styles.modalChip, isActive && styles.modalChipActive]}
             onPress={() => onSelect(option)}
           >
-            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
+            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
             <Text style={[styles.modalChipText, isActive && styles.modalChipTextActive]}>{t(option)}</Text>
           </AppPressable>
         );
@@ -857,18 +857,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   collectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   helpSlot: { width: 44, height: 44, marginBottom: 18, zIndex: 3 },
   addButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 8, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
   collectionMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
   collectionLabel: { color: c.text, fontSize: 14, fontWeight: '600' },
   collectionCount: { color: c.muted, fontSize: 12 },
-  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   detailToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
-  detailPhoto: { width: '100%', height: 300, borderRadius: 8, backgroundColor: c.surface },
-  detailTitle: { fontFamily: SERIF, fontSize: 26, color: c.text },
+  detailPhoto: { width: '100%', height: 320, borderRadius: 24, backgroundColor: c.stage },
+  detailTitle: { fontFamily: SERIF, fontSize: 32, lineHeight: 36, letterSpacing: -0.3, color: c.text },
   detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
   detailActions: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
+  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
   detailActionText: { fontSize: 12, fontWeight: '600', color: c.text },
   filterRow: {
     paddingBottom: 6,
@@ -923,9 +923,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   uploadTitle: {
     fontFamily: SERIF,
-    fontSize: 19,
-    fontWeight: '700',
-    letterSpacing: 0,
+    fontSize: 22,
+    letterSpacing: -0.1,
     color: c.text
   },
   uploadText: {
@@ -999,9 +998,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
     fontFamily: SERIF,
     color: c.text,
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0
+    fontSize: 21,
+    letterSpacing: -0.1
   },
   editButton: {
     backgroundColor: c.accentGoldSoft,
@@ -1099,9 +1097,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalTitle: {
     fontFamily: SERIF,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: 0,
+    fontSize: 28,
+    letterSpacing: -0.2,
     color: c.text,
     marginBottom: 14
   },

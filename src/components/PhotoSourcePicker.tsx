@@ -49,7 +49,7 @@ export function PhotoSourcePicker({ visible, onClose, onSelect }: {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', padding: 16 },
-  sheet: { width: '100%', maxWidth: 520, alignSelf: 'center', padding: 20, borderRadius: 8 },
+  sheet: { width: '100%', maxWidth: 520, alignSelf: 'center', padding: 20, borderRadius: 14 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 68, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 16 }
 });

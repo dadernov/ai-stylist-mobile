@@ -140,7 +140,7 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   preview: {
     height: 356,
-    borderRadius: 14,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: c.border,
     overflow: 'hidden',
@@ -177,7 +177,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: '27%',
     width: '8.5%',
     height: '30%',
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: '#E8DECF',
     borderWidth: 1,
     borderColor: '#D8CBB8'
@@ -193,7 +193,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: '56%',
     width: '12%',
     height: '34%',
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: '#E8DECF',
     borderWidth: 1,
     borderColor: '#D8CBB8'
@@ -206,7 +206,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   layerItem: {
     position: 'absolute',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     justifyContent: 'flex-end',
     paddingHorizontal: 8,
@@ -222,7 +222,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     bottom: 10,
     alignSelf: 'center',
     backgroundColor: 'rgba(30,28,25,0.8)',
-    borderRadius: 10,
+    borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 10
   },

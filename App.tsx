@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { useFonts, CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
@@ -28,7 +29,7 @@ import { PrimaryButton } from './src/components/ui/PrimaryButton';
 import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
-import { Shirt, ScanLine, Sparkles, Heart, UserRound, LucideIcon } from 'lucide-react-native';
+import { Shirt, ScanLine, Sparkles, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
@@ -52,8 +53,8 @@ const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
 ];
 
 // Геометрия плавающего таб-бара.
-const TAB_BAR_RADIUS = 16;
-const TAB_BAR_HEIGHT = 62;
+const TAB_BAR_RADIUS = 32;
+const TAB_BAR_HEIGHT = 64;
 const TAB_BAR_SIDE_MARGIN = 16;
 const TAB_INNER_PAD = 8;
 
@@ -148,7 +149,7 @@ function Onboarding({ onClose }: { onClose: () => void }) {
             <View style={styles.tipCard}>
               <View style={styles.tipHeader}>
                 <View style={styles.tipEmojiCircle}>
-                  <Text style={styles.tipEmoji}>💡</Text>
+                  <Lightbulb size={15} strokeWidth={1.7} color={colors.accentGold} />
                 </View>
                 <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
               </View>
@@ -695,6 +696,10 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
 }
 
 export default function App() {
+  // The display serif of every title; shown before it loads, the titles would jump.
+  const [fontsReady, fontError] = useFonts({ CormorantGaramond_600SemiBold, CormorantGaramond_700Bold });
+  const scheme = useColorScheme();
+  if (!fontsReady && !fontError) return <View style={{ flex: 1, backgroundColor: scheme === 'dark' ? '#161311' : '#F5F0E8' }} />;
   return (
     <SafeAreaProvider>
       <ThemeProvider>
@@ -725,8 +730,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   loadingLogo: {
     fontFamily: SERIF,
-    fontSize: 36,
-    fontWeight: '700',
+    fontSize: 42,
     letterSpacing: -0.5,
     color: c.text
   },
@@ -785,7 +789,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   stepBadge: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 20,
     backgroundColor: c.accentGoldSoft,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.goldHairline,
@@ -794,8 +798,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   stepBadgeText: {
     fontFamily: SERIF,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 18,
     color: c.accentGold
   },
   stepText: {
@@ -820,13 +823,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tipEmojiCircle: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center'
-  },
-  tipEmoji: {
-    fontSize: 14
   },
   tipTitle: {
     ...TYPE.title,
@@ -856,7 +856,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: TAB_BAR_RADIUS,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.goldHairline,
+    borderColor: c.border,
     backgroundColor: Platform.OS === 'android' ? c.card : c.goldTransparent
   },
   tabRow: {
@@ -870,18 +870,16 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     left: 0,
     top: TAB_INNER_PAD,
     bottom: TAB_INNER_PAD,
-    borderRadius: RADII.lg,
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.goldHairline
+    borderRadius: 999,
+    backgroundColor: c.tabActiveBg
   },
   tabItem: {
     flex: 1,
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    borderRadius: RADII.lg,
+    gap: 3,
+    borderRadius: 999,
     overflow: Platform.OS === 'android' ? 'hidden' : 'visible'
   },
   tabIcon: {
@@ -894,12 +892,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     color: c.muted,
-    fontWeight: '600',
-    letterSpacing: 0
+    fontWeight: '500',
+    letterSpacing: 0.2
   },
   tabLabelActive: {
-    color: c.accentGold,
-    fontWeight: '700'
+    color: c.text,
+    fontWeight: '600'
   },
   // --- Тост ---
   toast: {
@@ -919,7 +917,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   toastIconCircle: {
     width: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: c.goldHairline,
     alignItems: 'center',

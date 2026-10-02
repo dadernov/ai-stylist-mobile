@@ -13,6 +13,7 @@ import { FadeInView } from '../components/ui/FadeInView';
 import { Gender } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
 import { PhotoAdvice } from '../components/PhotoAdvice';
+import { Bot, ChevronRight, Globe, LockKeyhole, LogOut, LucideIcon, Moon, PersonStanding, Sun, Trash2 } from 'lucide-react-native';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -87,7 +88,7 @@ export function ProfileScreen({
   };
 
   const renderSettingRow = (options: {
-    emoji: string;
+    icon: LucideIcon;
     title: string;
     hint?: string;
     value?: string;
@@ -98,14 +99,14 @@ export function ProfileScreen({
     <FadeInView delay={options.delay}>
       <AppPressable haptics style={styles.settingCard} onPress={options.onPress}>
         <View style={[styles.settingIconWrap, options.danger && styles.settingIconWrapDanger]}>
-          <Text style={styles.settingIcon}>{options.emoji}</Text>
+          <options.icon size={18} strokeWidth={1.6} color={options.danger ? colors.danger : colors.text} />
         </View>
         <View style={styles.settingBody}>
           <Text style={[styles.settingTitle, options.danger && styles.settingTitleDanger]}>{options.title}</Text>
           {options.hint ? <Text style={styles.settingHint}>{options.hint}</Text> : null}
         </View>
         {options.value ? <Text style={styles.settingValue}>{options.value}</Text> : null}
-        <Text style={[styles.chevron, options.danger && styles.chevronDanger]}>›</Text>
+        <ChevronRight size={18} strokeWidth={1.6} color={options.danger ? colors.danger : colors.muted} />
       </AppPressable>
     </FadeInView>
   );
@@ -196,7 +197,7 @@ export function ProfileScreen({
                     end={{ x: 1, y: 1 }}
                     style={styles.modelEmptyCircle}
                   >
-                    <Text style={styles.modelEmptyEmoji}>🧍</Text>
+                    <PersonStanding size={34} strokeWidth={1.3} color={colors.accentGold} />
                   </LinearGradient>
                   <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
                 </View>
@@ -212,7 +213,7 @@ export function ProfileScreen({
         </FadeInView>
 
         {renderSettingRow({
-          emoji: '🌗',
+          icon: mode === 'dark' ? Moon : Sun,
           title: t('Тема оформления'),
           value: t(mode === 'dark' ? 'Тёмная' : 'Светлая'),
           delay: 160,
@@ -220,7 +221,7 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
-          emoji: '🌐',
+          icon: Globe,
           title: t('Язык'),
           value: LANGUAGES.find(item => item.code === lang)?.label,
           delay: 200,
@@ -228,7 +229,7 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
-          emoji: '🔒',
+          icon: LockKeyhole,
           title: t('Политика конфиденциальности'),
           hint: t('Какие данные обрабатываются и где'),
           delay: 240,
@@ -236,7 +237,7 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
-          emoji: '🤖',
+          icon: Bot,
           title: t('Согласие на обработку фото ИИ'),
           hint: t('Отозвать разрешение на отправку фото нейросетям'),
           delay: 260,
@@ -244,7 +245,7 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
-          emoji: '🚪',
+          icon: LogOut,
           title: t('Выйти из аккаунта'),
           danger: true,
           delay: 280,
@@ -252,7 +253,7 @@ export function ProfileScreen({
         })}
 
         {renderSettingRow({
-          emoji: '🗑️',
+          icon: Trash2,
           title: t('Удалить аккаунт'),
           hint: t('Удалит аккаунт и все данные без возможности восстановления'),
           danger: true,
@@ -265,8 +266,8 @@ export function ProfileScreen({
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  languageSheet: { borderRadius: 16, borderWidth: 1, padding: 18, gap: 10 },
-  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  languageSheet: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 10 },
+  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14 },
   container: {
     flex: 1
   },
@@ -298,9 +299,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'center'
   },
   avatarInner: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: c.chip,
     alignItems: 'center',
     justifyContent: 'center',
@@ -320,9 +321,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   userName: {
     fontFamily: SERIF,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: 0,
+    fontSize: 28,
+    letterSpacing: -0.2,
     color: c.text
   },
   userMeta: {
@@ -352,8 +352,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   statValue: {
     fontFamily: SERIF,
-    fontSize: 19,
-    fontWeight: '700',
+    fontSize: 24,
     color: c.accentGold
   },
   statText: {
@@ -411,10 +410,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: c.goldHairline
   },
-  modelEmptyEmoji: {
-    fontSize: 36,
-    lineHeight: 44
-  },
   modelPlaceholder: {
     fontSize: 13,
     fontWeight: '600',
@@ -441,19 +436,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center'
   },
   settingIconWrapDanger: {
-    backgroundColor: c.dangerSoft,
-    borderColor: c.dangerSoft
-  },
-  settingIcon: {
-    fontSize: 18,
-    lineHeight: 24
+    backgroundColor: c.dangerSoft
   },
   settingBody: {
     flex: 1,
@@ -475,15 +463,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: c.accentGold
-  },
-  chevron: {
-    fontSize: 22,
-    lineHeight: 24,
-    color: c.muted,
-    marginTop: -2
-  },
-  chevronDanger: {
-    color: c.danger
   },
   previewBackdrop: {
     flex: 1,

@@ -74,14 +74,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   previewImage: {
     width: '100%',
     height: 160,
-    backgroundColor: c.surface,
-    borderRadius: 6
+    backgroundColor: c.stage,
+    borderRadius: 18
   },
   previewPlaceholder: {
     width: '100%',
     height: 160,
-    borderRadius: 6,
-    backgroundColor: c.surface
+    borderRadius: 18,
+    backgroundColor: c.stage
   },
   caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 },
   swap: { position: 'absolute', top: 8, right: 8, width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }

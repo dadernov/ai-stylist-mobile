@@ -82,7 +82,7 @@ export function PhotoCropper({ photo, visible, onDismiss, onClose, onDone }: { p
             {imageError ? <AppPressable accessibilityRole="button" accessibilityLabel={t('Повторить загрузку фото')}
               onPress={() => { setImageError(false); setImageAttempt(value => value + 1); }} style={{ padding: 20, gap: 12, alignItems: 'center' }}>
               <Text style={styles.error}>{t('Не удалось загрузить фото')}</Text><RotateCcw color="#FFFFFF" size={24} />
-            </AppPressable> : <ActivityIndicator color="#DDEBA6" />}
+            </AppPressable> : <ActivityIndicator color="#E3A47F" />}
           </View>}
         </View>
         <View style={styles.footer}>
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   handle: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', ...(Platform.OS === 'web' ? { touchAction: 'none' } as any : {}) },
   handleMark: { backgroundColor: '#FFFFFF', borderRadius: 2 },
   footer: { padding: 20, gap: 12 },
-  done: { backgroundColor: '#DDEBA6', minHeight: 52, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  done: { backgroundColor: '#E3A47F', minHeight: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   doneText: { color: '#151619', fontWeight: '600', fontSize: 16 },
   error: { color: '#FFB5AA', textAlign: 'center', fontSize: 14 }
 });

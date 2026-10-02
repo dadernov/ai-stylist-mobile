@@ -29,7 +29,7 @@ export function PrimaryButton({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const blocked = disabled || loading;
-  const radius = 8;
+  const radius = 999;
 
   const contentColor =
     variant === 'primary' ? colors.buttonPrimaryText : variant === 'gold' ? colors.textOnGold : colors.accentGold;
@@ -81,14 +81,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 10
   },
   md: {
-    height: 50,
-    borderRadius: 8,
-    paddingHorizontal: 24
+    height: 52,
+    borderRadius: 999,
+    paddingHorizontal: 26
   },
   lg: {
-    height: 56,
-    borderRadius: 8,
-    paddingHorizontal: 30
+    height: 58,
+    borderRadius: 999,
+    paddingHorizontal: 32
   },
   primary: {
     backgroundColor: c.buttonPrimaryBg,
@@ -99,17 +99,17 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...SHADOWS.floating
   },
   ghost: {
-    backgroundColor: 'transparent',
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: c.goldHairline
+    borderColor: c.border
   },
   disabled: {
     opacity: 0.5
   },
   text: {
     fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0
+    fontWeight: '600',
+    letterSpacing: 0.2
   },
   textLg: {
     fontSize: 16

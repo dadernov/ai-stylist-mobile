@@ -58,7 +58,7 @@ export function PhotoAdvice({ uri }: { uri?: string | null }) {
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  box: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 12, backgroundColor: c.accentGoldSoft },
+  box: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 16, backgroundColor: c.accentGoldSoft },
   texts: { flex: 1, gap: 4 },
   title: { color: c.text, fontSize: 14, fontWeight: '600' },
   text: { color: c.text, fontSize: 13, lineHeight: 18 },

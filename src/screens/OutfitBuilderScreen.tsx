@@ -25,66 +25,23 @@ import { buildLooks, evaluateLook, EVENTS, STYLES } from '../domain/outfits';
 import { describeWeatherCode } from '../services/weather';
 import { useWeather } from '../components/useWeather';
 import { MatchSummary } from '../components/MatchSummary';
-import { ArrowUpRight, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ArrowUpRight, ChevronDown, ChevronUp, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, LucideIcon, Sun } from 'lucide-react-native';
 import { Gender } from '../types/profile';
 
 const stylePresets = STYLES;
 const events = EVENTS;
 
-// Эмодзи-акценты для чипов и слотов ручного конструктора (декор, не контент).
-const styleIcons: Record<string, string> = {
-  'Кэжуал': '👕',
-  'Спорт-шик': '🏃',
-  'Романтичный': '🌸',
-  'Бохо': '🌾',
-  'Минимализм': '🤍',
-  'Офисный': '💼',
-  'Смарт-кэжуал': '👔',
-  'Классика': '🎩',
-  'Old money': '🥂',
-  'Стритвир': '🧢',
-  'Гранж': '🎸',
-  'Преппи': '📚'
-};
-
-const eventIcons: Record<string, string> = {
-  'Свидание': '💘',
-  'Прогулка': '🚶',
-  'Совещание': '💼',
-  'Вечеринка': '🎉',
-  'Спортзал': '🏋️',
-  'Работа': '🗂️',
-  'Собеседование': '🤝',
-  'Учёба': '🎓',
-  'Ресторан': '🍽️',
-  'Театр': '🎭',
-  'Концерт': '🎤',
-  'Свадьба': '💍',
-  'Путешествие': '✈️',
-  'Дома': '🏠',
-  'Пляж': '🏖️'
-};
-
-const slotEmojis: Record<string, string> = {
-  'Верх': '👕',
-  'Низ': '👖',
-  'Обувь': '👟',
-  'Верхняя одежда': '🧥',
-  'Сумка': '👜'
-};
-
-const weatherEmojiMap: Record<number, string> = {
-  0: '☀️',
-  1: '🌤️',
-  2: '⛅️',
-  3: '☁️',
-  45: '🌫️',
-  48: '🌫️',
-  51: '🌦️',
-  61: '🌧️',
-  71: '❄️',
-  80: '🌧️',
-  95: '⛈️'
+// Погода линейной иконкой, без эмодзи: WMO-код → иконка.
+const weatherIcon = (code: number | null): LucideIcon => {
+  if (code === null) return CloudSun;
+  if (code === 0) return Sun;
+  if (code <= 2) return CloudSun;
+  if (code === 3) return Cloud;
+  if (code === 45 || code === 48) return CloudFog;
+  if (code >= 51 && code <= 57) return CloudDrizzle;
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return CloudSnow;
+  if (code >= 95) return CloudLightning;
+  return CloudRain;
 };
 
 type OutfitBuilderProps = {
@@ -606,7 +563,7 @@ export function OutfitBuilderScreen({
     <View style={styles.slotCard}>
       <View style={styles.slotHeader}>
         <View style={styles.slotEmojiCircle}>
-          <Text style={styles.slotEmoji}>{slotEmojis[title] || '👗'}</Text>
+          <Text style={styles.slotInitial}>{t(title).slice(0, 1)}</Text>
         </View>
         <View style={styles.slotInfo}>
           <Text style={styles.slotTitle}>{t(title)}</Text>
@@ -645,7 +602,7 @@ export function OutfitBuilderScreen({
     </View>
   );
 
-  const weatherEmoji = weatherCode !== null ? weatherEmojiMap[weatherCode] || '🌤️' : '🌤️';
+  const WeatherIcon = weatherIcon(weatherCode);
   const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 4 : 0;
 
   return (
@@ -725,7 +682,6 @@ export function OutfitBuilderScreen({
                 <Chip
                   key={preset}
                   label={t(preset)}
-                  icon={styleIcons[preset]}
                   active={preset === activeStyle}
                   onPress={() => setActiveStyle(preset)}
                 />
@@ -743,7 +699,6 @@ export function OutfitBuilderScreen({
                 <Chip
                   key={event}
                   label={t(event)}
-                  icon={eventIcons[event]}
                   active={event === activeEvent}
                   onPress={() => setActiveEvent(event)}
                 />
@@ -759,7 +714,7 @@ export function OutfitBuilderScreen({
                 pointerEvents="none"
               />
               <View style={styles.weatherEmojiCircle}>
-                <Text style={styles.weatherEmoji}>{weatherEmoji}</Text>
+                <WeatherIcon size={26} strokeWidth={1.5} color={themeColors.accentGold} />
               </View>
               <View style={styles.weatherInfo}>
                 {typeof temperature === 'number' ? (
@@ -987,18 +942,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  weatherEmoji: {
-    fontSize: 26
-  },
   weatherInfo: {
     flex: 1
   },
   weatherTemp: {
     fontFamily: SERIF,
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 0,
-    lineHeight: 38,
+    fontSize: 40,
+    letterSpacing: -0.3,
+    lineHeight: 42,
     color: c.text
   },
   weatherTitle: {
@@ -1116,14 +1067,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center'
   },
-  slotEmoji: {
-    fontSize: 18
+  slotInitial: {
+    fontFamily: SERIF,
+    fontSize: 22,
+    color: c.accentGold
   },
   slotInfo: {
     flex: 1
@@ -1355,9 +1306,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalTitle: {
     fontFamily: SERIF,
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: 0,
+    fontSize: 26,
+    letterSpacing: -0.2,
     color: c.text,
     marginBottom: SPACING.lg
   },
