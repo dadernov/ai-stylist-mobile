@@ -130,6 +130,13 @@ def composite_slot(slot, category=''):
 PROMPT_NOUNS = {'Топ': 'a sleeveless top'}
 
 
+# A shirt photographed open at the collar put its neck label on the front of the
+# wearer's neck. Labels sit inside a garment and never show when it is worn.
+INSIDE_LABELS = ('A brand, size or care label sewn inside a garment, at the back of the collar or neckline or inside the waistband, '
+                 'stays inside it out of sight when it is worn: no label or tag shows anywhere on the person, least of all at the '
+                 'front of the neck. ')
+
+
 # A general image editor sees the photo and every garment at once (fal_tryon).
 # One instruction names each image by its position and carries the same rules
 # as the single-garment prompts above.
@@ -287,6 +294,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
             'Replace the matching original clothes completely and reproduce every reference garment faithfully: '
             'exact colour, print, lettering, fabric, cut, length and fit. '
             'Ignore backgrounds, hangers, mannequins and people in the garment images. '
+            f'{INSIDE_LABELS}'
             'Prints, logos and details of one garment must never appear on another. '
             f'{LOOK_IDENTITY}')
     if len(upper) > 1:
@@ -387,6 +395,7 @@ def layer_prompt(upper, categories, names, base_top=''):
             'the clothes underneath with their prints, the trousers, the shoes and the background. '
             'Reproduce every new layer faithfully: exact colour, fabric, cut, length and details. '
             'Ignore backgrounds, hangers, doors and objects in the garment images. '
+            f'{INSIDE_LABELS}'
             'Prints, logos and details of one garment must never appear on another. ')
     for index, slot in enumerate(upper, start=2):
         if categories.get(slot) in LONG_OUTER:

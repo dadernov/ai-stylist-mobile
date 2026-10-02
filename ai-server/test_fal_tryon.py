@@ -483,6 +483,9 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('never make the person broader', prompt)
         # Hands clasped at the waist came out as arms folded on the chest.
         self.assertIn('hands held together in front stay together at the same height', prompt)
+        # A shirt's neck label came out on the front of the neck.
+        self.assertIn('no label or tag shows anywhere on the person, least of all at the front of the neck', prompt)
+        self.assertIn('no label or tag shows', tryon_policy.layer_prompt(['top2'], {'top2': 'Рубашка'}, {}), 'the layer pass too')
         self.assertIn('the arms are never folded, crossed or moved to another place', prompt)
 
     async def options_look(self, request, options, bottom=True, **layers):
