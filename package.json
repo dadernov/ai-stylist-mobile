@@ -21,7 +21,7 @@
     "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/closet-sync.cjs && node tests/modal-safe-area.cjs && node tests/overlay-outlets.cjs"
   },
   "dependencies": {
-    "@expo-google-fonts/cormorant-garamond": "^0.4.1",
+    "@expo-google-fonts/onest": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "^57.0.0",
     "expo-blur": "~57.0.3",

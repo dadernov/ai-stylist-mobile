@@ -42,8 +42,8 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
         </View>}
         {loading && !failed && <ActivityIndicator style={styles.loading} size="small" color={colors.muted} />}
         {!disabled && <View style={[styles.badge, selected && styles.badgeSelected]}>
-          {selected === undefined ? <MoreHorizontal size={18} color={colors.text} strokeWidth={1.6} />
-            : <SelectionIcon size={17} color={selected ? colors.buttonPrimaryText : colors.text} strokeWidth={1.8} />}
+          {selected === undefined ? <MoreHorizontal size={18} color={STAGE_INK} strokeWidth={1.6} />
+            : <SelectionIcon size={16} color={selected ? '#FFFFFF' : STAGE_INK} strokeWidth={1.8} />}
         </View>}
         {status && <View style={styles.status}><Text style={styles.statusText}>{status}</Text></View>}
       </View>
@@ -59,21 +59,24 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
   );
 });
 
+// Marks drawn on the light photo stage, the same in both themes.
+const STAGE_INK = '#000000';
+
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tile: { width: '100%', gap: 10 },
-  photoStage: { width: '100%', aspectRatio: 0.78, backgroundColor: c.stage, borderRadius: 20, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
-  photoSelected: { borderColor: c.accentGold },
+  photoStage: { width: '100%', aspectRatio: 0.78, backgroundColor: c.stage, borderRadius: 0, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
+  photoSelected: { borderColor: STAGE_INK },
   photo: { width: '100%', height: '100%', borderWidth: 12, borderColor: 'transparent' },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   missingText: { fontSize: 11, color: c.muted },
   loading: { position: 'absolute', bottom: 12, left: 12 },
-  badge: { position: 'absolute', right: 9, top: 9, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
-  badgeSelected: { backgroundColor: c.buttonPrimaryBg },
-  status: { position: 'absolute', left: 8, bottom: 8, right: 8, backgroundColor: c.card, padding: 6, borderRadius: 16 },
+  badge: { position: 'absolute', right: 6, top: 6, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  badgeSelected: { backgroundColor: STAGE_INK },
+  status: { position: 'absolute', left: 8, bottom: 8, right: 8, backgroundColor: c.card, padding: 6, borderRadius: 0 },
   statusText: { color: c.muted, fontSize: 10, textAlign: 'center' },
   caption: { gap: 4, paddingHorizontal: 2 },
-  category: { color: c.muted, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase' },
-  name: { color: c.text, fontSize: 15, lineHeight: 20, fontWeight: '500', minHeight: 20 },
+  category: { color: c.muted, fontSize: 10, fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase' },
+  name: { color: c.text, fontSize: 14, lineHeight: 19, fontWeight: '700', minHeight: 19 },
   details: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 },
   detail: { color: c.muted, fontSize: 11, flexShrink: 1 },
   swatch: { width: 10, height: 10, borderRadius: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: c.muted }

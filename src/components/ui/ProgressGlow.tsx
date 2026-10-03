@@ -64,7 +64,7 @@ export function ProgressGlow({ visible }: ProgressGlowProps) {
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   track: {
     height: 3,
-    borderRadius: 2,
+    borderRadius: 0,
     backgroundColor: c.accentGoldSoft,
     overflow: 'hidden',
     alignSelf: 'stretch'

@@ -59,6 +59,6 @@ export function useAppDialog() {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  dialog: { width: '100%', maxWidth: 400, maxHeight: '85%', borderRadius: 14, padding: 20, gap: 16 },
+  dialog: { width: '100%', maxWidth: 400, maxHeight: '85%', borderRadius: 0, padding: 20, gap: 16 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

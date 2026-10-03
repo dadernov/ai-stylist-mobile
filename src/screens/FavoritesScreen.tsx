@@ -222,9 +222,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   cardTitle: {
     color: c.text,
     fontFamily: SERIF,
-    fontSize: 24,
-    lineHeight: 28,
-    letterSpacing: -0.2,
+    fontSize: 18,
+    lineHeight: 23,
+    letterSpacing: -0.1,
     flex: 1
   },
   deleteButton: {
@@ -252,7 +252,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     backgroundColor: c.accentGoldSoft,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: 4
   },
@@ -342,7 +342,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: SPACING.md,
     backgroundColor: c.chip,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.sm + 2
   },

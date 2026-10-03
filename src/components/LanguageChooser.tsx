@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '700' },
   subtitle: { fontSize: 14 },
   options: { gap: 10, marginVertical: 12 },
-  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16 },
+  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 0, paddingHorizontal: 18, paddingVertical: 16 },
   optionText: { fontSize: 17, fontWeight: '600' },
   hint: { fontSize: 13, textAlign: 'center' },
 });

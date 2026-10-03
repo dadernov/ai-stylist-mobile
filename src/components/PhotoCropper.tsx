@@ -106,9 +106,9 @@ const styles = StyleSheet.create({
   selection: { position: 'absolute', borderWidth: 1, borderColor: '#FFFFFF', ...(Platform.OS === 'web' ? { touchAction: 'none' } as any : {}) },
   gridLine: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.6)' },
   handle: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', ...(Platform.OS === 'web' ? { touchAction: 'none' } as any : {}) },
-  handleMark: { backgroundColor: '#FFFFFF', borderRadius: 2 },
+  handleMark: { backgroundColor: '#FFFFFF', borderRadius: 0 },
   footer: { padding: 20, gap: 12 },
-  done: { backgroundColor: '#E3A47F', minHeight: 52, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  done: { backgroundColor: '#E3A47F', minHeight: 52, borderRadius: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   doneText: { color: '#151619', fontWeight: '600', fontSize: 16 },
   error: { color: '#FFB5AA', textAlign: 'center', fontSize: 14 }
 });

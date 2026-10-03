@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   percent: { fontSize: 28, fontWeight: '700' },
   verdict: { fontSize: 14 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 0, paddingHorizontal: 10, paddingVertical: 5 },
   chipText: { fontSize: 12, fontWeight: '600' },
   notes: { gap: 8 },
   note: { flexDirection: 'row', gap: 8 },

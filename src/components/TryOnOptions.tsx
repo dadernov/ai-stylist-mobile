@@ -76,16 +76,17 @@ function Segmented<T extends string>({ label, choices, value, onChange, disabled
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   list: { gap: 10 },
-  row: { gap: 10, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
+  row: { gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.border },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: { width: 44, height: 44, borderRadius: 14, backgroundColor: c.stage },
-  name: { color: c.text, fontSize: 15, fontWeight: '600' },
+  thumb: { width: 44, height: 44, borderRadius: 0, backgroundColor: c.stage },
+  name: { color: c.text, fontSize: 14, fontWeight: '700' },
   muted: { color: c.muted, fontSize: 13, lineHeight: 18 },
   segmentRow: { gap: 6 },
-  segmentLabel: { color: c.muted, fontSize: 12, fontWeight: '600' },
-  segment: { flexDirection: 'row', backgroundColor: c.surface, borderRadius: 16, padding: 3 },
-  choice: { flex: 1, minHeight: 34, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  choiceActive: { backgroundColor: c.card, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  choiceText: { color: c.muted, fontSize: 13, fontWeight: '600' },
-  choiceTextActive: { color: c.text },
+  segmentLabel: { color: c.muted, fontSize: 10, fontWeight: '600', letterSpacing: 1.4, textTransform: 'uppercase' },
+  // Options as outlined boxes; the chosen one has a black frame, as a size picker in a shop.
+  segment: { flexDirection: 'row', gap: 6 },
+  choice: { flex: 1, minHeight: 38, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  choiceActive: { borderColor: c.text, borderWidth: 1.5 },
+  choiceText: { color: c.muted, fontSize: 11, fontWeight: '600', letterSpacing: .6, textTransform: 'uppercase' },
+  choiceTextActive: { color: c.text, fontWeight: '700' },
 });

@@ -1,6 +1,6 @@
 import { ActivityIndicator, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SHADOWS, ThemeColors } from '../../constants/theme';
+import { ThemeColors } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../constants/ThemeContext';
 import { AppPressable } from '../AppPressable';
 import { LucideIcon } from 'lucide-react-native';
@@ -32,7 +32,7 @@ export function PrimaryButton({
   const radius = 999;
 
   const contentColor =
-    variant === 'primary' ? colors.buttonPrimaryText : variant === 'gold' ? colors.textOnGold : colors.accentGold;
+    variant === 'primary' ? colors.buttonPrimaryText : variant === 'gold' ? colors.textOnGold : colors.text;
 
   return (
     <AppPressable
@@ -64,7 +64,7 @@ export function PrimaryButton({
       ) : (
         <>
         {Icon && <Icon size={18} strokeWidth={1.7} color={contentColor} />}
-        <Text numberOfLines={1} style={[styles.text, size === 'lg' && styles.textLg, { color: contentColor }]}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.text, size === 'lg' && styles.textLg, { color: contentColor }, styles.label]}>
           {title}
         </Text>
         </>
@@ -82,36 +82,36 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   md: {
     height: 52,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 26
   },
   lg: {
     height: 58,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 32
   },
   primary: {
-    backgroundColor: c.buttonPrimaryBg,
-    ...SHADOWS.floating
+    backgroundColor: c.buttonPrimaryBg
   },
   gold: {
-    backgroundColor: c.accentGold,
-    ...SHADOWS.floating
+    backgroundColor: c.accentGold
   },
   ghost: {
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border
+    backgroundColor: c.surface
   },
   disabled: {
     opacity: 0.5
   },
   text: {
-    fontSize: 15,
+    fontSize: 12.5,
     fontWeight: '600',
-    letterSpacing: 0.2
+    letterSpacing: 1.4,
+    textTransform: 'uppercase'
   },
   textLg: {
-    fontSize: 16
+    fontSize: 13
+  },
+  label: {
+    flexShrink: 1
   }
 });

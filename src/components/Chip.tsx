@@ -39,9 +39,9 @@ export function Chip({ label, active = false, onPress, icon }: ChipProps) {
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chip: {
     backgroundColor: c.chip,
-    borderRadius: 999,
-    height: 38,
-    paddingHorizontal: 17,
+    borderRadius: 0,
+    height: 36,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 6
@@ -50,7 +50,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     pointerEvents: 'none',
     backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 999
+    borderRadius: 0
   },
   content: {
     flexDirection: 'row',
@@ -65,8 +65,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   label: {
     color: c.text,
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
     textAlign: 'center',
     lineHeight: 20,
     includeFontPadding: false,

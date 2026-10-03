@@ -478,11 +478,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   image: {
     width: '100%',
     height: 420,
-    borderRadius: 14,
+    borderRadius: 0,
     backgroundColor: c.surface
   },
   imageWrap: {
-    borderRadius: 14,
+    borderRadius: 0,
     overflow: 'hidden',
     position: 'relative'
   },
@@ -502,7 +502,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   placeholder: {
     height: 120,
-    borderRadius: 16,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.surface,
@@ -516,7 +516,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   button: {
     backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 14,
+    borderRadius: 0,
     minHeight: 52,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -529,8 +529,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   buttonText: {
     color: c.buttonPrimaryText,
-    fontSize: 15,
-    fontWeight: '600'
+    fontSize: 12.5,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase'
   },
   error: {
     color: c.danger,
@@ -545,7 +547,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: 10,
     left: 10,
     backgroundColor: 'rgba(31,29,26,0.78)',
-    borderRadius: 12,
+    borderRadius: 0,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
@@ -555,7 +557,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700'
   },
   resultActions: { flexDirection: 'row', gap: 8 },
-  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
+  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
   secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -563,7 +565,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 14,
+    borderRadius: 0,
     minHeight: 46,
     paddingVertical: 11,
     backgroundColor: c.card
@@ -594,7 +596,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginTop: 2
   },
   optionPill: {
-    borderRadius: 12,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.card,
@@ -619,8 +621,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700'
   },
-  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 14 },
-  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 12 },
+  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 0 },
+  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 0 },
   compareTabActive: { backgroundColor: c.card },
   settingsToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   settingsLabel: { flex: 1, color: c.muted, fontSize: 13 },
@@ -639,14 +641,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   historyImageWrap: {
     width: 86,
     height: 108,
-    borderRadius: 14,
+    borderRadius: 0,
     overflow: 'hidden',
     position: 'relative'
   },
   historyImage: {
     width: 86,
     height: 108,
-    borderRadius: 14,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.surface
@@ -683,7 +685,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     backgroundColor: c.chip,
-    borderRadius: 16,
+    borderRadius: 0,
     paddingHorizontal: 16,
     paddingVertical: 10
   },

@@ -52,8 +52,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   title: {
     fontFamily: SERIF,
-    fontSize: 26,
-    letterSpacing: -0.2,
+    fontSize: 19,
+    letterSpacing: -0.1,
     color: c.text,
     textAlign: 'center',
     marginTop: 18

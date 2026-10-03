@@ -1,10 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
-import { useFonts, CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
+import { useFonts, Onest_700Bold, Onest_800ExtraBold } from '@expo-google-fonts/onest';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
 import { OutfitBuilderScreen } from './src/screens/OutfitBuilderScreen';
@@ -52,11 +51,8 @@ const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'profile', icon: UserRound, label: 'Профиль' }
 ];
 
-// Геометрия плавающего таб-бара.
-const TAB_BAR_RADIUS = 32;
-const TAB_BAR_HEIGHT = 64;
-const TAB_BAR_SIDE_MARGIN = 16;
-const TAB_INNER_PAD = 8;
+// Таб-бар во всю ширину у нижнего края: иконки без подписей (подписи остаются для VoiceOver).
+const TAB_BAR_HEIGHT = 54;
 
 const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?: boolean } };
 textWithDefaults.defaultProps = textWithDefaults.defaultProps || {};
@@ -291,21 +287,6 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Плавающий индикатор активной вкладки.
-  const [tabRowWidth, setTabRowWidth] = useState(0);
-  const indicatorX = useRef(new Animated.Value(TAB_INNER_PAD)).current;
-  const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.key === activeTab));
-  const segmentWidth = tabRowWidth > 0 ? (tabRowWidth - TAB_INNER_PAD * 2) / TABS.length : 0;
-
-  useEffect(() => {
-    if (segmentWidth <= 0) return;
-    Animated.spring(indicatorX, {
-      toValue: TAB_INNER_PAD + activeIndex * segmentWidth,
-      speed: 18,
-      bounciness: 7,
-      useNativeDriver: true
-    }).start();
-  }, [activeIndex, segmentWidth, indicatorX]);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -617,8 +598,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     </SafeAreaView>;
   }
 
-  const tabBarBottom = Math.max(insets.bottom, 12);
-  const tabBarSpace = TAB_BAR_HEIGHT + tabBarBottom + 10;
+  const tabBarBottom = Math.max(insets.bottom, 6);
+  const tabBarSpace = TAB_BAR_HEIGHT + tabBarBottom;
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
@@ -627,21 +608,8 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 
-      <View style={[styles.tabBarWrap, { bottom: tabBarBottom }]} pointerEvents="box-none">
-        <View style={styles.tabBarClip}>
-          {Platform.OS !== 'android' ? (
-            <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          ) : null}
-          <View
-            style={styles.tabRow}
-            onLayout={(event) => setTabRowWidth(event.nativeEvent.layout.width)}
-          >
-            {segmentWidth > 0 ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.tabIndicator, { width: segmentWidth, transform: [{ translateX: indicatorX }] }]}
-              />
-            ) : null}
+      <View style={[styles.tabBarWrap, { paddingBottom: tabBarBottom }]} pointerEvents="box-none">
+          <View style={styles.tabRow}>
             {TABS.map((tab) => {
               const isActive = tab.key === activeTab;
               const TabIcon = tab.icon;
@@ -655,13 +623,12 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
                   accessibilityState={{ selected: isActive }}
                   onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(undefined); setWardrobeDetailId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
-                  <TabIcon size={21} strokeWidth={isActive ? 1.9 : 1.5} color={isActive ? colors.accentGold : colors.muted} />
-                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
+                  <TabIcon size={23} strokeWidth={isActive ? 2 : 1.4} color={isActive ? colors.text : colors.muted} />
+                  <View style={[styles.tabMark, isActive && styles.tabMarkActive]} />
                 </AppPressable>
               );
             })}
           </View>
-        </View>
       </View>
 
       {toastMessage ? (
@@ -679,7 +646,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
                   })
                 }
               ],
-              bottom: tabBarBottom + TAB_BAR_HEIGHT + 14
+              bottom: tabBarSpace + 14
             }
           ]}
         >
@@ -697,9 +664,9 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
 
 export default function App() {
   // The display serif of every title; shown before it loads, the titles would jump.
-  const [fontsReady, fontError] = useFonts({ CormorantGaramond_600SemiBold, CormorantGaramond_700Bold });
+  const [fontsReady, fontError] = useFonts({ Onest_700Bold, Onest_800ExtraBold });
   const scheme = useColorScheme();
-  if (!fontsReady && !fontError) return <View style={{ flex: 1, backgroundColor: scheme === 'dark' ? '#161311' : '#F5F0E8' }} />;
+  if (!fontsReady && !fontError) return <View style={{ flex: 1, backgroundColor: scheme === 'dark' ? '#000000' : '#FFFFFF' }} />;
   return (
     <SafeAreaProvider>
       <ThemeProvider>
@@ -730,8 +697,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   loadingLogo: {
     fontFamily: SERIF,
-    fontSize: 42,
-    letterSpacing: -0.5,
+    fontSize: 30,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
     color: c.text
   },
   loadingHairline: {
@@ -789,7 +757,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   stepBadge: {
     width: 32,
     height: 32,
-    borderRadius: 20,
+    borderRadius: 0,
     backgroundColor: c.accentGoldSoft,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.goldHairline,
@@ -798,7 +766,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   stepBadgeText: {
     fontFamily: SERIF,
-    fontSize: 18,
+    fontSize: 14,
     color: c.accentGold
   },
   stepText: {
@@ -823,7 +791,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tipEmojiCircle: {
     width: 28,
     height: 28,
-    borderRadius: 18,
+    borderRadius: 0,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center'
@@ -842,62 +810,39 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   onboardingCta: {
     marginTop: 6
   },
-  // --- Плавающий таб-бар ---
+  // --- Таб-бар ---
   tabBarWrap: {
     position: 'absolute',
-    width: '92%',
-    maxWidth: 600,
-    alignSelf: 'center',
-    borderRadius: TAB_BAR_RADIUS,
-    ...SHADOWS.floating,
-    backgroundColor: c.card
-  },
-  tabBarClip: {
-    borderRadius: TAB_BAR_RADIUS,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-    backgroundColor: Platform.OS === 'android' ? c.card : c.goldTransparent
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: c.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border
   },
   tabRow: {
     flexDirection: 'row',
     height: TAB_BAR_HEIGHT,
-    paddingHorizontal: TAB_INNER_PAD,
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
     alignItems: 'center'
-  },
-  tabIndicator: {
-    position: 'absolute',
-    left: 0,
-    top: TAB_INNER_PAD,
-    bottom: TAB_INNER_PAD,
-    borderRadius: 999,
-    backgroundColor: c.tabActiveBg
   },
   tabItem: {
     flex: 1,
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    borderRadius: 999,
-    overflow: Platform.OS === 'android' ? 'hidden' : 'visible'
+    gap: 5
   },
-  tabIcon: {
-    fontSize: 18,
-    opacity: 0.72
+  // A short line under the open tab: the labels are gone, the place stays clear.
+  tabMark: {
+    width: 14,
+    height: 2,
+    backgroundColor: 'transparent'
   },
-  tabIconActive: {
-    opacity: 1
-  },
-  tabLabel: {
-    fontSize: 10,
-    color: c.muted,
-    fontWeight: '500',
-    letterSpacing: 0.2
-  },
-  tabLabelActive: {
-    color: c.text,
-    fontWeight: '600'
+  tabMarkActive: {
+    backgroundColor: c.text
   },
   // --- Тост ---
   toast: {
@@ -917,7 +862,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   toastIconCircle: {
     width: 20,
     height: 20,
-    borderRadius: 16,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: c.goldHairline,
     alignItems: 'center',

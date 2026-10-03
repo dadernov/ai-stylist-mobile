@@ -603,7 +603,7 @@ export function OutfitBuilderScreen({
   );
 
   const WeatherIcon = weatherIcon(weatherCode);
-  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 4 : 0;
+  const segmentThumbWidth = segmentWidth > 0 ? segmentWidth / 4 : 0;
 
   return (
     <View style={styles.container}>
@@ -863,22 +863,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingBottom: SPACING.xl
   },
   pageHeader: { width: '100%', maxWidth: 760, alignSelf: 'center' },
+  // Text tabs over a hairline; the open one is underlined.
   segment: {
     flexDirection: 'row',
-    backgroundColor: c.surface,
-    borderRadius: RADII.md,
-    padding: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
     marginBottom: SPACING.lg
   },
   segmentThumb: {
     position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 4,
-    borderRadius: RADII.md - 4,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border
+    bottom: -1,
+    left: 0,
+    height: 2,
+    backgroundColor: c.text
   },
   segmentTab: {
     flex: 1,
@@ -891,13 +888,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center'
   },
   segmentText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     color: c.muted,
-    letterSpacing: 0
+    letterSpacing: 1,
+    textTransform: 'uppercase'
   },
   segmentTextActive: {
-    color: c.accentGold,
+    color: c.text,
     fontWeight: '700'
   },
   chipsRow: {
@@ -930,7 +928,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     left: 1,
     right: 1,
     bottom: 1,
-    borderRadius: RADII.lg - 1
+    borderRadius: 0
   },
   weatherEmojiCircle: {
     width: 56,
@@ -947,9 +945,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   weatherTemp: {
     fontFamily: SERIF,
-    fontSize: 40,
-    letterSpacing: -0.3,
-    lineHeight: 42,
+    fontSize: 32,
+    letterSpacing: -0.5,
+    lineHeight: 36,
     color: c.text
   },
   weatherTitle: {
@@ -1073,7 +1071,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   slotInitial: {
     fontFamily: SERIF,
-    fontSize: 22,
+    fontSize: 16,
     color: c.accentGold
   },
   slotInfo: {
@@ -1181,7 +1179,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 10,
     paddingVertical: 3
   },
@@ -1213,7 +1211,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1226,7 +1224,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1240,7 +1238,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   actionDanger: {
     backgroundColor: c.dangerSoft,
-    borderRadius: 999,
+    borderRadius: 0,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1306,8 +1304,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalTitle: {
     fontFamily: SERIF,
-    fontSize: 26,
-    letterSpacing: -0.2,
+    fontSize: 20,
+    letterSpacing: -0.1,
     color: c.text,
     marginBottom: SPACING.lg
   },

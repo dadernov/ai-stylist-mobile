@@ -266,8 +266,8 @@ export function ProfileScreen({
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  languageSheet: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 10 },
-  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14 },
+  languageSheet: { borderRadius: 0, borderWidth: 1, padding: 18, gap: 10 },
+  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 0, paddingHorizontal: 16, paddingVertical: 14 },
   container: {
     flex: 1
   },
@@ -289,7 +289,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: SPACING.lg
   },
   avatarPressable: {
-    borderRadius: 40
+    borderRadius: 0
   },
   avatarRing: {
     width: 76,
@@ -321,7 +321,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   userName: {
     fontFamily: SERIF,
-    fontSize: 28,
+    fontSize: 21,
     letterSpacing: -0.2,
     color: c.text
   },
@@ -352,7 +352,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   statValue: {
     fontFamily: SERIF,
-    fontSize: 24,
+    fontSize: 19,
     color: c.accentGold
   },
   statText: {
@@ -478,7 +478,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     backgroundColor: c.chip,
-    borderRadius: 22,
+    borderRadius: 0,
     paddingHorizontal: 20,
     paddingVertical: 11
   },
