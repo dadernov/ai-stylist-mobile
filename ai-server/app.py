@@ -24,6 +24,7 @@ import tryon_composite
 import face_guard
 import footwear_guard
 import tryon_policy
+import body_fit
 import image_color
 import garment_guard
 import tryon_matte
@@ -311,17 +312,36 @@ def _source_framed(prepared, generated_image: Image.Image, ratio=tryon_frame.PRO
     return tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
 
 
-def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_frame.PROVIDER_RATIO):
+def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_frame.PROVIDER_RATIO, fit_allowance=None):
     """The editor's whole frame with the photo's own face, or None to fall back to the full lock."""
     try:
         framed = _source_framed(prepared, generated_image, ratio)
     except Exception as exc:
         print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
         return None
-    return _face_restored_output_url(framed, prepared)
+    return _face_restored_output_url(framed, prepared, fit_allowance)
 
 
-def _face_restored_output_url(frame: Image.Image, prepared):
+def _fit_body(framed, labels, generated_labels, allowed, face=None):
+    """The frame narrowed to the photo's body width (body_fit), with its labels; as it was when it fits."""
+    if allowed is None or generated_labels is None or not body_fit.enabled():
+        return framed, generated_labels
+    try:
+        factor, zone = body_fit.measure(labels, generated_labels, allowed)
+        if not zone:
+            return framed, generated_labels
+        # The head keeps its size, so the photo's face still fits it; the narrowing starts below the chin.
+        chin, neck = (face.box[1] + face.box[3], face.box[3] * .6) if face is not None else (None, 0)
+        narrowed, narrowed_labels = body_fit.narrow(framed, generated_labels, factor, zone, chin, neck)
+        print(f'Try-on body fit: x{factor:.3f}', flush=True)
+        return narrowed, narrowed_labels
+    except Exception as exc:
+        # The look is shown as the editor made it rather than lost.
+        print(f'Try-on body fit failed: {type(exc).__name__}', flush=True)
+        return framed, generated_labels
+
+
+def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
     """After a rejected lock: the generator's frame with the photo's own face, or None.
 
     The lock needs the whole scene in place; a general editor often returns the
@@ -336,6 +356,8 @@ def _face_restored_output_url(frame: Image.Image, prepared):
         except Exception as exc:
             print(f'Try-on head parsing unavailable: {type(exc).__name__}', flush=True)
             generated_labels = None
+        # The editor draws the body wider than it is; it goes back to the photo's width first.
+        framed, generated_labels = _fit_body(framed, labels, generated_labels, fit_allowance, faces[0])
         try:
             restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels)
         except face_guard.AlignmentError as exc:
@@ -1693,6 +1715,8 @@ async def tryon_generate_look(
                                     for slot in garments})
 
             composite_started = time.monotonic()
+            # Only an editor's frame is refitted; FASHN keeps the body by itself.
+            fit_allowance = body_fit.allowance(slot_categories.values()) if fal_model else None
             warning = None
             locked = True
             face_restored = False
@@ -1700,7 +1724,8 @@ async def tryon_generate_look(
                 if fal_model and fal_tryon.face_only():
                     # The editor's scene is kept whole; only the face is the photo's.
                     frame = last_frame or await _load_image_from_url_or_data_url(output_client, current_model)
-                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT) if frame is not None else None
+                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT,
+                                                       fit_allowance) if frame is not None else None
                     if restored:
                         locked_output_url, face_restored, locked = restored, True, False
                         print('Try-on composite: face-restored', flush=True)
@@ -1716,7 +1741,7 @@ async def tryon_generate_look(
                         locked = False
                         # The scene moved, but the face alone may still fit: the
                         # user then sees their own face on the generator's frame.
-                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity)
+                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity, fit_allowance)
                         if restored:
                             locked_output_url, face_restored = restored, True
                             print('Try-on composite: face-restored', flush=True)
