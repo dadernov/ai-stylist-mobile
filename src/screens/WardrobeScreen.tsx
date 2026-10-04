@@ -560,7 +560,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             style={[styles.modalChip, isActive && styles.modalChipActive]}
             onPress={() => onSelect(option)}
           >
-            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
+            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
             <Text style={[styles.modalChipText, isActive && styles.modalChipTextActive]}>{t(option)}</Text>
           </AppPressable>
         );
@@ -856,19 +856,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   collectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   helpSlot: { width: 44, height: 44, marginBottom: 18, zIndex: 3 },
-  addButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 0, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
+  addButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18, ...SHADOWS.button },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
   collectionMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
   collectionLabel: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
   collectionCount: { color: c.muted, fontSize: 12 },
-  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
+  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   detailToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
-  detailPhoto: { width: '100%', height: 320, borderRadius: 0, backgroundColor: c.stage },
+  detailPhoto: { width: '100%', height: 320, borderRadius: 24, backgroundColor: c.stage },
   detailTitle: { fontFamily: SERIF, fontSize: 24, lineHeight: 29, letterSpacing: -0.3, color: c.text },
   detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
   detailActions: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 0, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
+  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
   detailActionText: { fontSize: 12, fontWeight: '600', color: c.text },
   filterRow: {
     paddingBottom: 6,
@@ -896,7 +896,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   uploadGradient: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: 0,
+    borderRadius: RADII.xl - 1,
     pointerEvents: 'none'
   },
   uploadRow: {
@@ -967,7 +967,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.chip,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -979,7 +979,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   deleteButton: {
     alignSelf: 'flex-start',
     backgroundColor: c.dangerSoft,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1005,7 +1005,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1038,7 +1038,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.surface,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 11,
     paddingVertical: 5
   },
@@ -1059,7 +1059,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tag: {
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4
   },
@@ -1074,8 +1074,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalCard: {
     backgroundColor: c.card,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: c.goldHairline,
@@ -1088,7 +1088,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     width: 44,
     height: 5,
-    borderRadius: 0,
+    borderRadius: 3,
     backgroundColor: c.border,
     marginBottom: 12
   },
@@ -1120,7 +1120,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'flex-start',
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
     marginTop: 12
@@ -1179,7 +1179,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.surface,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 13,
     paddingVertical: 8
   },

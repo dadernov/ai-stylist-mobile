@@ -1,7 +1,7 @@
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View, Platform, Share } from 'react-native';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
-import { ThemeColors } from '../constants/theme';
+import { SHADOWS, ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
 import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
@@ -337,8 +337,10 @@ export function AiTryOnPreview({
         accessibilityRole="button"
         accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
       >
-        {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryText} /> : <ArrowUpRight size={19} strokeWidth={1.6} color={colors.buttonPrimaryText} />}
-        <Text style={styles.buttonText}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+        <Text style={styles.buttonText} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+        <View style={[styles.buttonBadge, { backgroundColor: colors.buttonPrimaryText }]}>
+          {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryBg} /> : <ArrowUpRight size={19} strokeWidth={2} color={colors.buttonPrimaryBg} />}
+        </View>
       </AppPressable>
       {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
   </>;
@@ -478,11 +480,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   image: {
     width: '100%',
     height: 420,
-    borderRadius: 0,
+    borderRadius: 14,
     backgroundColor: c.surface
   },
   imageWrap: {
-    borderRadius: 0,
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative'
   },
@@ -502,7 +504,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   placeholder: {
     height: 120,
-    borderRadius: 0,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.surface,
@@ -514,25 +516,34 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.muted,
     fontSize: 12
   },
+  // The same filled pill as PrimaryButton: its icon in a round badge at the end.
   button: {
     backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 0,
-    minHeight: 52,
+    borderRadius: 999,
+    minHeight: 58,
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    alignItems: 'center'
+    paddingHorizontal: 60,
+    alignItems: 'center',
+    ...SHADOWS.button
+  },
+  buttonBadge: {
+    position: 'absolute',
+    right: 9,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   buttonDisabled: {
-    opacity: 0.6
+    opacity: 0.45
   },
   buttonText: {
     color: c.buttonPrimaryText,
-    fontSize: 12.5,
-    fontWeight: '600',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase'
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.1
   },
   error: {
     color: c.danger,
@@ -547,7 +558,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: 10,
     left: 10,
     backgroundColor: 'rgba(31,29,26,0.78)',
-    borderRadius: 0,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 6
   },
@@ -557,7 +568,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700'
   },
   resultActions: { flexDirection: 'row', gap: 8 },
-  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
+  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
   secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -565,7 +576,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 0,
+    borderRadius: 14,
     minHeight: 46,
     paddingVertical: 11,
     backgroundColor: c.card
@@ -596,7 +607,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginTop: 2
   },
   optionPill: {
-    borderRadius: 0,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.card,
@@ -621,8 +632,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700'
   },
-  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 0 },
-  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 0 },
+  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 14 },
+  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 12 },
   compareTabActive: { backgroundColor: c.card },
   settingsToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   settingsLabel: { flex: 1, color: c.muted, fontSize: 13 },
@@ -641,14 +652,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   historyImageWrap: {
     width: 86,
     height: 108,
-    borderRadius: 0,
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative'
   },
   historyImage: {
     width: 86,
     height: 108,
-    borderRadius: 0,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: c.border,
     backgroundColor: c.surface
@@ -685,7 +696,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     backgroundColor: c.chip,
-    borderRadius: 0,
+    borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 10
   },

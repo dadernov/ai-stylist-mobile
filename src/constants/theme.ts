@@ -84,41 +84,48 @@ export const COLORS = lightColors;
 // от прежней антиквы, чтобы не трогать все экраны.
 export const SERIF = 'Onest_700Bold';
 export const SERIF_BOLD = 'Onest_800ExtraBold';
+// Самое жирное начертание — для заголовков экранов: их видно сразу.
+export const DISPLAY = 'Onest_900Black';
 
-// Острые углы: карточки, кнопки, поля и фото без скруглений. Круглыми остаются
-// только круги — аватар, точки цвета.
-export const RADII = { sm: 0, md: 0, lg: 0, xl: 0, pill: 0 } as const;
+// Скругления: sm — мелкие элементы, md — поля/плашки, lg — карточки, xl — листы; кнопки и чипы — «таблетки».
+export const RADII = { sm: 10, md: 14, lg: 20, xl: 26, pill: 999 } as const;
 
 // Базовая шкала отступов.
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
-// Плоско: глубину дают линии и серые подложки, не тени. Плавающей кнопке — едва заметная.
-export const SHADOWS: Record<'card' | 'floating', ViewStyle> = {
+// Тени мягкие: карточкам едва заметная, кнопкам и плавающей панели — объём, чтобы они выделялись.
+export const SHADOWS: Record<'card' | 'floating' | 'button', ViewStyle> = {
   card: {
     shadowColor: '#000000',
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1
   },
   floating: {
     shadowColor: '#000000',
-    shadowOpacity: 0.1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6
+  },
+  button: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6
   }
 };
 
 // Типографика. Цвет задаётся на месте использования из токенов темы.
 export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', TextStyle> = {
-  // Заголовок экрана: жирный гротеск капсом.
+  // Заголовок экрана: самый жирный гротеск, крупно.
   display: {
-    fontFamily: SERIF,
-    fontSize: 26,
-    letterSpacing: 0.3,
-    lineHeight: 32,
-    textTransform: 'uppercase'
+    fontFamily: DISPLAY,
+    fontSize: 34,
+    letterSpacing: -0.8,
+    lineHeight: 38
   },
   // Заголовок карточки/секции.
   title: {

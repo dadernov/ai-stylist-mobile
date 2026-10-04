@@ -252,7 +252,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     backgroundColor: c.accentGoldSoft,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: 4
   },
@@ -342,7 +342,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: SPACING.md,
     backgroundColor: c.chip,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.sm + 2
   },

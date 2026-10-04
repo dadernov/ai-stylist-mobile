@@ -1,6 +1,5 @@
-import { ActivityIndicator, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ThemeColors } from '../../constants/theme';
+import { ActivityIndicator, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { SHADOWS, ThemeColors } from '../../constants/theme';
 import { useTheme, useThemedStyles } from '../../constants/ThemeContext';
 import { AppPressable } from '../AppPressable';
 import { LucideIcon } from 'lucide-react-native';
@@ -16,6 +15,11 @@ type PrimaryButtonProps = {
   icon?: LucideIcon;
 };
 
+/**
+ * The main button: a filled pill that stands off the page with its own shadow,
+ * its icon in a round badge at the end. `ghost` is the quieter one beside it:
+ * an outlined pill. 'gold' is kept for older callers and draws as 'primary'.
+ */
 export function PrimaryButton({
   title,
   onPress,
@@ -29,10 +33,8 @@ export function PrimaryButton({
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const blocked = disabled || loading;
-  const radius = 999;
-
-  const contentColor =
-    variant === 'primary' ? colors.buttonPrimaryText : variant === 'gold' ? colors.textOnGold : colors.text;
+  const filled = variant !== 'ghost';
+  const contentColor = filled ? colors.buttonPrimaryText : colors.text;
 
   return (
     <AppPressable
@@ -44,29 +46,26 @@ export function PrimaryButton({
       style={[
         styles.base,
         size === 'lg' ? styles.lg : styles.md,
-        variant === 'primary' && styles.primary,
-        variant === 'gold' && styles.gold,
-        variant === 'ghost' && styles.ghost,
+        filled ? styles.filled : styles.ghost,
+        filled && Icon ? styles.withBadge : null,
         blocked && styles.disabled,
         style
       ]}
     >
-      {variant === 'gold' ? (
-        <LinearGradient
-          colors={[colors.goldFrom, colors.goldTo] as const}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: radius, pointerEvents: 'none' }]}
-        />
-      ) : null}
       {loading ? (
         <ActivityIndicator size="small" color={contentColor} />
       ) : (
         <>
-        {Icon && <Icon size={18} strokeWidth={1.7} color={contentColor} />}
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.text, size === 'lg' && styles.textLg, { color: contentColor }, styles.label]}>
-          {title}
-        </Text>
+          {Icon && !filled ? <Icon size={18} strokeWidth={1.8} color={contentColor} /> : null}
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+            style={[styles.text, size === 'lg' && styles.textLg, { color: contentColor }]}>
+            {title}
+          </Text>
+          {Icon && filled ? (
+            <View style={[styles.badge, size === 'lg' && styles.badgeLg, { backgroundColor: contentColor }]}>
+              <Icon size={size === 'lg' ? 19 : 17} strokeWidth={2} color={colors.buttonPrimaryBg} />
+            </View>
+          ) : null}
         </>
       )}
     </AppPressable>
@@ -78,40 +77,55 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 10
+    gap: 10,
+    borderRadius: 999
   },
   md: {
-    height: 52,
-    borderRadius: 0,
-    paddingHorizontal: 26
+    height: 56,
+    paddingHorizontal: 28
   },
   lg: {
-    height: 58,
-    borderRadius: 0,
+    height: 60,
     paddingHorizontal: 32
   },
-  primary: {
-    backgroundColor: c.buttonPrimaryBg
+  filled: {
+    backgroundColor: c.buttonPrimaryBg,
+    ...SHADOWS.button
   },
-  gold: {
-    backgroundColor: c.accentGold
+  // The badge sits at the end; the title stays centred on the whole button.
+  withBadge: {
+    paddingHorizontal: 58
   },
   ghost: {
-    backgroundColor: c.surface
+    backgroundColor: c.card,
+    borderWidth: 1.5,
+    borderColor: c.text
   },
   disabled: {
-    opacity: 0.5
+    opacity: 0.45
   },
   text: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase'
+    flexShrink: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.1
   },
   textLg: {
-    fontSize: 13
+    fontSize: 17
   },
-  label: {
-    flexShrink: 1
+  badge: {
+    position: 'absolute',
+    right: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  badgeLg: {
+    right: 9,
+    width: 42,
+    height: 42,
+    borderRadius: 21
   }
 });

@@ -78,15 +78,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   list: { gap: 10 },
   row: { gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.border },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: { width: 44, height: 44, borderRadius: 0, backgroundColor: c.stage },
+  thumb: { width: 44, height: 44, borderRadius: 14, backgroundColor: c.stage },
   name: { color: c.text, fontSize: 14, fontWeight: '700' },
   muted: { color: c.muted, fontSize: 13, lineHeight: 18 },
   segmentRow: { gap: 6 },
   segmentLabel: { color: c.muted, fontSize: 10, fontWeight: '600', letterSpacing: 1.4, textTransform: 'uppercase' },
-  // Options as outlined boxes; the chosen one has a black frame, as a size picker in a shop.
+  // Options as pills; the chosen one is filled.
   segment: { flexDirection: 'row', gap: 6 },
-  choice: { flex: 1, minHeight: 38, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  choiceActive: { borderColor: c.text, borderWidth: 1.5 },
+  choice: { flex: 1, minHeight: 40, borderRadius: 999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  choiceActive: { borderColor: c.buttonPrimaryBg, backgroundColor: c.buttonPrimaryBg },
   choiceText: { color: c.muted, fontSize: 11, fontWeight: '600', letterSpacing: .6, textTransform: 'uppercase' },
-  choiceTextActive: { color: c.text, fontWeight: '700' },
+  choiceTextActive: { color: c.buttonPrimaryText, fontWeight: '700' },
 });

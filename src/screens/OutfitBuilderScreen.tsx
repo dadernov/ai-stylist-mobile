@@ -603,7 +603,7 @@ export function OutfitBuilderScreen({
   );
 
   const WeatherIcon = weatherIcon(weatherCode);
-  const segmentThumbWidth = segmentWidth > 0 ? segmentWidth / 4 : 0;
+  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 4 : 0;
 
   return (
     <View style={styles.container}>
@@ -863,19 +863,21 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingBottom: SPACING.xl
   },
   pageHeader: { width: '100%', maxWidth: 760, alignSelf: 'center' },
-  // Text tabs over a hairline; the open one is underlined.
+  // A pill track; the open tab is a filled pill sliding along it.
   segment: {
     flexDirection: 'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
+    backgroundColor: c.surface,
+    borderRadius: 999,
+    padding: 4,
     marginBottom: SPACING.lg
   },
   segmentThumb: {
     position: 'absolute',
-    bottom: -1,
-    left: 0,
-    height: 2,
-    backgroundColor: c.text
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 999,
+    backgroundColor: c.buttonPrimaryBg
   },
   segmentTab: {
     flex: 1,
@@ -895,7 +897,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     textTransform: 'uppercase'
   },
   segmentTextActive: {
-    color: c.text,
+    color: c.buttonPrimaryText,
     fontWeight: '700'
   },
   chipsRow: {
@@ -928,7 +930,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     left: 1,
     right: 1,
     bottom: 1,
-    borderRadius: 0
+    borderRadius: RADII.lg - 1
   },
   weatherEmojiCircle: {
     width: 56,
@@ -1179,7 +1181,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 3
   },
@@ -1211,7 +1213,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1224,7 +1226,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1238,7 +1240,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   actionDanger: {
     backgroundColor: c.dangerSoft,
-    borderRadius: 0,
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6
   },

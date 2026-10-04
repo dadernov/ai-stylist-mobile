@@ -140,13 +140,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   filters: { gap: 14, paddingBottom: 20 }, row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   heading: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', flexShrink: 1 }, muted: { color: c.muted, fontSize: 13, lineHeight: 19 },
   card: { width: '48%', flexGrow: 0, flexShrink: 1, gap: 5, marginBottom: 22 },
-  photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: 0, overflow: 'hidden', backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
+  photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: 14, overflow: 'hidden', backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
   name: { color: c.text, fontSize: 14, fontWeight: '500', lineHeight: 20 }, date: { color: c.muted, fontSize: 11, lineHeight: 16 },
   status: { color: c.accentGold, fontSize: 12, lineHeight: 18 },
   empty: { alignItems: 'center', justifyContent: 'center', gap: 20, paddingVertical: 36, paddingHorizontal: 8 },
   modal: { flex: 1, backgroundColor: c.background }, toolbar: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, width: '100%', maxWidth: 700, alignSelf: 'center' },
   detail: { padding: 16, paddingBottom: 32, gap: 16, width: '100%', maxWidth: 700, alignSelf: 'center' },
-  result: { width: '100%', aspectRatio: 3 / 4, backgroundColor: c.surface, borderRadius: 0, overflow: 'hidden', justifyContent: 'center' },
+  result: { width: '100%', aspectRatio: 3 / 4, backgroundColor: c.surface, borderRadius: 14, overflow: 'hidden', justifyContent: 'center' },
   garment: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.border },
-  garmentPhoto: { width: 52, height: 64, backgroundColor: c.stage, borderRadius: 0, alignItems: 'center', justifyContent: 'center' }
+  garmentPhoto: { width: 52, height: 64, backgroundColor: c.stage, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }
 });

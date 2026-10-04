@@ -265,7 +265,7 @@ function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
 }
 
 const styles = StyleSheet.create({
-  mini: { position: 'absolute', right: 16, width: MINI_WIDTH, height: MINI_HEIGHT, borderRadius: 0, borderWidth: 1, overflow: 'hidden' },
+  mini: { position: 'absolute', right: 16, width: MINI_WIDTH, height: MINI_HEIGHT, borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
   page: { width: MINI_WIDTH, height: MINI_HEIGHT, overflow: 'hidden' },
   veil: { backgroundColor: '#FFFFFF' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5,

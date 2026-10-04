@@ -54,4 +54,4 @@ export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLo
     </Modal>
   </View>;
 }
-const styles = StyleSheet.create({ thumb: { width: 128, height: 168, borderRadius: 0, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 } });
+const styles = StyleSheet.create({ thumb: { width: 128, height: 168, borderRadius: 12, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 } });

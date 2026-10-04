@@ -27,5 +27,5 @@ export function DragHandle({ onDismiss, style }: DragHandleProps) {
 
 const styles = StyleSheet.create({
   hitArea: { alignSelf: 'stretch', alignItems: 'center', paddingTop: 4, paddingBottom: 12 },
-  bar: { width: 44, height: 5, borderRadius: 0 }
+  bar: { width: 44, height: 5, borderRadius: 3 }
 });
