@@ -364,7 +364,7 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.get('status'), 'succeeded', result)
         self.assertFalse(result['identityLocked'])
         self.assertIn('перегенерируй', result['warning'])
-        self.assertTrue(result['outputUrl'].startswith('data:image/png;base64,'))
+        self.assertTrue(result['outputUrl'].startswith('data:image/jpeg;base64,'))
         self.assertNotIn('private', str(result))
         content, _ = app._data_url_to_bytes(result['outputUrl'])
         self.assertEqual(Image.open(BytesIO(content)).getpixel((5, 5)), (10, 200, 30))
@@ -389,10 +389,11 @@ class ApiFlow(unittest.IsolatedAsyncioTestCase):
             url = await app._face_locked_output_url(None, b'photo', 'data:image/png;base64,mocked', ['top'])
         content, mime = app._data_url_to_bytes(url)
         result = Image.open(BytesIO(content))
-        self.assertEqual(mime, 'image/png')
+        # A JPEG at 92 without chroma subsampling: the same size, profile and colour within rounding.
+        self.assertEqual(mime, 'image/jpeg')
         self.assertEqual(result.size, image.size)
         self.assertEqual(result.info['icc_profile'], image_color.SRGB_BYTES)
-        np.testing.assert_array_equal(result, image)
+        self.assertLessEqual(np.abs(np.asarray(result, int) - np.asarray(image, int)).max(), 3)
 
     async def test_mask_failure_is_reported_separately_and_logged_without_photos(self):
         image = Image.new('RGB', (400, 800))

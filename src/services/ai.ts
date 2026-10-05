@@ -122,18 +122,21 @@ const UPLOAD_ERROR = 'Не удалось прочитать выбранное 
 // Since SDK 57 the global fetch is Expo's: multipart parts must be strings,
 // Blobs or expo-file-system File objects. The old { uri, name, type } part
 // throws "Unsupported FormDataPart implementation".
-// The server never uses more than 2048 px of a try-on photo, and a full-size
-// camera JPEG (3-8 MB) takes longer to upload over mobile data than the
-// analysis itself. PNG keeps its transparency; anything that fails to shrink
-// is sent as it is.
+// The server never uses more than 2048 px of the person's photo and 1024 px of
+// a garment's, and a full-size camera JPEG (3-8 MB) takes longer to upload over
+// mobile data than the analysis itself: a garment at 1280 px is 0.24 MB where
+// one at 2048 px was 0.83. PNG keeps its transparency; anything that fails to
+// shrink is sent as it is.
 const TRYON_UPLOAD_MAX_SIDE = 2048;
-const shrinkForUpload = async (fileUri: string, png: boolean) => {
+const GARMENT_UPLOAD_MAX_SIDE = 1280;
+const shrinkForUpload = async (fileUri: string, png: boolean, maxSide = TRYON_UPLOAD_MAX_SIDE) => {
   try {
     const rendered = await ImageManipulator.manipulate(fileUri).renderAsync();
     const { width, height } = rendered;
-    if (Math.max(width, height) <= TRYON_UPLOAD_MAX_SIDE) return fileUri;
-    const resized = await ImageManipulator.manipulate(fileUri)
-      .resize(width >= height ? { width: TRYON_UPLOAD_MAX_SIDE } : { height: TRYON_UPLOAD_MAX_SIDE }).renderAsync();
+    if (Math.max(width, height) <= maxSide) return fileUri;
+    // Resized from the decoded image: the file is not read and decoded a second time.
+    const resized = await ImageManipulator.manipulate(rendered)
+      .resize(width >= height ? { width: maxSide } : { height: maxSide }).renderAsync();
     const saved = await resized.saveAsync(png ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.9 });
     return saved.uri;
   } catch {
@@ -141,7 +144,8 @@ const shrinkForUpload = async (fileUri: string, png: boolean) => {
   }
 };
 
-export const appendPhoto = async (form: FormData, field: string, uri: string, shrink = false) => {
+// `shrink`: true sends at most 2048 px, a number at most that many.
+export const appendPhoto = async (form: FormData, field: string, uri: string, shrink: boolean | number = false) => {
   const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
   const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
   const extension = png ? 'png' : webp ? 'webp' : 'jpg';
@@ -173,7 +177,7 @@ export const appendPhoto = async (form: FormData, field: string, uri: string, sh
   }
   // Expo's multipart encoder accepts any part with bytes(); File itself
   // exposes arrayBuffer() only, so wrap it with the name and type it needs.
-  if (shrink) fileUri = await shrinkForUpload(fileUri, png);
+  if (shrink) fileUri = await shrinkForUpload(fileUri, png, shrink === true ? TRYON_UPLOAD_MAX_SIDE : shrink);
   const file = new File(fileUri);
   const part = {
     uri: fileUri,
@@ -295,16 +299,13 @@ export async function analyzeTryOnGenerateLook(
   garmentOptions: Record<string, { tuck?: string; fasten?: string }> = {}
 ): Promise<TryOnGenerateResult> {
   const form = new FormData();
-  await appendPhoto(form, 'person_file', personUri, true);
-  if (topUri) await appendPhoto(form, 'top_file', topUri, true);
-  if (layers.top2Uri) await appendPhoto(form, 'top2_file', layers.top2Uri, true);
-  if (layers.top3Uri) await appendPhoto(form, 'top3_file', layers.top3Uri, true);
-  if (layers.top4Uri) await appendPhoto(form, 'top4_file', layers.top4Uri, true);
-  if (bottomUri) await appendPhoto(form, 'bottom_file', bottomUri, true);
-  if (layers.legwearUri) await appendPhoto(form, 'legwear_file', layers.legwearUri, true);
-  if (shoesUri) await appendPhoto(form, 'shoes_file', shoesUri, true);
-  if (outerUri) await appendPhoto(form, 'outer_file', outerUri, true);
-  if (layers.outer2Uri) await appendPhoto(form, 'outer2_file', layers.outer2Uri, true);
+  // All photos are prepared at once rather than one after another; the server
+  // reads each part by its name, so their order in the form does not matter.
+  const garments: [string, string | undefined][] = [['top_file', topUri], ['top2_file', layers.top2Uri], ['top3_file', layers.top3Uri],
+    ['top4_file', layers.top4Uri], ['bottom_file', bottomUri], ['legwear_file', layers.legwearUri], ['shoes_file', shoesUri],
+    ['outer_file', outerUri], ['outer2_file', layers.outer2Uri]];
+  await Promise.all([appendPhoto(form, 'person_file', personUri, true),
+    ...garments.filter(([, uri]) => uri).map(([field, uri]) => appendPhoto(form, field, uri!, GARMENT_UPLOAD_MAX_SIDE))]);
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
   if (layers.top2Category) form.append('top2_category', layers.top2Category);

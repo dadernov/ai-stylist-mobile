@@ -10,6 +10,7 @@ import { EXPECTED_TRYON_MS } from './tryOnStatus';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
+import { ZoomableImage } from './ui/ZoomableImage';
 
 /** Before the try-on: how each garment is worn, and the button that starts it. */
 export type StageSetup = {
@@ -139,8 +140,8 @@ export function GenerationStage({ title, busy, busyLabel, startedAt, photoUri, r
                   </>
                 ) : null}
                 {resultUri ? (
-                  <Animated.View style={[StyleSheet.absoluteFill, { opacity: reveal, transform: [{ scale: resultScale }] }]} pointerEvents="none">
-                    <Image source={{ uri: resultUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Результат')} />
+                  <Animated.View style={[StyleSheet.absoluteFill, { opacity: reveal, transform: [{ scale: resultScale }] }]}>
+                    <ZoomableImage uri={resultUri} accessibilityLabel={t('Результат')} />
                   </Animated.View>
                 ) : null}
               </View>

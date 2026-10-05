@@ -19,6 +19,7 @@ export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { ArrowUpRight, Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
+import { ZoomableImage } from './ui/ZoomableImage';
 
 type AiTryOnPreviewProps = {
   modelUri?: string;
@@ -356,7 +357,7 @@ export function AiTryOnPreview({
   const previewModal = <>
       <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
         <View style={styles.previewBackdrop}>
-          {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" /> : null}
+          {previewUri ? <ZoomableImage uri={previewUri} style={styles.previewImageFull} /> : null}
           <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
             <X size={22} color={colors.text} />
           </AppPressable>
@@ -690,7 +691,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   previewImageFull: {
     width: '100%',
-    height: '86%'
+    height: '86%',
+    flex: 0
   },
   previewClose: {
     alignSelf: 'center',

@@ -14,6 +14,7 @@ import { FormScrollView } from './ui/FormScrollView';
 import { IconButton } from './ui/IconButton';
 import { OptionPicker } from './ui/OptionPicker';
 import { PrimaryButton } from './ui/PrimaryButton';
+import { ZoomableImage } from './ui/ZoomableImage';
 
 type Props = {
   items: WardrobeItem[];
@@ -92,7 +93,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
           <Text numberOfLines={2} style={styles.heading}>{selected.name}</Text><Text style={styles.muted}>{date(selected)}</Text>
         </View><IconButton icon={X} label={t('Закрыть генерацию')} onPress={close} /></View>
         {expanded && selected.result ? <>
-          <Image source={{ uri: selected.result.imageUri }} resizeMode="contain" style={{ flex: 1 }} />
+          <ZoomableImage uri={selected.result.imageUri} />
           <PrimaryButton title={t('К деталям')} variant="ghost" onPress={() => setExpanded(false)} style={{ margin: 16 }} />
         </> : <FormScrollView contentContainerStyle={styles.detail}>
           <AppPressable disabled={!selected.result} accessibilityRole="button" accessibilityLabel={t('Увеличить результат')}

@@ -10,6 +10,7 @@ import { AppPressable } from './AppPressable';
 import { IconButton } from './ui/IconButton';
 import { PrimaryButton } from './ui/PrimaryButton';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { ZoomableImage } from './ui/ZoomableImage';
 
 export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLook) => void; onOpenHistory: () => void }) {
   const { jobs, store, error } = useTryOnJobs();
@@ -40,7 +41,7 @@ export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLo
       {selected?.result && <SafeAreaView style={{ flex: 1, backgroundColor: c.background, paddingHorizontal: 20, gap: 16 }}>
         <View style={styles.row}><Text numberOfLines={2} style={{ flex: 1, color: c.text, fontSize: 16, fontWeight: '600' }}>{selected.name}</Text>
           <IconButton icon={X} label={t('Закрыть примерку')} onPress={() => setSelected(undefined)} /></View>
-        <Image source={{ uri: selected.result.imageUri }} style={{ flex: 1, minHeight: 0 }} resizeMode="contain" />
+        <ZoomableImage uri={selected.result.imageUri} />
         <PrimaryButton title={t(saved.includes(selected.id) ? 'Сохранено' : 'Сохранить образ')} icon={saved.includes(selected.id) ? Check : Save}
           disabled={saved.includes(selected.id)} onPress={() => {
             const result = selected.result!;

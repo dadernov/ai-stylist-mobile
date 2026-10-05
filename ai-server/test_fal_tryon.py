@@ -622,6 +622,17 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
 
 
 class FaceRestore(unittest.TestCase):
+    def test_a_finished_look_is_a_compact_jpeg(self):
+        # A PNG of the same frame kept the phone waiting for 1-2 MB over mobile data.
+        image = Image.effect_noise((600, 1600), 40).convert('RGB')
+        url = app._result_data_url(image)
+        self.assertTrue(url.startswith('data:image/jpeg;base64,'))
+        data = app._data_url_to_bytes(url)[0]
+        decoded = Image.open(BytesIO(data))
+        self.assertEqual(decoded.size, (600, 1600))
+        png = BytesIO(); image.save(png, format='PNG', compress_level=3)
+        self.assertLess(len(data), len(png.getvalue()) / 2)
+
     def test_a_face_just_over_the_limit_is_tried_again_before_the_full_lock(self):
         # The full lock relit the whole frame and turned black tights green for a residual of 5.3% against 5%.
         import numpy as np
@@ -637,7 +648,7 @@ class FaceRestore(unittest.TestCase):
             return Image.new('RGB', (64, 128))
         with patch.object(app.face_guard, 'transplant_face', side_effect=transplant), \
                 patch.object(app.footwear_guard, 'parse', return_value=labels):
-            self.assertTrue(app._face_restored_output_url(Image.new('RGB', (64, 128)), prepared).startswith('data:image/png'))
+            self.assertTrue(app._face_restored_output_url(Image.new('RGB', (64, 128)), prepared).startswith('data:image/jpeg'))
             self.assertEqual(calls, [False, True])
         calls.clear()
         with patch.object(app.face_guard, 'transplant_face', side_effect=face_guard.AlignmentError('face-not-found')), \

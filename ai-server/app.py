@@ -294,15 +294,25 @@ def _prepare_provider_frame(content: bytes, max_side: int, jpeg_quality: int, ra
     return _bytes_to_data_url(buff.getvalue(), 'image/jpeg')
 
 
+def _result_data_url(image: Image.Image):
+    """A finished look for the app: JPEG at 92 without chroma subsampling.
+
+    A PNG of the same frame was 1-2 MB, five times the JPEG, and the phone
+    waited for every byte of it over mobile data; at this quality fabric and
+    print look the same.
+    """
+    buff = BytesIO()
+    image.convert('RGB').save(buff, format='JPEG', quality=92, subsampling=0, optimize=True, icc_profile=image_color.SRGB_BYTES)
+    return _bytes_to_data_url(buff.getvalue(), 'image/jpeg')
+
+
 def _unlocked_output_url(original_content: bytes, frame: Image.Image):
-    """After a rejected lock: the provider's own frame as PNG, never a provider URL."""
+    """After a rejected lock: the provider's own frame as our own JPEG, never a provider URL."""
     full = _working_image(original_content, max_side=None)
     image = frame.convert('RGB')
     if image.size != full.size:
         image = image.resize(full.size, Image.Resampling.LANCZOS)
-    buff = BytesIO()
-    image.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
-    return _bytes_to_data_url(buff.getvalue(), 'image/png')
+    return _result_data_url(image)
 
 
 def _source_framed(prepared, generated_image: Image.Image, ratio=tryon_frame.PROVIDER_RATIO):
@@ -374,9 +384,7 @@ def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
         # Paid work is never lost to the restore: the caller shows the frame.
         print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
         return None
-    buff = BytesIO()
-    restored.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
-    return _bytes_to_data_url(buff.getvalue(), 'image/png')
+    return _result_data_url(restored)
 
 
 def _stage_preview_url(prepared, generated_image: Image.Image, max_height: int = 1024):
@@ -478,9 +486,7 @@ async def _face_locked_output_url(
         if status == 'no-silhouette':
             raise ValueError('Не удалось отделить одежду от фона на результате примерки. Исходное фото сохранено.')
         raise ValueError('Не удалось совместить результат с исходным фото. Исходное фото сохранено.')
-    buff = BytesIO()
-    final_image.save(buff, format='PNG', compress_level=3, icc_profile=image_color.SRGB_BYTES)
-    return _bytes_to_data_url(buff.getvalue(), 'image/png')
+    return _result_data_url(final_image)
 
 
 MAX_UPLOAD_BYTES = _env_int("AI_MAX_UPLOAD_BYTES", 15 * 1024 * 1024)

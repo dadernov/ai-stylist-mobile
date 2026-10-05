@@ -204,7 +204,7 @@ class DiagnosticWiring(unittest.IsolatedAsyncioTestCase):
                 ('top', 'bottom'), prepared, debug_context=('selected-owner', 'selected-job'))
         diagnostic.assert_called_once()
         self.assertEqual(events, ['capture', 'compose'])
-        self.assertTrue(output.startswith('data:image/png;base64,'))
+        self.assertTrue(output.startswith('data:image/jpeg;base64,'))
 
     async def test_no_context_does_not_invoke_diagnostic_capture(self):
         import app
@@ -214,7 +214,7 @@ class DiagnosticWiring(unittest.IsolatedAsyncioTestCase):
              patch.object(app, '_apply_identity_lock', return_value=(raw, 'composed')), patch('builtins.print'):
             output = await app._face_locked_output_url(object(), b'source', 'provider-result')
         diagnostic.assert_not_called()
-        self.assertTrue(output.startswith('data:image/png;base64,'))
+        self.assertTrue(output.startswith('data:image/jpeg;base64,'))
 
 
 if __name__ == '__main__':
