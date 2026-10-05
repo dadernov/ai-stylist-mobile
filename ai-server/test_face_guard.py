@@ -459,6 +459,42 @@ class FaceTransplant(unittest.TestCase):
         self.assertLess(result[135, 187].min(), 200, f'the editor\'s outline stays: skin, not wall, got {result[135, 187]}')
         self.assertLess(abs(result[160, 200] - np.array([40, 60, 160])).max(), 25, f'the collar is untouched, got {result[160, 200]}')
 
+    def long_hair(self, hair_left, hair_right, wall, strands):
+        """A face with long hair down both sides to well below the chin."""
+        image = np.full((800, 400, 3), wall, np.uint8)
+        labels = np.zeros((800, 400), np.uint8)
+        image[40:220, hair_left:hair_right] = strands
+        labels[40:220, hair_left:hair_right] = 2
+        image[64:114, 180:220] = (200, 150, 120)
+        labels[64:114, 180:220] = 11
+        image[114:220, 190:210] = (190, 140, 110)  # the neck
+        labels[114:220, 190:210] = 11
+        return image, labels
+
+    def test_long_hair_runs_on_past_the_chin_without_a_break_across(self):
+        # Cut at the chin, the photo's strands ended in a straight line over the editor's.
+        original, source_labels = self.long_hair(164, 236, 230, (40, 30, 25))
+        generated, generated_labels = self.long_hair(158, 242, 230, (70, 55, 45))  # drawn a little wider and lighter
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]):
+            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
+                                                           source_labels, generated_labels)).astype(float)
+        hair = np.r_[150:178, 222:250]
+        steps = np.abs(np.diff(result[100:215][:, hair].mean(axis=2), axis=0))
+        self.assertLess(steps.max(), 60, f'a break across the hair below the chin: {steps.max():.0f} at row '
+                                         f'{100 + np.unravel_index(steps.argmax(), steps.shape)[0]}')
+        self.assertLess(result[130, 170].max(), 100, 'the hair beside the neck is hair')
+
+    def test_the_wall_beside_the_head_has_the_frames_light(self):
+        # The photo's wall, lit otherwise, came through beside the neck as a pale patch.
+        original, source_labels = self.long_hair(170, 230, 200, (40, 30, 25))
+        generated, generated_labels = self.long_hair(160, 240, 228, (40, 30, 25))  # the editor's hair wider, its wall lighter
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]):
+            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
+                                                           source_labels, generated_labels)).astype(int)
+        for row in (60, 90, 130):
+            for column in (150, 250):
+                self.assertLess(abs(result[row, column] - 228).max(), 12, f'the wall at {row},{column}: {result[row, column]}')
+
     def test_a_turned_head_or_other_expression_is_refused(self):
         original, generated = self.scene()
         points = face().landmarks.copy()

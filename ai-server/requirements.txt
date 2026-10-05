@@ -8,6 +8,8 @@ rembg[cpu]==2.0.74
 numpy==2.3.4
 httpx==0.28.1
 opencv-python-headless>=4.10,<5
+# Шов при переносе лица на образ (face_guard): минимальный разрез графа.
+scipy==1.18.1
 tokenizers>=0.21,<0.23
 huggingface-hub>=1.0,<2
 # Шифрование фото гардероба на сервере (closet.py): AES-256-GCM.

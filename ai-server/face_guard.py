@@ -281,37 +281,106 @@ def _similarity(source, target):
 
 
 HEAD_LABELS = [1, 2, 3, 11]  # hat, hair, sunglasses, face in the clothes parsing
+HAIR_LABELS = [1, 2, 3]  # the head's own labels that are not skin
 CLOTHES_LABELS = [4, 5, 6, 7, 17]  # upper clothes, skirt, pants, dress, scarf
+# How far the photo may reach below the chin, in face heights, and to either side of the face, in face widths.
+HAIR_DEPTH, HAIR_SIDE = 1.2, 3.0
+# The seam between the photo and the frame: what a step along it costs at the least, how
+# much an edge of either picture makes it cheaper, and how hard a free pixel leans to one side.
+SEAM_FLOOR, SEAM_EDGE, SEAM_LEAN = 4., 40., 8.
+# Free pixels lean to the photo down to a fifth of a face above the chin and to the frame
+# a fifth below it, passing over in between.
+LEAN_START, LEAN_LENGTH = .2, .4
 
 
-def _paint_out(frame, cover, labels=None, reach=4):
-    """The editor's own head and hair under `cover` replaced by its own background around them.
+def _long_hair(labels, box):
+    """The hair that grows from the head, down to `HAIR_DEPTH` below the chin; not a dark coat read as hair.
 
-    Painted in from the edge of the hole, so the wall beside a head keeps the
-    editor's light; the photo's wall, put there before, showed as a patch.
-    Only the background is painted from: the neck or a collar next to the hole
-    would spread skin or cloth over the wall.
+    Whole, not cut at a column beside the face: hair cut there showed a straight edge down the side.
     """
-    hole = cover > .05
-    if not hole.any():
-        return frame
-    ys, xs = np.where(hole)
-    pad = 12 + 2 * reach
-    top, bottom = max(0, ys.min() - pad), min(hole.shape[0], ys.max() + pad + 1)
-    left, right = max(0, xs.min() - pad), min(hole.shape[1], xs.max() + pad + 1)
-    crop = np.ascontiguousarray(frame[top:bottom, left:right].clip(0, 255).astype(np.uint8))
-    unknown = hole[top:bottom, left:right]
-    if labels is not None:
-        unknown = unknown | (np.asarray(labels)[top:bottom, left:right] != 0)
-    # Thin strands the parser reads as background sit right beside the hair: the
-    # wall is taken from a few pixels further out, and painted in smooth, as a wall is.
-    unknown = cv2.dilate(unknown.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1)))
-    filled = cv2.inpaint(crop, unknown, 7, cv2.INPAINT_TELEA).astype(np.float32)
-    filled = cv2.GaussianBlur(filled, (0, 0), max(2., reach * .6))
-    out = frame.copy()
-    weight = cover[top:bottom, left:right, None]
-    out[top:bottom, left:right] = crop * (1 - weight) + filled * weight
-    return out
+    x, y, w, h = [float(v) for v in box]
+    hair = np.asarray(labels) == 2
+    yy, xx = np.ogrid[:hair.shape[0], :hair.shape[1]]
+    hair &= (xx >= x - HAIR_SIDE * w) & (xx <= x + w + HAIR_SIDE * w) & (yy >= y - h) & (yy <= y + h + HAIR_DEPTH * h)
+    count, parts = cv2.connectedComponents(hair.astype(np.uint8), connectivity=8)
+    if count < 2:
+        return np.zeros(hair.shape, bool)
+    head = np.unique(parts[hair & (yy <= y + h) & (xx >= x - .65 * w) & (xx <= x + 1.65 * w)])
+    return np.isin(parts, head[head > 0])
+
+
+def _lean(rows, chin, height):
+    """1 above the chin, 0 below it, a smooth step over `LEAN_LENGTH` face heights around it."""
+    t = np.clip((rows - (chin - LEAN_START * height)) / (LEAN_LENGTH * height), 0, 1)
+    return ((1 + np.cos(np.pi * t)) / 2).astype(np.float32)
+
+
+def _min_cut(photo, frame, must_photo, must_frame, lean, scale=2):
+    """Which pixels take the photo: a minimum cut between `must_photo` and `must_frame`.
+
+    Crossing between neighbours costs how much the two pictures differ there,
+    so the seam runs where they agree, and less along an edge of either one,
+    where a hood's rim, a strand or a jaw line hides it. `lean` per pixel
+    pulls a free pixel to the photo (positive) or to the frame (negative).
+    Cut at half size, which is plenty for a seam and keeps it under a second.
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import breadth_first_order, maximum_flow
+    height, width = must_photo.shape
+    h, w = max(2, height // scale), max(2, width // scale)
+    small = lambda a: cv2.resize(np.asarray(a, np.float32), (w, h), interpolation=cv2.INTER_AREA)
+    p, f, pull = small(photo), small(frame), small(lean)
+    to_photo = small(must_photo) > .5
+    to_frame = (small(must_frame) > .5) & ~to_photo
+    differ = np.linalg.norm(p - f, axis=2)
+    count = h * w
+    index = np.arange(count).reshape(h, w)
+    source, sink = count, count + 1
+    starts, ends, costs = [], [], []
+    # Eight directions, the diagonals weighed by their length: with four the
+    # cheapest seam ran in straight steps along the rows and columns.
+    for dy, dx, length in ((0, 1, 1.), (1, 0, 1.), (1, 1, .7071), (1, -1, .7071)):
+        y0, y1 = slice(0, h - dy), slice(dy, h)
+        x0, x1 = (slice(0, w - dx), slice(dx, w)) if dx >= 0 else (slice(-dx, w), slice(0, w + dx))
+        edge = np.linalg.norm(f[y0, x0] - f[y1, x1], axis=2) + np.linalg.norm(p[y0, x0] - p[y1, x1], axis=2)
+        cost = ((differ[y0, x0] + differ[y1, x1]) / 2 / (1 + edge / SEAM_EDGE) + SEAM_FLOOR) * length
+        starts.append(index[y0, x0].ravel())
+        ends.append(index[y1, x1].ravel())
+        costs.append(cost.ravel())
+    starts, ends, costs = np.concatenate(starts), np.concatenate(ends), np.concatenate(costs)
+    fixed = 1e8
+    photo_side = np.where(to_photo, fixed, np.maximum(pull, 0)).ravel()
+    frame_side = np.where(to_frame, fixed, np.maximum(-pull, 0)).ravel()
+    rows = np.concatenate([starts, ends, np.full(count, source), index.ravel()])
+    cols = np.concatenate([ends, starts, index.ravel(), np.full(count, sink)])
+    capacity = np.concatenate([costs, costs, photo_side, frame_side])
+    used = capacity > 0
+    graph = csr_matrix((np.round(capacity[used] * 4).astype(np.int32), (rows[used], cols[used])), shape=(count + 2, count + 2))
+    residual = graph - maximum_flow(graph, source, sink, method='dinic').flow
+    residual.data[residual.data <= 0] = 0
+    residual.eliminate_zeros()
+    side = np.zeros(count + 2, bool)
+    side[breadth_first_order(residual, source, directed=True, return_predecessors=False)] = True
+    taken = cv2.resize(side[:count].reshape(h, w).astype(np.float32), (width, height), interpolation=cv2.INTER_LINEAR)
+    # Rounded off: at half size the seam has corners.
+    taken = cv2.GaussianBlur(taken, (0, 0), 1.5 * scale) > .5
+    return (taken | must_photo) & ~(must_frame & ~must_photo)
+
+
+def _pull_push(values, weights):
+    """A smooth field through `values` where `weights` > 0, filled in everywhere else."""
+    levels = []
+    value, weight = values * weights[..., None], weights.astype(np.float32)
+    while min(weight.shape) > 8:
+        levels.append((value, weight))
+        value, weight = cv2.pyrDown(value), cv2.pyrDown(weight)
+    field = np.where(weight[..., None] > 1e-6, value / np.maximum(weight[..., None], 1e-6), 0)
+    for value, weight in reversed(levels):
+        coarse = cv2.resize(field, (weight.shape[1], weight.shape[0]), interpolation=cv2.INTER_LINEAR)
+        own = np.where(weight[..., None] > 1e-6, value / np.maximum(weight[..., None], 1e-6), 0)
+        trust = np.clip(weight * 4, 0, 1)[..., None]
+        field = trust * own + (1 - trust) * coarse
+    return field
 
 
 def _sharpness(image, box):
@@ -397,9 +466,9 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     A general image editor redraws the whole picture: the head comes back ~10%
     larger or a few pixels off, and the lock that restores face and background
     together must refuse such a frame. The face alone can still be restored:
-    the photo's face is mapped onto the generated head by one similarity
-    transform of the eyes, nose and mouth and blended over a soft ellipse; the
-    hair, body and background stay the generator's. A head that turned or
+    the photo's head is mapped onto the generated one by one similarity
+    transform of the eyes, nose and mouth and laid in along a seam (`_compose`);
+    the body and the new clothes stay the generator's. A head that turned or
     changed its expression is refused, because the old face would not fit it.
     """
     if generated.size != original.size:
@@ -428,131 +497,124 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     low, high, turn, spread = (.75, 1.33, 15, .09) if relaxed else (.8, 1.25, 10, .05)
     if not low <= scale <= high or angle > turn or residual > max(3., width * spread):
         raise AlignmentError(f'face-transplant-mismatch scale={scale:.2f} angle={angle:.1f} residual={residual / max(width, 1):.3f}')
-    mask = Image.new('L', original.size, 0)
+    return _compose(original, generated, source_face, faces[0], matrix, source_labels, generated_labels)
+
+
+def _compose(original, generated, source_face: Face, target: Face, matrix, source_labels=None, generated_labels=None):
+    """The photo's head laid into the frame along a seam where the two agree.
+
+    Every rule for where the photo ends and the frame begins (the photo's wall
+    beside the head, the editor's hair painted out, the neck the editor's from
+    the chin down) left a patch or a straight edge somewhere: a hood came out
+    cut, long hair broke off across, a wall went grey beside the neck. So the
+    border is not drawn but found: a minimum cut between what must be the
+    photo's (its face) and what must be the frame's (the new clothes, and all
+    beyond the head), through whatever lies between, where the two pictures
+    agree most or an edge hides the step. Free pixels lean to the photo above
+    the chin, where the head is, and to the frame below it, where the new
+    clothes are; the editor's own head and hair lean hard to the photo, so no
+    second ear or jaw is left beside it. The photo's wall takes the frame's
+    light along the seam; where both have hair or both have skin, the two
+    pass into each other over a longer way, as their strands and shadows do
+    not line up.
+    """
+    x, y, width, height = [float(v) for v in source_face.box]
+    gx, gy, gw, gh = [float(v) for v in target.box]
+    size = generated.size
+    photo = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, size, flags=cv2.INTER_CUBIC,
+                           borderMode=cv2.BORDER_REPLICATE).astype(np.float32)
+    frame = np.asarray(generated.convert('RGB')).astype(np.float32)
+    rows_count, cols_count = frame.shape[:2]
+    rows = np.arange(rows_count, dtype=np.float32)[:, None]
+    yy, xx = np.ogrid[:rows_count, :cols_count]
+    labelled = source_labels is not None and np.asarray(source_labels).shape == (original.height, original.width) \
+        and generated_labels is not None and np.asarray(generated_labels).shape == (rows_count, cols_count)
+    frame_labels = np.asarray(generated_labels) if labelled else np.zeros((rows_count, cols_count), np.uint8)
+    photo_labels = cv2.warpAffine(np.asarray(source_labels).astype(np.uint8), matrix, size, flags=cv2.INTER_NEAREST) \
+        if labelled else np.zeros((rows_count, cols_count), np.uint8)
+    photo_chin = float(matrix[1] @ np.array([x + width / 2, y + height, 1.]))
+    chin = max(gy + gh, photo_chin)
+    kernel = lambda radius: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * max(1, round(radius)) + 1,) * 2)
+    oval = Image.new('L', original.size, 0)
     centre_x, centre_y = x + width / 2, y + height * .56
-    ImageDraw.Draw(mask).ellipse((centre_x - width * .44, centre_y - height * .56,
+    ImageDraw.Draw(oval).ellipse((centre_x - width * .44, centre_y - height * .56,
                                   centre_x + width * .44, centre_y + height * .5), fill=255)
-    region = np.asarray(mask) > 0
-    if source_labels is not None and np.asarray(source_labels).shape == region.shape:
-        # The whole head, not only the face: hair, ears and glasses make the
-        # likeness as much as the eyes do. Nothing below the chin, where the
-        # new collar is.
-        yy, xx = np.ogrid[:region.shape[0], :region.shape[1]]
-        extent = (xx >= x - .65 * width) & (xx <= x + 1.65 * width) & (yy >= y - .9 * height) & (yy <= y + height)
-        region |= np.isin(source_labels, HEAD_LABELS) & extent
-    alpha = cv2.warpAffine(region.astype(np.float32), matrix, generated.size, flags=cv2.INTER_LINEAR)
-    ghost = None
-    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
-        # The editor's own hair and ears outside the photo's head would stay as a
-        # second outline; they are painted over with the editor's own background.
-        gx, gy, gw, gh = faces[0].box
-        yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
-        extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + 1.15 * gh)
-        ghost = np.isin(generated_labels, HEAD_LABELS) & extent
-    # The photo's head comes with a narrow soft edge only: a wide one brought the
-    # photo's wall along, lit otherwise than the editor's, as a pale patch beside
-    # the neck. The editor's strands outside it are removed below instead.
-    grow = max(3, round(width * .08))
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 2 + 1, grow * 2 + 1))
-    feather = lambda mask: cv2.GaussianBlur(cv2.dilate(mask.astype(np.uint8), kernel).astype(np.float32), (0, 0), max(2., width * .04))
-    edge_grow = max(2, round(width * .025))
-    alpha = cv2.GaussianBlur(cv2.dilate((alpha > .5).astype(np.uint8), cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (edge_grow * 2 + 1, edge_grow * 2 + 1))).astype(np.float32), (0, 0), max(1.5, width * .02))
-    cover = None
-    if ghost is not None:
-        # Down to the chin the head is the photo's alone: faded earlier, the
-        # editor's ear showed through beside the photo's hair as a second ear.
-        # Just below the chin it fades back to the editor's: further down long
-        # hair lies on the new clothes, and the photo's would bring its own.
-        # The parser misses the rim of an ear or a tuft of beard beside the jaw,
-        # so the editor's head is covered with twice the margin of the photo's own.
-        wide = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 4 + 1, grow * 4 + 1))
-        cover = cv2.GaussianBlur(cv2.dilate(ghost.astype(np.uint8), wide).astype(np.float32), (0, 0), max(2., width * .04))
-        cover *= np.clip((gy + 1.15 * gh - yy) / (.2 * gh), 0, 1)
-    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
-        # A hood or a high collar now hugs the jaw: the photo's wall there came
-        # back as white patches beside the chin. Only the photo's own head may
-        # cover the new clothes; below the mouth the photo's scene does not
-        # cover the editor's neck or the shadow inside a hood or collar either.
-        generated_labels = np.asarray(generated_labels)
-        own_head = region if source_labels is None or np.asarray(source_labels).shape != region.shape \
-            else np.isin(source_labels, HEAD_LABELS)
-        own_head = cv2.warpAffine(own_head.astype(np.uint8), matrix, generated.size, flags=cv2.INTER_NEAREST).astype(bool)
-        # The photo's outline is half wall: over the new clothes it shows as a light rim.
-        rim = max(2, round(width * .03))
-        own_head = cv2.erode(own_head.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (rim * 2 + 1, rim * 2 + 1))).astype(bool)
-        keep = np.isin(generated_labels, CLOTHES_LABELS) & ~own_head
-        if source_labels is not None and np.asarray(source_labels).shape == region.shape:
-            scene = ~cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
-                                    flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
-            # Below the mouth the editor's dark "background" next to its clothes is
-            # the inside of a hood or a collar the parser cannot tell from a shadow.
-            # Above it the photo's scene covers the editor's own ears and temples:
-            # kept, an ear the photo's hair hides came out twice.
-            below_mouth = np.arange(alpha.shape[0])[:, None] > target[3:, 1].mean()
-            # A hood's shadow beside the jaw reaches a quarter of a face's width from its fabric.
-            reach = max(2, round(width * .25))
-            near_clothes = cv2.dilate(np.isin(generated_labels, CLOTHES_LABELS).astype(np.uint8),
-                                      cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach * 2 + 1, reach * 2 + 1))).astype(bool)
-            # The editor's skin only from the chin down, where it is the neck: between
-            # the mouth and the chin it is the editor's own jaw and ear lobe, drawn a
-            # little wider than the photo's, and kept it showed as a second jawline.
-            # The parser's neck stops a pixel or two short of its edge; there the
-            # photo's wall came through as a light streak, so the edge is kept too.
-            below_chin = np.arange(alpha.shape[0])[:, None] > gy + .92 * gh
-            edge = max(2, round(width * .05))
-            neck = cv2.dilate((generated_labels == 11).astype(np.uint8),
-                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
-            # The photo's own neck edge is half wall too: below the chin it gives way
-            # to the editor's neck within the same margin of the wall.
-            near_scene = cv2.dilate(scene.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
-            keep |= (near_scene & neck & below_chin) | (scene & below_mouth & (generated_labels == 0) & near_clothes)
-        kept = cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
-        alpha *= 1 - kept
-        if cover is not None:
-            cover *= 1 - kept
-    paint = None
-    if cover is not None:
-        # Where the photo has its own hair or neck, the photo covers the editor's;
-        # where it has wall, the editor's own wall is painted in instead.
-        photo_person = np.ones(alpha.shape, np.float32)
-        if source_labels is not None and np.asarray(source_labels).shape == region.shape:
-            photo_person = cv2.GaussianBlur(cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.float32), matrix, generated.size,
-                                                           flags=cv2.INTER_LINEAR, borderValue=1), (0, 0), max(1., width * .015))
-        alpha = np.maximum(alpha, cover * photo_person)
-        paint = cover * (1 - photo_person)
-    face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
-                          flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    frame = np.asarray(generated.convert('RGB'))
-    core = alpha > .6
-    if not core.any():
+    oval = cv2.warpAffine((np.asarray(oval) > 0).astype(np.uint8), matrix, size, flags=cv2.INTER_NEAREST).astype(bool)
+    photo_face = ((photo_labels == 11) & (rows <= photo_chin)) | (photo_labels == 3)
+    photo_hair = cv2.warpAffine(_long_hair(source_labels, source_face.box).astype(np.uint8), matrix, size,
+                                flags=cv2.INTER_NEAREST).astype(bool) if labelled else np.zeros(oval.shape, bool)
+    in_head = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh)
+    frame_head = np.isin(frame_labels, HEAD_LABELS) & (rows <= chin) & in_head
+    frame_hair = _long_hair(frame_labels, target.box)
+    # The face itself must be the photo's; its ears and the sides of its neck may give way to a new hood or collar.
+    must_photo = cv2.erode(((photo_face & cv2.dilate(oval.astype(np.uint8), kernel(width * .04)).astype(bool)) | oval).astype(np.uint8),
+                           kernel(width * .02)).astype(bool) | (photo_labels == 3)
+    reach = cv2.dilate((photo_face | photo_hair | frame_head | frame_hair | oval).astype(np.uint8), kernel(width * .25)).astype(bool)
+    reach &= rows <= chin + HAIR_DEPTH * gh
+    # The new clothes are the frame's, over the photo's hair too: where the editor drew a collar over it, it lies under.
+    must_frame = (np.isin(frame_labels, CLOTHES_LABELS) | ~reach) & ~must_photo
+    if not must_photo.any():
         raise AlignmentError('face-transplant-mismatch')
-    # The generator relights the scene slightly. Match the mean colour of the
-    # head to its new surroundings, and of the photo's wall that fills in
-    # around the hair to the editor's wall, so neither reads as a patch.
-    face_lab = cv2.cvtColor(face, cv2.COLOR_RGB2LAB).astype(np.float32)
-    frame_lab = cv2.cvtColor(frame, cv2.COLOR_RGB2LAB).astype(np.float32)
-    person = np.ones(alpha.shape, bool)
-    if source_labels is not None and np.asarray(source_labels).shape == region.shape:
-        person = cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
-                                flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
-    head = core & person
-    scenery = (alpha > .05) & ~person
-    if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
-        scenery &= np.asarray(generated_labels) == 0
-    if head.any():
-        face_lab[person] += np.clip(frame_lab[head].mean(axis=0) - face_lab[head].mean(axis=0), -12, 12)
-    if scenery.sum() > 50:
-        face_lab[~person] += np.clip(frame_lab[scenery].mean(axis=0) - face_lab[scenery].mean(axis=0), -25, 25)
-    face = cv2.cvtColor(face_lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
-    if generated_labels is not None and source_labels is not None and np.asarray(source_labels).shape == region.shape:
-        photo_chin = float(matrix[1] @ np.array([x + width / 2, y + height, 1.]))
-        photo_labels = cv2.warpAffine(np.asarray(source_labels).astype(np.uint8), matrix, generated.size, flags=cv2.INTER_NEAREST)
-        frame = _match_neck(frame.astype(np.float32), face, np.asarray(generated_labels), photo_labels, faces[0], photo_chin,
-                            np.asarray(original.convert('RGB')), source_face)
-    if paint is not None:
-        frame = _paint_out(np.asarray(frame, np.float32), paint, generated_labels, max(3, round(width * .06)))
-    blended = frame * (1 - alpha[..., None]) + face * alpha[..., None]
+    # The generator relights the scene slightly: the head and the wall around it take the frame's mean light first.
+    photo_lab = cv2.cvtColor(photo.clip(0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    frame_lab = cv2.cvtColor(frame.clip(0, 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    face = (photo_face | oval) & (rows <= gy + gh)
+    if labelled:
+        face &= frame_labels == 11
+    if face.sum() > 50:
+        photo_lab[(photo_labels > 0) | oval] += np.clip(frame_lab[face].mean(axis=0) - photo_lab[face].mean(axis=0), -12, 12)
+    wall = reach & (photo_labels == 0) & (frame_labels == 0) & ~oval
+    if labelled and wall.sum() > 50:
+        photo_lab[(photo_labels == 0) & ~oval] += np.clip(frame_lab[wall].mean(axis=0) - photo_lab[wall].mean(axis=0), -25, 25)
+    photo = cv2.cvtColor(photo_lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
+    if labelled:
+        frame = _match_neck(frame, photo, frame_labels, photo_labels, target, photo_chin, np.asarray(original.convert('RGB')), source_face)
+    over = _lean(rows, chin, gh)
+    lean = SEAM_LEAN * (2 * over - 1) * np.ones((1, cols_count), np.float32)
+    # Deeper down harder to the frame, so the seam leaves long hair well before the photo's reach ends.
+    lean -= 2 * SEAM_LEAN * np.clip((rows - chin - (LEAN_LENGTH - LEAN_START) * gh) / (.3 * gh), 0, 1)
+    # Under the face the neck is the frame's even above the chin's row: beside the chin the jaw rises
+    # to the ears, and the photo's wall there cut a notch into the editor's neck.
+    columns = np.where(oval.any(axis=0))[0]
+    jaw = np.full(cols_count, np.inf, np.float32)
+    jaw[columns] = rows_count - 1 - np.argmax(oval[::-1, columns], axis=0)
+    under = rows > jaw[None, :] + .03 * gh
+    lean = np.where((frame_head | frame_hair) & in_head & ~under, lean + 3 * SEAM_LEAN * over, lean)
+    lean = np.where((photo_face | (photo_hair & (rows <= chin))) & ~under, lean + 2 * SEAM_LEAN * over, lean)
+    lean = np.where(under & ~photo_hair, np.minimum(lean, 0) - SEAM_LEAN, lean)
+    # The dark inside of a hood or collar beside the jaw, read as background: the frame's, not the photo's wall.
+    mouth = float(np.asarray(target.landmarks)[3:, 1].mean())
+    near_clothes = cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(width * .25)).astype(bool)
+    lean = np.where((frame_labels == 0) & near_clothes & (rows > mouth) & (photo_labels == 0), np.minimum(lean, 0) - SEAM_LEAN, lean)
+    ys, xs = np.where(reach)
+    top, bottom = max(0, ys.min() - 4), min(rows_count, ys.max() + 5)
+    left, right = max(0, xs.min() - 4), min(cols_count, xs.max() + 5)
+    window = (slice(top, bottom), slice(left, right))
+    taken = np.zeros(reach.shape, bool)
+    taken[window] = _min_cut(photo[window], frame[window], must_photo[window], must_frame[window], lean[window])
+    taken = (taken | must_photo) & ~(must_frame & ~must_photo)
+    # The photo's wall takes the frame's light along the seam, carried smoothly over the photo's side;
+    # its face and hair keep their own colour, or the editor's skin tone came through the seam.
+    seam = taken & cv2.dilate((~taken).astype(np.uint8), kernel(1)).astype(bool)
+    difference = frame - photo
+    agree = seam & (np.linalg.norm(difference, axis=2) < 40)
+    if labelled and agree.sum() > 20:
+        field = np.zeros_like(photo)
+        field[window] = _pull_push(difference[window], agree[window].astype(np.float32))
+        scene = cv2.GaussianBlur(((photo_labels == 0) & ~oval).astype(np.float32), (0, 0), max(1., width * .02))
+        photo += np.clip(field, -25, 25) * (taken * scene)[..., None]
+    alpha = cv2.GaussianBlur(taken.astype(np.float32), (0, 0), max(1., width * .008))
+    if labelled:
+        shared = lambda mask: cv2.GaussianBlur(cv2.erode(mask.astype(np.uint8), kernel(width * .03)).astype(np.float32), (0, 0), width * .03)
+        both = np.maximum(shared((photo_labels == 2) & (frame_labels == 2)),
+                          shared((photo_labels == 11) & (frame_labels == 11) & (rows > photo_chin - .15 * gh)))
+        # Where the hair passes from the photo's outline to the editor's, the outline moves over as gradually;
+        # never at the new clothes, which would take the photo's wall at their edge.
+        band = over * (1 - over) * 4
+        clear = 1 - cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(gh * .15)).astype(np.float32)
+        both = np.maximum(both, shared((photo_labels == 2) | (frame_labels == 2)) * band * clear)
+        alpha = both * cv2.GaussianBlur(taken.astype(np.float32), (0, 0), max(2., gh * .07)) + (1 - both) * alpha
+    blended = frame * (1 - alpha[..., None]) + photo * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
 
 
