@@ -21,7 +21,9 @@ import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
 import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
-import { accountKey, DATA_KEYS, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
+import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
+import { readGarmentTraits } from './src/services/ai';
+import { hasAiConsent } from './src/services/aiConsent';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { PrimaryButton } from './src/components/ui/PrimaryButton';
@@ -445,6 +447,34 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   useEffect(() => {
     persist(STORAGE_KEYS.favorites, favoriteLooks, 'избранное');
   }, [isReady, favoriteLooks]);
+
+  // Items added before the server read their photo get its reading once, in the background:
+  // sleeves, length, front opening and bulk then come from each garment itself, not from its
+  // category. Only with the AI consent already given; one item every few seconds; an item that
+  // could not be read is tried again on the next launch.
+  const traitsAsked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!isReady) return;
+    const pending = items.filter(item => !item.traits && ['Верх', 'Верхняя одежда'].includes(item.section)
+      && (item.sourceImageUri || item.imageUri) && !traitsAsked.current.has(item.id));
+    if (!pending.length) return;
+    let cancelled = false;
+    void (async () => {
+      if (!(await hasAiConsent(session.login))) return;
+      for (const item of pending) {
+        if (cancelled || !alive.current) return;
+        traitsAsked.current.add(item.id);
+        try {
+          const traits = decodeTraits(await readGarmentTraits(item.sourceImageUri || item.imageUri || '', item.category));
+          if (traits && alive.current) {
+            setItems(current => current.map(candidate => candidate.id === item.id && !candidate.traits ? { ...candidate, traits } : candidate));
+          }
+        } catch { /* offline or busy: read again on the next launch */ }
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isReady, items]);
 
   // The wardrobe and the try-on photo also live on the server, so they survive
   // the phone and appear on another device (services/closetSync.ts).

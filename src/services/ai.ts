@@ -4,6 +4,7 @@ import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { readStoredSession, Session } from './auth';
+import { GarmentTraits } from '../data/mock';
 import { fetchJson } from './http';
 import { translate } from '../constants/i18n';
 
@@ -20,6 +21,8 @@ export type AiResult = {
   warnings?: string[];
   analysisSource?: string;
   backgroundRemoved?: boolean;
+  /** Sleeves, length, front opening and bulk read from the photo, for tops and outerwear. */
+  traits?: GarmentTraits;
   error?: string;
 };
 
@@ -199,6 +202,15 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
     body: form
   }, 90000);
 
+}
+
+/** The traits of an item added before /analyze returned them: read once, then kept with the item. */
+export async function readGarmentTraits(uri: string, category: string): Promise<GarmentTraits> {
+  const form = new FormData();
+  await appendPhoto(form, 'file', uri);
+  form.append('category', category);
+  const result = await fetchJson(AI_BASE_URL + '/garment-traits', { method: 'POST', headers: await authHeaders(), body: form }, 30000);
+  return result?.traits && typeof result.traits === 'object' ? result.traits : {};
 }
 
 // What may spoil a try-on on this photo, found by the server's local models

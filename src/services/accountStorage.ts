@@ -3,6 +3,8 @@ import storage from './keyValueStorage';
 import { Gender, isGender } from '../types/profile';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
+import { decodeTraits } from '../domain/garmentTraits';
+export { decodeTraits } from '../domain/garmentTraits';
 import { loadValidated } from './storage';
 import { reanchorPhoto, removeUnusedPhotos } from './photos';
 
@@ -71,7 +73,7 @@ export function decodeWardrobe(value: unknown): WardrobeItem[] {
     return { ...item, id: string(item.id), name: string(item.name), category: string(item.category), section: string(item.section),
       color: string(item.color, 'Не определено'), season: string(item.season, 'Круглый год'), pattern: string(item.pattern, 'Не определено'),
       tags: item.tags === undefined ? [] : strings(item.tags), imageUri: reanchorPhoto(optionalString(item.imageUri)), sourceImageUri: reanchorPhoto(optionalString(item.sourceImageUri)),
-      size: optionalString(item.size), store: optionalString(item.store), material: optionalString(item.material) };
+      size: optionalString(item.size), store: optionalString(item.store), material: optionalString(item.material), traits: decodeTraits(item.traits) };
   });
 }
 const number = (value: unknown) => {

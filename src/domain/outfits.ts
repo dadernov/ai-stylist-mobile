@@ -582,6 +582,8 @@ const needsBase = (item: WardrobeItem, gender: Gender) => item.category === 'Ж�
 // Shorts, sandals and sleeveless tops belong to warm days: with a parka they read as a mistake.
 const WARM_ONLY = new Set(['Шорты', 'Сандалии']);
 const SLEEVELESS = new Set(['Майка', 'Топ']);
+/** Without sleeves by its own photo; the category only for an item not read yet (a top may well have sleeves). */
+const sleeveless = (item: WardrobeItem) => item.traits?.sleeves ? item.traits.sleeves === 'none' : SLEEVELESS.has(item.category);
 const WARM_ONLY_BELOW = 15;
 const canLayer = (inner: WardrobeItem, over: WardrobeItem) => inner.id !== over.id && Boolean(LAYER_PAIRS[inner.category]?.includes(over.category));
 // Light inside, dark outside reads as depth; the reverse looks accidental.
@@ -633,7 +635,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     .sort((a, b) => preference(b) - preference(a)).slice(0, 4) : [];
   // A top that cannot be worn alone here: a vest, a man's cardigan, a tank top on a cool day.
   const alone = (top: WardrobeItem) => top.id === anchor?.id
-    || (!needsBase(top, gender) && !(SLEEVELESS.has(top.category) && temperature !== null && temperature < WARM_ONLY_BELOW));
+    || (!needsBase(top, gender) && !(sleeveless(top) && temperature !== null && temperature < WARM_ONLY_BELOW));
   const bags = choose('Сумки', 2);
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];

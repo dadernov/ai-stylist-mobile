@@ -299,3 +299,18 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.ok(all(cold).length < all(bare).length || !all(cold).includes(skirt.name), 'tights keep the legs of a skirt warm');
   console.log('PASS: tights go with skirts and dresses on cool days, never as the bottom');
 }
+
+{
+  // What a garment is like comes from its own photo: a zip hoodie can be worn open, a pullover cannot;
+  // a top with sleeves is not "sleeveless" because of its category.
+  const { canFasten } = require('../src/domain/garmentOptions.ts');
+  const { decodeTraits } = require('../src/domain/garmentTraits.ts');
+  assert.equal(canFasten(item('zip', 'Худи', 'Верх', { traits: { opening: 'front' } })), true, 'a zip hoodie opens');
+  assert.equal(canFasten(item('pull', 'Худи', 'Верх', { traits: { opening: 'none' } })), false, 'a pullover hoodie does not');
+  assert.equal(canFasten(item('unread', 'Кардиган', 'Верх')), true, 'unread, the category decides');
+  assert.equal(canFasten(item('unsure', 'Худи', 'Верх', { traits: { opening: null } })), false, 'unsure, the category decides');
+  assert.deepEqual(decodeTraits({ sleeves: 'short', length: 'knee', opening: 'front', bulk: 7 }),
+    { sleeves: 'short', length: null, opening: 'front', bulk: null }, 'only the values the server gives');
+  assert.equal(decodeTraits('short'), undefined);
+  console.log('PASS: options and sleeves follow each garment\'s photo, its category only when unread');
+}

@@ -35,6 +35,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult } from '../services/ai';
+import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
@@ -379,6 +380,11 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const handleSaveItem = (addAnother = false) => {
     if (!draftPhoto || isAnalyzing || !draftCategory || !categoryConfirmed) return;
     const resolvedSection = draftSection || getSectionByCategory(draftCategory);
+    // What the photo shows (sleeves, length, opening, bulk) stays with the item; a new photo without
+    // a reading drops the old one, and the item is read again in the background (App).
+    const existing = draftExistingId ? items.find(item => item.id === draftExistingId) : undefined;
+    const traits = analysis?.traits ? decodeTraits(analysis.traits)
+      : existing && existing.sourceImageUri === (sourcePhoto || draftPhoto) ? existing.traits : undefined;
     const newItem: WardrobeItem = {
       id: draftExistingId || Date.now().toString(),
       name: draftName.trim() || suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }) || t(draftCategory),
@@ -392,7 +398,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       sourceImageUri: sourcePhoto || draftPhoto,
       size: draftSize,
       store: draftStore,
-      material: draftMaterial
+      material: draftMaterial,
+      traits
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
     closeDraft();
