@@ -167,6 +167,11 @@ LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same can
 
 # Layers without sleeves of their own: a knit vest, a waistcoat.
 SLEEVELESS_LAYERS = {'Жилет', 'Майка', 'Топ'}
+# The outermost sleeves' length is said with the outfit itself (look_prompt), for
+# garments that always have long sleeves: a shirt or a blouse may be short-sleeved.
+SLEEVES_IN_OUTFIT = True
+LONG_SLEEVED = {'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 'Тренч', 'Плащ', 'Пуховик', 'Парка', 'Шуба',
+                'Кардиган', 'Свитер', 'Худи', 'Свитшот', 'Лонгслив', 'Водолазка'}
 
 
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
@@ -277,10 +282,19 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     role = dict(zip(upper, upper_roles(len(upper))))
     image = {slot: index for index, slot in enumerate(slots, start=2)}
     described = []
+    # The outermost layer with sleeves: told at its end of the prompt only, a jacket over a
+    # long-sleeve came out with sleeves ending at the elbow and the long-sleeve's black cuffs below.
+    sleeved = [slot for slot in layer_order if slot in upper and categories.get(slot) not in SLEEVELESS_LAYERS]
+    outermost = sleeved[-1] if sleeved and SLEEVES_IN_OUTFIT and categories.get(sleeved[-1]) in LONG_SLEEVED else None
     for slot in slots:
         category = categories.get(slot, '')
         noun = 'one-piece garment' if slot == 'top' and category in ONE_PIECE else names.get(category, '')
         worn = {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
+        if slot == outermost:
+            worn += ', its sleeves long, reaching the wrists'
+        elif outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost) \
+                and category not in SLEEVELESS_LAYERS:
+            worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
         described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
     # The user's fastening choices belong to the outfit itself, so they are told with it.
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]

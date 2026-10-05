@@ -284,6 +284,36 @@ HEAD_LABELS = [1, 2, 3, 11]  # hat, hair, sunglasses, face in the clothes parsin
 CLOTHES_LABELS = [4, 5, 6, 7, 17]  # upper clothes, skirt, pants, dress, scarf
 
 
+def _paint_out(frame, cover, labels=None, reach=4):
+    """The editor's own head and hair under `cover` replaced by its own background around them.
+
+    Painted in from the edge of the hole, so the wall beside a head keeps the
+    editor's light; the photo's wall, put there before, showed as a patch.
+    Only the background is painted from: the neck or a collar next to the hole
+    would spread skin or cloth over the wall.
+    """
+    hole = cover > .05
+    if not hole.any():
+        return frame
+    ys, xs = np.where(hole)
+    pad = 12 + 2 * reach
+    top, bottom = max(0, ys.min() - pad), min(hole.shape[0], ys.max() + pad + 1)
+    left, right = max(0, xs.min() - pad), min(hole.shape[1], xs.max() + pad + 1)
+    crop = np.ascontiguousarray(frame[top:bottom, left:right].clip(0, 255).astype(np.uint8))
+    unknown = hole[top:bottom, left:right]
+    if labels is not None:
+        unknown = unknown | (np.asarray(labels)[top:bottom, left:right] != 0)
+    # Thin strands the parser reads as background sit right beside the hair: the
+    # wall is taken from a few pixels further out, and painted in smooth, as a wall is.
+    unknown = cv2.dilate(unknown.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1)))
+    filled = cv2.inpaint(crop, unknown, 7, cv2.INPAINT_TELEA).astype(np.float32)
+    filled = cv2.GaussianBlur(filled, (0, 0), max(2., reach * .6))
+    out = frame.copy()
+    weight = cover[top:bottom, left:right, None]
+    out[top:bottom, left:right] = crop * (1 - weight) + filled * weight
+    return out
+
+
 def _sharpness(image, box):
     x, y, w, h = [int(v) for v in box]
     patch = cv2.cvtColor(np.ascontiguousarray(image[max(0, y):y + h, max(0, x):x + w]).astype(np.uint8), cv2.COLOR_RGB2GRAY)
@@ -414,17 +444,21 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     ghost = None
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # The editor's own hair and ears outside the photo's head would stay as a
-        # second outline; the photo's scene there (a wall, mostly) covers it.
+        # second outline; they are painted over with the editor's own background.
         gx, gy, gw, gh = faces[0].box
         yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
         extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + 1.15 * gh)
         ghost = np.isin(generated_labels, HEAD_LABELS) & extent
-    # Grow the mask before feathering: a feather that starts at the hair line
-    # leaves the editor's strands half visible, a ghost beside the real hair.
+    # The photo's head comes with a narrow soft edge only: a wide one brought the
+    # photo's wall along, lit otherwise than the editor's, as a pale patch beside
+    # the neck. The editor's strands outside it are removed below instead.
     grow = max(3, round(width * .08))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 2 + 1, grow * 2 + 1))
     feather = lambda mask: cv2.GaussianBlur(cv2.dilate(mask.astype(np.uint8), kernel).astype(np.float32), (0, 0), max(2., width * .04))
-    alpha = feather(alpha > .5)
+    edge_grow = max(2, round(width * .025))
+    alpha = cv2.GaussianBlur(cv2.dilate((alpha > .5).astype(np.uint8), cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (edge_grow * 2 + 1, edge_grow * 2 + 1))).astype(np.float32), (0, 0), max(1.5, width * .02))
+    cover = None
     if ghost is not None:
         # Down to the chin the head is the photo's alone: faded earlier, the
         # editor's ear showed through beside the photo's hair as a second ear.
@@ -434,7 +468,7 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         # so the editor's head is covered with twice the margin of the photo's own.
         wide = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 4 + 1, grow * 4 + 1))
         cover = cv2.GaussianBlur(cv2.dilate(ghost.astype(np.uint8), wide).astype(np.float32), (0, 0), max(2., width * .04))
-        alpha = np.maximum(alpha, cover * np.clip((gy + 1.15 * gh - yy) / (.2 * gh), 0, 1))
+        cover *= np.clip((gy + 1.15 * gh - yy) / (.2 * gh), 0, 1)
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # A hood or a high collar now hugs the jaw: the photo's wall there came
         # back as white patches beside the chin. Only the photo's own head may
@@ -473,7 +507,20 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
             # to the editor's neck within the same margin of the wall.
             near_scene = cv2.dilate(scene.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
             keep |= (near_scene & neck & below_chin) | (scene & below_mouth & (generated_labels == 0) & near_clothes)
-        alpha *= 1 - cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
+        kept = cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
+        alpha *= 1 - kept
+        if cover is not None:
+            cover *= 1 - kept
+    paint = None
+    if cover is not None:
+        # Where the photo has its own hair or neck, the photo covers the editor's;
+        # where it has wall, the editor's own wall is painted in instead.
+        photo_person = np.ones(alpha.shape, np.float32)
+        if source_labels is not None and np.asarray(source_labels).shape == region.shape:
+            photo_person = cv2.GaussianBlur(cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.float32), matrix, generated.size,
+                                                           flags=cv2.INTER_LINEAR, borderValue=1), (0, 0), max(1., width * .015))
+        alpha = np.maximum(alpha, cover * photo_person)
+        paint = cover * (1 - photo_person)
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
     frame = np.asarray(generated.convert('RGB'))
@@ -503,6 +550,8 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         photo_labels = cv2.warpAffine(np.asarray(source_labels).astype(np.uint8), matrix, generated.size, flags=cv2.INTER_NEAREST)
         frame = _match_neck(frame.astype(np.float32), face, np.asarray(generated_labels), photo_labels, faces[0], photo_chin,
                             np.asarray(original.convert('RGB')), source_face)
+    if paint is not None:
+        frame = _paint_out(np.asarray(frame, np.float32), paint, generated_labels, max(3, round(width * .06)))
     blended = frame * (1 - alpha[..., None]) + face * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
 

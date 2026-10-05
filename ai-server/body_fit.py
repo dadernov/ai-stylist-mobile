@@ -81,24 +81,39 @@ def _column_map(width, factor, zone):
 def narrow(image: Image.Image, labels, factor, zone, chin=None, neck=0):
     """The frame and its labels with the body's columns narrowed; the scene keeps the frame's width.
 
-    Above `chin` nothing moves: the face is put back from the photo and has to
-    fit the head it lands on. Over the next `neck` rows the narrowing grows to
-    its full amount, so the shoulders get all of it and the head none.
+    The scene is remapped the same way on every row, so a door frame or a wall
+    corner stays straight: narrowed only below the chin, it bent at the
+    shoulders. The person is remapped on their own and laid over it: above
+    `chin` they do not move, as the face is put back from the photo and has to
+    fit the head it lands on, and over the next `neck` rows the narrowing grows
+    to its full amount. The scene pixels a head covers in one map and not in
+    the other are plain wall beside it.
     """
     width, height = image.size
     full = _column_map(width, factor, zone)
     identity = np.arange(width, dtype=np.float32)
     rows = np.arange(height, dtype=np.float32)
+    map_y = np.repeat(rows.reshape(-1, 1), width, axis=1)
+    scene_x = np.tile(full, (height, 1))
     if chin is None:
         weight = np.ones(height, np.float32)
     else:
         weight = np.clip((rows - chin) / max(neck, 1), 0, 1)
         weight = (1 - np.cos(np.pi * weight)) / 2
-    map_x = (identity[None, :] + weight[:, None] * (full - identity)[None, :]).astype(np.float32)
-    map_y = np.repeat(rows.reshape(-1, 1), width, axis=1)
-    frame = cv2.remap(np.asarray(image.convert('RGB')), map_x, map_y, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    narrowed_labels = None
-    if labels is not None:
-        narrowed_labels = cv2.remap(np.asarray(labels).astype(np.uint8), map_x, map_y, cv2.INTER_NEAREST,
-                                    borderMode=cv2.BORDER_REPLICATE)
-    return Image.fromarray(frame), narrowed_labels
+    person_x = (identity[None, :] + weight[:, None] * (full - identity)[None, :]).astype(np.float32)
+    source = np.asarray(image.convert('RGB'))
+    scene = cv2.remap(source, scene_x, map_y, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    if labels is None:
+        return Image.fromarray(scene), None
+    labels = np.asarray(labels).astype(np.uint8)
+    body = cv2.remap(source, person_x, map_y, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    person = (_person(labels)).astype(np.float32)
+    # A pixel's worth of the edge comes along: the person's outline is soft in the frame too.
+    person = cv2.dilate(person, np.ones((3, 3), np.uint8))
+    cover = cv2.remap(person, person_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    cover = cv2.GaussianBlur(cover, (0, 0), 1.)[..., None]
+    frame = scene * (1 - cover) + body * cover
+    scene_labels = cv2.remap(labels, scene_x, map_y, cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE)
+    body_labels = cv2.remap(labels, person_x, map_y, cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE)
+    narrowed_labels = np.where(_person(body_labels), body_labels, np.where(_person(scene_labels), 0, scene_labels)).astype(np.uint8)
+    return Image.fromarray(frame.clip(0, 255).round().astype(np.uint8)), narrowed_labels

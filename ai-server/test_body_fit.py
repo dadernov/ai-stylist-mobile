@@ -84,6 +84,23 @@ class Narrow(unittest.TestCase):
         self.assertLess(abs(dark(150) - 60), 3, 'the torso at the photo\'s width')
 
 
+class Walls(unittest.TestCase):
+    def test_a_door_frame_stays_straight_however_the_body_narrows(self):
+        # Narrowed only below the chin, the scene bent both door frames at the shoulders.
+        labels = person(66)
+        image = np.full((H, W, 3), 230, np.uint8)
+        image[:, 100:104] = (40, 40, 200)  # a door frame close to the body
+        image[:, 250:254] = (40, 40, 200)  # and one further out
+        image[labels > 0] = (30, 30, 30)
+        factor, zone = body_fit.measure(person(60), labels)
+        out = np.asarray(body_fit.narrow(Image.fromarray(image), labels, factor, zone, chin=80, neck=30)[0])
+        for start in (90, 240):
+            columns = {tuple(np.where((out[row, start:start + 30, 2] > 150) & (out[row, start:start + 30, 0] < 100))[0]) for row in (10, 60, 150, 300, 395)}
+            self.assertEqual(len(columns), 1, f'the frame near {start} keeps its columns at every height: {columns}')
+        self.assertEqual((out[60] < 100).all(axis=1).sum(), 22, 'the head as drawn')
+        self.assertLess(abs((out[150] < 100).all(axis=1).sum() - 60), 3, 'the torso at the photo\'s width')
+
+
 class Restore(unittest.TestCase):
     def test_the_face_goes_onto_the_narrowed_frame(self):
         labels = person(60)
