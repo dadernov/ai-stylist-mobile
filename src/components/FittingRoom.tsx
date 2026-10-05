@@ -175,7 +175,9 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
           <IconButton icon={X} label={t('Закрыть примерку')} onPress={onClose} />
         </View>
         {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
-        <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri}
+        {/* Closing the generation window closes this sheet too: the next look is picked on the main screen,
+            with the running one in the small window in the corner. */}
+        <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri} onLeave={onClose}
           updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
             const entry = { ...payload, id: String(payload.updatedAt) };
             setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));

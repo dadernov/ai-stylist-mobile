@@ -39,6 +39,8 @@ type AiTryOnPreviewProps = {
   sheetContent?: ReactNode;
   sheetFooter?: ReactNode;
   onSelectHistory?: (payload: TryOnHistoryItem) => void;
+  /** Closes the sheet this preview sits in: closing the generation window then lands on the main screen. */
+  onLeave?: () => void;
   onGenerated?: (payload: {
     imageUri: string;
     warning?: string;
@@ -80,7 +82,8 @@ export function AiTryOnPreview({
   sheetContent,
   sheetFooter,
   onGenerated,
-  onSelectHistory
+  onSelectHistory,
+  onLeave
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -263,7 +266,7 @@ export function AiTryOnPreview({
     setWarning(null);
     try {
       // The try-on opens in the app-wide generation window, which can fold into the corner.
-      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh, onJob: dock.open, options: garmentOptions });
+      await store.start({ modelUri, items, context, tuckMode: effectiveTuckMode, quality, fresh, onJob: id => dock.started(id, onLeave), options: garmentOptions });
     } catch (e: any) {
       if (mounted.current) setError(e?.message || t('Не удалось сгенерировать примерку'));
     } finally {
@@ -318,7 +321,7 @@ export function AiTryOnPreview({
           may have been folded away, and this is the way to it from here. */}
       <AppPressable
         style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
-        onPress={() => pendingJob ? dock.open(pendingJob.id)
+        onPress={() => pendingJob ? dock.open(pendingJob.id, onLeave)
           // The sheet already shows the choices; anywhere else the window opens on them first.
           : variant === 'sheet' ? void run('quality', Boolean(resultUri))
           : context ? dock.prepare({ items, context, fresh: Boolean(resultUri), options: garmentOptions }) : undefined}

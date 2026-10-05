@@ -9,19 +9,28 @@ import { SHADOWS } from '../constants/theme';
 import { TryOnJob, tryOnContext } from '../services/tryOnJobs';
 import { TuckMode } from '../services/ai';
 import { GarmentOptions } from '../domain/garmentOptions';
-import { reanchorTryOnUri } from '../services/tryOnPhotos';
+import { isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { saveTryOnToGallery, shareTryOn } from '../services/tryOnExport';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
-import { GenerationStage } from './GenerationStage';
+import { GenerationStage, StagePage } from './GenerationStage';
+import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
 
 /** A look about to be tried on: the window first asks how to wear each garment. */
 export type TryOnRequest = { items: WardrobeItem[]; context: string; fresh: boolean; options?: GarmentOptions };
-type DockApi = { open: (jobId: string) => void; prepare: (request: TryOnRequest) => void };
-const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {} });
+/**
+ * `leave` closes the screen the window was opened over (the try-on sheet), so
+ * closing the window lands on the main screen with the small one in the corner.
+ */
+type DockApi = {
+  open: (jobId: string, leave?: () => void) => void;
+  prepare: (request: TryOnRequest) => void;
+  started: (jobId: string, leave?: () => void) => void;
+};
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {} });
 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
@@ -30,11 +39,14 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 const MINI_WIDTH = 112;
 const MINI_HEIGHT = 168;
 const resultOf = (job?: TryOnJob) => job?.status === 'succeeded' && job.result ? reanchorTryOnUri(job.result.imageUri) || job.result.imageUri : null;
+const titleOf = (job: TryOnJob) => job.garments?.map(garment => garment.name).join(' + ') || job.name;
 
 /**
  * Try-ons live above every screen: "Try on" opens the big window, the cross
  * folds it into a small one in the corner while the look keeps generating,
- * and several looks can run at once and be leafed through there.
+ * and several looks can run at once and be leafed through, in the small
+ * window and in the big one alike, the first look first. The moment a look
+ * is ready a green banner says so, wherever the user is.
  */
 export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   items: WardrobeItem[]; modelUri?: string; bottom: number; children: ReactNode;
@@ -42,48 +54,98 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const t = useT();
   const { jobs, store, login } = useTryOnJobs();
   const aiConsent = useAiConsent();
-  // Try-ons in the dock, newest first; a finished one stays until it is seen.
+  // Try-ons in the dock, the first started first; a finished one stays until it is seen.
   const [docked, setDocked] = useState<string[]>([]);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The big window: leafing through the docked try-ons, on `initialPage` when it opens.
+  const [windowOpen, setWindowOpen] = useState(false);
+  const [initialPage, setInitialPage] = useState(0);
+  const [visibleId, setVisibleId] = useState<string | null>(null);
+  const [scrollTo, setScrollTo] = useState<{ page: number; at: number } | null>(null);
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   // The look being prepared in the window, before its try-on exists.
   const [setup, setSetup] = useState<(TryOnRequest & { options: GarmentOptions }) | null>(null);
   const [starting, setStarting] = useState(false);
-  // One window for setup and try-on: the key changes only when a new window opens.
+  // One window for setup and try-ons: the key changes only when a new window opens.
   const [windowKey, setWindowKey] = useState(0);
+  const [ready, setReady] = useState<{ id: string; title: string; uri: string | null; at: number } | null>(null);
   // When this app session first saw each try-on running, for the progress bar and the timer.
   const startedAt = useRef<Record<string, number>>({});
   for (const job of jobs) {
     if (job.status === 'pending') startedAt.current[job.id] ??= Date.now();
     else delete startedAt.current[job.id];
   }
+  // Finished looks the user has looked at in the window: they leave the dock when it closes.
+  const seen = useRef(new Set<string>());
+  // Closes the sheet the window was opened over.
+  const leave = useRef<(() => void) | null>(null);
 
-  const show = useCallback((id: string) => {
-    setDocked(previous => [id, ...previous.filter(current => current !== id)]);
+  const dock = useCallback((id: string) => setDocked(previous => previous.includes(id) ? previous : [...previous, id]), []);
+  const openWindow = useCallback((page: number | string, from?: () => void) => {
+    if (from) leave.current = from;
     setSetup(null);
-    setOpenId(id);
     setActionError(null);
+    setInitialPage(typeof page === 'number' ? page : -1);
+    setVisibleId(typeof page === 'string' ? page : null);
+    setWindowOpen(true);
   }, []);
-  const open = useCallback((id: string) => { setWindowKey(key => key + 1); show(id); }, [show]);
+  const open = useCallback((id: string, from?: () => void) => {
+    setWindowKey(key => key + 1);
+    dock(id);
+    openWindow(id, from);
+  }, [dock, openWindow]);
+  // A try-on that just started joins the dock at the end; the window shows the first look, the new one a swipe away.
+  const started = useCallback((id: string, from?: () => void) => {
+    dock(id);
+    openWindow(0, from);
+  }, [dock, openWindow]);
   const prepare = useCallback((request: TryOnRequest) => {
     setWindowKey(key => key + 1);
-    setOpenId(null);
+    setWindowOpen(false);
     setActionError(null);
     setSetup({ ...request, options: request.options || {} });
   }, []);
-  const api = useMemo(() => ({ open, prepare }), [open, prepare]);
+  const api = useMemo(() => ({ open, prepare, started }), [open, prepare, started]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
-  const openJob = openId ? byId.get(openId) : undefined;
+  // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.
+  const firstPage = initialPage >= 0 ? initialPage : Math.max(0, dockJobs.findIndex(job => job.id === visibleId));
+  const visibleJob = visibleId ? byId.get(visibleId) : undefined;
+  useEffect(() => {
+    if (windowOpen && visibleJob && visibleJob.status !== 'pending') seen.current.add(visibleJob.id);
+  }, [windowOpen, visibleJob?.id, visibleJob?.status]);
+
+  // "The look is ready" the moment a running try-on's picture is in.
+  const lastStatus = useRef(new Map<string, TryOnJob['status']>());
+  useEffect(() => {
+    for (const job of jobs) {
+      const before = lastStatus.current.get(job.id);
+      lastStatus.current.set(job.id, job.status);
+      const uri = resultOf(job);
+      if (before !== 'pending' || job.status !== 'succeeded' || !uri) continue;
+      const show = () => setReady({ id: job.id, title: titleOf(job), uri, at: Date.now() });
+      if (isRemoteUri(uri)) void Image.prefetch(uri).catch(() => false).then(show); else show();
+    }
+  }, [jobs]);
 
   const close = () => {
+    const from = leave.current;
+    leave.current = null;
     setSetup(null);
-    setOpenId(null);
-    // A finished look the user has just seen leaves the dock; a running one stays there.
-    if (openJob && openJob.status !== 'pending') setDocked(previous => previous.filter(id => id !== openJob.id));
+    setWindowOpen(false);
+    // Finished looks the user has seen leave the dock; running ones and those not seen yet stay there.
+    const done = new Set([...seen.current].filter(id => byId.get(id)?.status !== 'pending'));
+    seen.current.clear();
+    setDocked(previous => previous.filter(id => !done.has(id)));
+    // The sheet closes once the window is gone: iOS takes down one modal at a time.
+    if (from) setTimeout(from, 80);
   };
   const dismiss = (id: string) => setDocked(previous => previous.filter(current => current !== id));
+  const focus = (id: string) => {
+    const page = dockJobs.findIndex(job => job.id === id);
+    if (windowOpen && page >= 0) setScrollTo({ page, at: Date.now() });
+    else if (!setup) open(id);
+  };
 
   // "Another variant" goes back to the setup step in the same window, with the choices of this one.
   const again = async (job: TryOnJob) => {
@@ -93,7 +155,6 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     }
     const context = await tryOnContext(modelUri, garments);
     if (job.status !== 'pending') dismiss(job.id);
-    setOpenId(null);
     setActionError(null);
     // A finished look asks for a new variant; a failed one is simply sent again.
     setSetup({ items: garments, context, fresh: job.status === 'succeeded', options: job.options || {} });
@@ -107,9 +168,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     const base = setup.items.find(item => item.section === 'Верх' && item.imageUri);
     const tuckMode: TuckMode = (base && setup.options[base.id]?.tuck) || 'auto';
     try {
-      // The window stays and turns into the try-on the moment the job exists.
+      // The window stays and turns into the try-ons the moment the job exists.
       await store.start({ modelUri, items: setup.items, context: setup.context, tuckMode, quality: 'quality', fresh: setup.fresh,
-        options: setup.options, onJob: show });
+        options: setup.options, onJob: id => started(id) });
     } catch (error: any) {
       setActionError(error?.message || t('Не удалось сгенерировать примерку'));
     } finally {
@@ -130,56 +191,65 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     }
   };
 
-  const failed = openJob && (openJob.status === 'failed' || openJob.status === 'retry');
+  const pageOf = (job: TryOnJob): StagePage => {
+    const failed = job.status === 'failed' || job.status === 'retry';
+    return {
+      key: job.id,
+      title: titleOf(job),
+      busy: job.status === 'pending',
+      busyLabel: tryOnStatusLabel(job.progress, t),
+      startedAt: startedAt.current[job.id],
+      photoUri: job.progress?.previewUrl || modelUri || null,
+      resultUri: resultOf(job),
+      error: (job.id === visibleId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
+      warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
+      saveState: saveStates[job.id] || 'idle',
+      onSave: () => { void save(job); },
+      onShare: () => { const uri = resultOf(job); if (uri) void shareTryOn(uri, login); },
+      onRegenerate: () => { void again(job); },
+    };
+  };
+  const banner = ready ? (
+    <ReadyBanner key={ready.at} title={ready.title} imageUri={ready.uri} onPress={() => focus(ready.id)} onHide={() => setReady(null)} />
+  ) : null;
   // The window opens over the sheet the try-on was started from (OverlayHost):
   // drawn at the app root it would never show on iOS while that sheet is up.
   const stage = setup ? (
     <GenerationStage
       key={windowKey}
-      title={setup.items.map(item => item.name).join(' + ')}
-      busy={false}
-      busyLabel=""
-      photoUri={null}
-      resultUri={null}
-      error={actionError}
-      saveState="idle"
-      onSave={() => {}}
-      onShare={() => {}}
-      onRegenerate={() => {}}
+      pages={[]}
       onClose={close}
-      setup={{ items: setup.items, options: setup.options, starting,
+      banner={banner}
+      setup={{ title: setup.items.map(item => item.name).join(' + '), items: setup.items, options: setup.options, starting, error: actionError,
         onOptions: options => setSetup(current => current && { ...current, options }), onGenerate: () => { void generate(); } }}
     />
-  ) : openJob ? (
+  ) : windowOpen && dockJobs.length ? (
     <GenerationStage
       key={windowKey}
-      title={openJob.garments?.map(garment => garment.name).join(' + ') || openJob.name}
-      busy={openJob.status === 'pending'}
-      busyLabel={tryOnStatusLabel(openJob.progress, t)}
-      startedAt={startedAt.current[openJob.id]}
-      photoUri={openJob.progress?.previewUrl || modelUri || null}
-      resultUri={resultOf(openJob)}
-      error={actionError || (failed ? t(openJob.error || 'Не удалось сгенерировать примерку') : null)}
-      warning={openJob.result?.warning ? openJob.result.warning.split(' · ').map(part => t(part)).join(' · ') : null}
-      saveState={saveStates[openJob.id] || 'idle'}
-      onSave={() => { void save(openJob); }}
-      onShare={() => { const uri = resultOf(openJob); if (uri) void shareTryOn(uri, login); }}
-      onRegenerate={() => { void again(openJob); }}
+      pages={dockJobs.map(pageOf)}
+      initialPage={firstPage}
+      scrollTo={scrollTo}
+      onPageChange={page => { setVisibleId(dockJobs[page]?.id || null); setActionError(null); }}
       onClose={close}
+      banner={banner}
     />
   ) : null;
   const inline = useOverlay('generation-stage', stage);
   // The folded window floats over whatever is on top too: drawn under the
   // try-on sheet it could be neither seen nor reached until the sheet closed.
-  const mini = dockJobs.length > 0 && !openJob && !setup ? (
-    <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={open} onDismiss={dismiss} />
+  const mini = dockJobs.length > 0 && !stage ? (
+    <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={id => open(id)} onDismiss={dismiss} />
   ) : null;
   const miniInline = useOverlay('generation-mini', mini);
+  // Over the screens the banner comes through the overlay host too; over the window, inside it.
+  const toast = stage ? null : banner;
+  const toastInline = useOverlay('generation-ready', toast);
   return (
     <DockContext.Provider value={api}>
       {children}
       {miniInline ? mini : null}
       {inline ? stage : null}
+      {toastInline ? toast : null}
     </DockContext.Provider>
   );
 }
