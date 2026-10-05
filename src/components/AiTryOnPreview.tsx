@@ -7,6 +7,7 @@ import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
+import { saveTryOnToGallery } from '../services/tryOnExport';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
@@ -182,21 +183,8 @@ export function AiTryOnPreview({
     if (!resultUri || saveState === 'saving' || isBusy) return;
     setSaveState('saving'); setSaveMessage(null);
     try {
-      if (Platform.OS === 'web') {
-        // В браузере галереи нет: сохраняем файлом.
-        const link = document.createElement('a');
-        link.href = resultUri; link.download = `ai-stylist-${Date.now()}.png`; link.click();
-        setSaveState('saved'); setSaveMessage(t('Сохранено в галерею в полном качестве'));
-        return;
-      }
-      // Модуль галереи нативный: грузим его только когда он нужен, иначе веб-сборка падает при старте.
-      const MediaLibrary = require('expo-media-library') as typeof import('expo-media-library');
-      const permission = await MediaLibrary.requestPermissionsAsync(true);
-      if (!permission.granted) throw new Error(t('Нет доступа к галерее. Разреши сохранение фото в настройках.'));
-      // The gallery gets the stored full-size PNG, never a downscaled preview.
-      const fileUri = isRemoteUri(resultUri) || resultUri.startsWith('data:')
-        ? (await cacheTryOnImage(resultUri, `export-${Date.now()}`, login)).imageUri : resultUri;
-      await MediaLibrary.saveToLibraryAsync(fileUri);
+      // One way to the gallery for the whole app (tryOnExport): the full-size file, never a preview.
+      await saveTryOnToGallery(resultUri, login);
       if (!mounted.current) return;
       setSaveState('saved'); setSaveMessage(t(isDraft ? 'Черновик сохранён в галерею' : 'Сохранено в галерею в полном качестве'));
     } catch (e: any) {

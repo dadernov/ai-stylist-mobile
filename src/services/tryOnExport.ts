@@ -19,11 +19,12 @@ export async function saveTryOnToGallery(uri: string, login: string) {
   if (Platform.OS === 'web') {
     // A browser has no gallery: the look is downloaded as a file.
     const link = document.createElement('a');
-    link.href = uri; link.download = `ai-stylist-${Date.now()}.png`; link.click();
+    link.href = uri; link.download = `ai-stylist-${Date.now()}.${uri.startsWith('data:image/png') ? 'png' : 'jpg'}`; link.click();
     return;
   }
   // The gallery module is native: loaded only when needed, or the web build fails at start.
-  const MediaLibrary = require('expo-media-library') as typeof import('expo-media-library');
+  // Its function API lives in /legacy since SDK 57; the default entry throws "deprecated" on it.
+  const MediaLibrary = require('expo-media-library/legacy') as typeof import('expo-media-library/legacy');
   const permission = await MediaLibrary.requestPermissionsAsync(true);
   if (!permission.granted) throw new Error(translate('Нет доступа к галерее. Разреши сохранение фото в настройках.'));
   await MediaLibrary.saveToLibraryAsync(await localFile(uri, login, 'export'));
