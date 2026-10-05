@@ -9,7 +9,7 @@ import os
 import tempfile
 import unittest
 from io import BytesIO
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from fastapi import UploadFile
@@ -213,6 +213,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.fashn = AsyncMock(side_effect=AssertionError('FASHN must not be called'))
         self.protect = AsyncMock(return_value='data:image/png;base64,protected')
         self.published = []
+        self.sleeves = Mock(return_value=None)
         self.patches = [
             patch.object(app, '_prepare_identity_source', return_value='prepared'),
             patch.object(app.fal_tryon, 'generate', self.generate),
@@ -221,6 +222,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             patch.object(app, '_face_locked_output_url', self.protect),
             patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (64, 128)))),
             patch.object(app.access, 'throttle'),
+            # The sleeve reader is tried on its own below; here no garment photo is read.
+            patch.object(app, 'sleeve_length', self.sleeves),
             patch.object(app.jobs, 'progress', side_effect=lambda owner, job_id, payload: self.published.append(payload['progress'])),
         ]
         for item in self.patches:
@@ -567,6 +570,44 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             self.assertIn('with short sleeves ending above the elbow, hidden under the raincoat: nothing of it shows at the wrists', prompt)
             self.assertNotIn('sleeves hidden inside the sleeves', prompt)
             self.assertIn('the outerwear: a raincoat, its sleeves long, reaching the wrists', prompt)
+
+    def test_sleeves_follow_each_garments_photo_not_its_category(self):
+        names = app._CATEGORY_NOUNS
+        look = lambda top, outer, sleeves, top2=None: tryon_policy.look_prompt(
+            ['top', 'bottom', *(['top2'] if top2 else []), 'outer', 'shoes'], top, outer, 'auto', names,
+            {'top2': top2} if top2 else {}, {}, sleeves)
+        # A short-sleeved shirt under a blazer keeps its short sleeves; a long-sleeved one tucks them into the blazer's.
+        self.assertIn('a button-up shirt, with short sleeves ending above the elbow, hidden under the blazer',
+                      look('Рубашка', 'Пиджак', {'top': 'short', 'outer': 'long'}))
+        self.assertIn('a button-up shirt, its sleeves hidden inside the sleeves of the blazer',
+                      look('Рубашка', 'Пиджак', {'top': 'long', 'outer': 'long'}))
+        unsure = look('Рубашка', 'Пиджак', {'outer': 'long'})
+        self.assertNotIn('a button-up shirt, with short', unsure)
+        self.assertNotIn('a button-up shirt, its sleeves', unsure, 'unread, its sleeves are not guessed')
+        # A long-sleeved polo is not a T-shirt.
+        self.assertIn('a polo shirt, its sleeves hidden inside the sleeves of the raincoat', look('Поло', 'Плащ', {'top': 'long'}))
+        # A short-sleeved cardigan over a T-shirt: nothing is said to reach the wrists.
+        cardigan = look('Футболка', '', {'top': 'short', 'top2': 'short'}, top2='Кардиган')
+        self.assertNotIn('reaching the wrists', cardigan)
+        self.assertNotIn('keep their full length down to the wrists', cardigan)
+        self.assertIn('has short sleeves, as in its photo: never lengthen them', cardigan)
+        # A garment worn on its own says what its photo shows.
+        dress = tryon_policy.look_prompt(['top', 'shoes'], 'Платье', '', 'auto', names, {}, {}, {'top': 'short'})
+        self.assertIn('image 2 is the top: one-piece garment, with short sleeves', dress)
+        blouse = tryon_policy.look_prompt(['top', 'bottom'], 'Блуза', '', 'auto', names, {}, {}, {'top': 'none'})
+        self.assertIn('a blouse, sleeveless', blouse)
+
+    async def test_each_upper_garments_photo_is_read_for_its_sleeves(self):
+        self.sleeves.side_effect = lambda content, category: {'Рубашка': 'short', 'Пиджак': 'long'}.get(category)
+        prompt = await self.options_look('request_000000000095', {}, top_file=photo('white'), top_category='Рубашка',
+                                         outer_file=photo('navy'), outer_category='Пиджак')
+        self.assertIn('a button-up shirt, with short sleeves ending above the elbow, hidden under the blazer', prompt)
+        self.assertEqual(sorted(call.args[1] for call in self.sleeves.call_args_list), ['Пиджак', 'Рубашка'], 'only the upper garments')
+        # A reader that fails leaves the garment to its category; the try-on goes on.
+        self.sleeves.side_effect = RuntimeError('model missing')
+        prompt = await self.options_look('request_000000000096', {}, top_file=photo('white'), top_category='Футболка',
+                                         outer_file=photo('navy'), outer_category='Плащ')
+        self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the raincoat', prompt)
 
     async def test_a_top_is_not_called_a_crop_top(self):
         # Named so, a long sleeveless top was cut off at the ribs.

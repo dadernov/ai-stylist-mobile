@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
-from clothing_analysis import get_classifier, extract_palette, CATEGORIES, SHORT_NAMES
+from clothing_analysis import get_classifier, extract_palette, sleeve_length, CATEGORIES, SHORT_NAMES
 import tryon_composite
 import face_guard
 import footwear_guard
@@ -772,8 +772,32 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     if model.family == 'bria':
         prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
     else:
-        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options)
+        sleeves = await _garment_sleeves(garments, slots, {'top': top_category, 'outer': outer_category, **categories})
+        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options, sleeves)
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
+
+
+UPPER_SLOTS = ('top', 'top2', 'top3', 'top4', 'outer', 'outer2')
+
+
+async def _garment_sleeves(garments, slots, categories):
+    """Each upper garment's sleeve length read from its own photo, where the reading is sure.
+
+    Never in the way of the try-on: a garment that cannot be read is simply left to its category.
+    """
+    sleeves = {}
+    for slot in slots:
+        if slot not in UPPER_SLOTS:
+            continue
+        try:
+            length = await asyncio.to_thread(sleeve_length, garments[slot][0], categories.get(slot, ''))
+        except Exception:
+            length = None
+        if length:
+            sleeves[slot] = length
+    if sleeves:
+        print('Try-on sleeves: ' + ','.join(f'{slot}:{length}' for slot, length in sleeves.items()), flush=True)
+    return sleeves
 
 
 async def _run_fal_layers(client, model, base_url, garments, upper, categories, seed, frame_size=None):

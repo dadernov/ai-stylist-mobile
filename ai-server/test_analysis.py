@@ -8,7 +8,27 @@ from fastapi import UploadFile, HTTPException
 from PIL import Image
 
 import app
-from clothing_analysis import extract_palette, ranked
+from clothing_analysis import decide_sleeves, extract_palette, ranked
+
+
+class SleeveTests(unittest.TestCase):
+    def test_the_photo_decides_where_the_category_varies(self):
+        # Probabilities in the order long, short, none.
+        self.assertEqual(decide_sleeves([.1, .85, .05], 'Поло'), 'short')
+        # A long-sleeved polo needs a clear photo: most polos are short-sleeved.
+        self.assertEqual(decide_sleeves([.93, .05, .02], 'Поло'), 'long')
+        self.assertIsNone(decide_sleeves([.6, .35, .05], 'Поло'))
+        self.assertEqual(decide_sleeves([.03, .07, .9], 'Блуза'), 'none')
+        self.assertEqual(decide_sleeves([.1, .8, .1], 'Платье'), 'short')
+
+    def test_a_jacket_out_of_sight_is_not_sleeveless(self):
+        # A jacket hanging on a hook read as sleeveless at 0.93.
+        self.assertEqual(decide_sleeves([.05, .02, .93], 'Куртка'), 'long')
+
+    def test_an_unsure_reading_says_nothing(self):
+        # A sweater with its sleeves folded, a close-up of a shirt collar.
+        self.assertIsNone(decide_sleeves([.15, .82, .03], 'Свитер'))
+        self.assertIsNone(decide_sleeves([.34, .52, .14], 'Рубашка'))
 
 
 class AnalysisTests(unittest.TestCase):

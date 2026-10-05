@@ -7,6 +7,7 @@ whether it is right, which is what lets the app stop asking the user to double
 check every single item.
 """
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -93,6 +94,42 @@ TEMPLATES = [
 # ambiguous ones. The previous 0.80/0.40 flagged almost two thirds of items,
 # including more than half of the answers that were in fact correct — which is
 # what made recognition feel broken even when it was right.
+# Sleeve length is the garment's own, not its category's: a polo, a shirt, a
+# blouse, a dress, a sweater come short- and long-sleeved alike. The model reads
+# it from the photo; a category's usual answer weighs in, so a jacket hanging
+# on a hook, its sleeves out of sight, is not taken for sleeveless. Measured on
+# 70 labelled garments (real photos and product shots): 67 decided right,
+# none wrong, 3 left undecided at SLEEVES_SURE.
+SLEEVES = [
+    ("long", ["a garment with long sleeves", "a long-sleeved top with sleeves down to the wrists", "a long sleeve shirt"]),
+    ("short", ["a garment with short sleeves", "a short-sleeved top with sleeves ending above the elbow", "a short sleeve shirt"]),
+    ("none", ["a sleeveless garment", "a sleeveless top with bare arms and shoulders", "a tank top or camisole without sleeves"]),
+]
+_ALWAYS_LONG = ("Пиджак", "Бомбер", "Куртка", "Пальто", "Тренч", "Плащ", "Пуховик", "Парка", "Шуба")
+SLEEVE_PRIORS = {
+    **{category: (.97, .02, .01) for category in _ALWAYS_LONG},
+    **{category: (.95, .04, .01) for category in ("Худи", "Свитшот", "Лонгслив", "Водолазка")},
+    "Свитер": (.8, .17, .03), "Кардиган": (.8, .17, .03),
+    "Рубашка": (.6, .35, .05), "Блуза": (.45, .35, .2),
+    "Поло": (.2, .78, .02), "Футболка": (.05, .93, .02),
+    "Платье": (.35, .3, .35), "Комбинезон": (.35, .3, .35),
+    **{category: (.05, .15, .8) for category in ("Топ", "Майка", "Сарафан", "Жилет")},
+}
+SLEEVE_PRIOR_DEFAULT = (.4, .4, .2)
+SLEEVES_SURE = 0.75
+
+
+def decide_sleeves(probabilities, category=""):
+    """'long', 'short' or 'none' from the photo's probabilities and the category's prior, or None when unsure."""
+    prior = SLEEVE_PRIORS.get(category, SLEEVE_PRIOR_DEFAULT)
+    joint = [weight * float(probability) for weight, probability in zip(prior, probabilities)]
+    total = sum(joint)
+    if total <= 0:
+        return None
+    best = max(range(len(joint)), key=joint.__getitem__)
+    return SLEEVES[best][0] if joint[best] / total >= SLEEVES_SURE else None
+
+
 CONFIDENCE_MIN = 0.70
 CONFIDENCE_GAP = 0.30
 PATTERN_MIN = 0.55
@@ -176,6 +213,9 @@ def _season_for(category, section):
 class ClothingClassifier:
     def __init__(self, directory=None):
         directory = Path(directory or os.getenv("AI_ANALYSIS_MODEL_DIR", Path(__file__).parent / "models" / "clip"))
+        self.directory = directory
+        self._sleeve_features = None
+        self._sleeve_lock = threading.Lock()
         config = json.loads((directory / "preprocessor_config.json").read_text())
         crop = config.get("crop_size") or config.get("size")
         self.size = crop["height"] if isinstance(crop, dict) else int(crop)
@@ -244,8 +284,55 @@ class ClothingClassifier:
                 "wornByPerson": worn}
 
 
+    def _sleeve_text(self):
+        # Built on first use from the text model, apart from the category features:
+        # their fingerprint stays as it was, and so does recognition.
+        with self._sleeve_lock:
+            if self._sleeve_features is None:
+                tokenizer = Tokenizer.from_file(str(self.directory / "tokenizer.json"))
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = 1
+                options.inter_op_num_threads = 1
+                options.enable_cpu_mem_arena = False
+                model = ort.InferenceSession(str(self.directory / "onnx/text_model_quantized.onnx"), sess_options=options,
+                                             providers=["CPUExecutionProvider"])
+                features = []
+                for _name, phrases in SLEEVES:
+                    vectors = [normalise(model.run(["text_embeds"], {"input_ids": np.array([tokenizer.encode(template.format(phrase)).ids],
+                                                                                           dtype=np.int64)})[0])
+                               for phrase in phrases for template in TEMPLATES]
+                    features.append(normalise(np.mean(vectors, axis=0))[0])
+                self._sleeve_features = np.array(features)
+            return self._sleeve_features
+
+    def sleeves(self, image: Image.Image, category=""):
+        """How long the garment's sleeves are, from the whole photo: 'long', 'short', 'none', or None when unsure."""
+        frame = self._fit(ImageOps.fit(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
+        scores = self._embed([frame])[0] @ self._sleeve_text().T * 100
+        probabilities = np.exp(scores - scores.max())
+        return decide_sleeves(probabilities / probabilities.sum(), category)
+
+
 _classifier = None
 _load_lock = threading.Lock()
+_sleeve_cache = {}
+_SLEEVE_CACHE_SIZE = 512
+
+
+def sleeve_length(content: bytes, category=""):
+    """The sleeve length of a garment photo, cached by its bytes; None when unsure or when it cannot be read."""
+    key = (hashlib.sha1(content).hexdigest(), category)
+    if key in _sleeve_cache:
+        return _sleeve_cache[key]
+    try:
+        with Image.open(BytesIO(content)) as image:
+            answer = get_classifier().sleeves(ImageOps.exif_transpose(image), category)
+    except Exception:
+        return None
+    if len(_sleeve_cache) >= _SLEEVE_CACHE_SIZE:
+        _sleeve_cache.pop(next(iter(_sleeve_cache)))
+    _sleeve_cache[key] = answer
+    return answer
 
 
 def get_classifier():

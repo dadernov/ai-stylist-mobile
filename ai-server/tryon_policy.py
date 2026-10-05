@@ -178,6 +178,23 @@ SHORT_SLEEVED = {'Футболка', 'Поло'}
 SHORT_SLEEVES_TOLD = True
 
 
+def sleeve_length(slot, categories, sleeves):
+    """'long', 'short', 'none' or None: measured from the garment's photo, else what its category always has.
+
+    A category is only a guess: polos, shirts, blouses, dresses and sweaters come
+    with either sleeve, so each garment's photo is read (clothing_analysis); the
+    category answers only when the photo left it open.
+    """
+    if sleeves.get(slot):
+        return sleeves[slot]
+    category = categories.get(slot, '')
+    if category in SLEEVELESS_LAYERS:
+        return 'none'
+    if category in LONG_SLEEVED:
+        return 'long'
+    return 'short' if category in SHORT_SLEEVED else None
+
+
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
 # reliably when it was called outerwear and dropped it as a "second top", so
 # every layer over the base top is described in outerwear terms.
@@ -267,15 +284,17 @@ def layer_tuck_instruction(state, noun, image):
     return f'Wear the {noun} from image {image} untucked: its hem hangs loose over the trousers at its full length. '
 
 
-def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None, options=None):
+def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None, options=None, sleeves=None):
     """`slots` in the order their images follow the photo; `names` maps a category to an English noun.
 
     `categories` maps a slot to its wardrobe category; the two arguments before
     it are the categories of `top` and `outer` for callers without layers.
     `options` holds the user's per-garment choices (garment_options); the
-    base top's tuck comes in `tuck`.
+    base top's tuck comes in `tuck`. `sleeves` maps a slot to the sleeve length
+    read from its photo ('long', 'short', 'none'), where it was read with confidence.
     """
     names = names or {}
+    sleeves = sleeves or {}
     categories = {'top': top_category, 'outer': outer_category, **(categories or {})}
     options = options or {}
     noun_of = lambda slot: _bare(names.get(categories.get(slot, ''), '')) or 'garment'
@@ -288,21 +307,24 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     described = []
     # The outermost layer with sleeves: told at its end of the prompt only, a jacket over a
     # long-sleeve came out with sleeves ending at the elbow and the long-sleeve's black cuffs below.
-    sleeved = [slot for slot in layer_order if slot in upper and categories.get(slot) not in SLEEVELESS_LAYERS]
-    outermost = sleeved[-1] if sleeved and SLEEVES_IN_OUTFIT and categories.get(sleeved[-1]) in LONG_SLEEVED else None
+    length = lambda slot: sleeve_length(slot, categories, sleeves)
+    sleeved = [slot for slot in layer_order if slot in upper and length(slot) != 'none']
+    outermost = sleeved[-1] if sleeved and SLEEVES_IN_OUTFIT and length(sleeved[-1]) == 'long' else None
     for slot in slots:
         category = categories.get(slot, '')
         noun = 'one-piece garment' if slot == 'top' and category in ONE_PIECE else names.get(category, '')
         worn = {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
+        inner = outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost)
         if slot == outermost:
             worn += ', its sleeves long, reaching the wrists'
-        elif outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost) \
-                and category not in SLEEVELESS_LAYERS:
-            if category in SHORT_SLEEVED and SHORT_SLEEVES_TOLD:
-                worn += (f', with short sleeves ending above the elbow, hidden under the {noun_of(outermost)}: '
-                         'nothing of it shows at the wrists')
-            else:
-                worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
+        elif inner and length(slot) == 'short' and SHORT_SLEEVES_TOLD:
+            worn += (f', with short sleeves ending above the elbow, hidden under the {noun_of(outermost)}: '
+                     'nothing of it shows at the wrists')
+        elif inner and length(slot) == 'long':
+            worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
+        elif not inner and slot in layer_order and sleeves.get(slot):
+            # Read from its photo: said so the editor keeps them, whatever the person wears in image 1.
+            worn += {'long': ', with long sleeves', 'short': ', with short sleeves', 'none': ', sleeveless'}[sleeves[slot]]
         described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
     # The user's fastening choices belong to the outfit itself, so they are told with it.
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]
@@ -373,10 +395,13 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += sentence
         if categories.get(slot) in LONG_OUTER:
             text += f'The garment in image {image[slot]} is long: keep its full length below the hips and never shorten it. '
-        if categories.get(slot) not in SLEEVELESS_LAYERS:
+        if length(slot) == 'long':
             # A jacket over a long-sleeve came out with sleeves ending mid-forearm, the inner cuffs showing below.
             text += (f'The sleeves of the garment in image {image[slot]} keep their full length down to the wrists, '
                      'and the sleeves of the layers under it stay inside them. ')
+        elif length(slot) == 'short':
+            # Told to reach the wrists like any jacket's, a short-sleeved shirt over a T-shirt got long sleeves.
+            text += f'The garment in image {image[slot]} has short sleeves, as in its photo: never lengthen them. '
     if 'shoes' in slots:
         text += 'Put the reference shoes on both feet, keeping each foot at its original position. '
     else:
