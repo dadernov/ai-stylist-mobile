@@ -353,6 +353,16 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         # Long hair below the jaw fades back to the editor's instead of ending
         # at a hard line across both sides of the head.
         alpha = np.maximum(alpha, feather(ghost) * np.clip((gy + gh - yy) / (.45 * gh), 0, 1))
+    # Under the chin the photo's jaw and beard met the editor's neck in a band a
+    # sixth of a face wide, and the two blurred into each other. Across the
+    # face's own width the photo now ends at the chin, where its shadow is.
+    tx, ty, tw, th = faces[0].box
+    rows = np.arange(alpha.shape[0], dtype=np.float32)[:, None]
+    cols = np.arange(alpha.shape[1], dtype=np.float32)[None, :]
+    under_chin = np.clip((rows - (ty + .97 * th)) / (.07 * th), 0, 1)
+    neck = ((cols >= tx - .05 * tw) & (cols <= tx + 1.05 * tw)).astype(np.float32)
+    neck = cv2.GaussianBlur(np.repeat(neck, 3, axis=0), (0, 0), max(1., .06 * tw))[1:2]
+    alpha *= 1 - under_chin * neck
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # A hood or a high collar now hugs the jaw: the photo's wall there came
         # back as white patches beside the chin. Only the photo's own head may

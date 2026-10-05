@@ -397,6 +397,18 @@ class FaceTransplant(unittest.TestCase):
         self.assertLess(result[112, 174].max(), 40, f'the inside of the hood below the mouth, got {result[112, 174]}')
         self.assertGreater(result[90, 200][0], 180, 'the face itself is still the photo\'s')
 
+    def test_under_the_chin_the_neck_is_the_editors(self):
+        # The photo's jaw and the editor's neck blurred into each other in a band under the chin.
+        original = np.full((800, 400, 3), 230, np.uint8)
+        original[64:140, 180:220] = (200, 150, 120)  # face and a light neck in the photo
+        generated = np.full((800, 400, 3), 230, np.uint8)
+        generated[64:114, 180:220] = (190, 140, 110)
+        generated[114:140, 185:215] = (60, 40, 30)  # the editor's neck in shadow
+        with patch.object(face_guard, 'detect_faces', return_value=[face()]):
+            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face())).astype(int)
+        self.assertLess(result[118, 200].max(), 80, f'just under the chin, got {result[118, 200]}')
+        self.assertGreater(result[90, 200][0], 180, 'the face itself is the photo\'s')
+
     def test_a_turned_head_or_other_expression_is_refused(self):
         original, generated = self.scene()
         points = face().landmarks.copy()
