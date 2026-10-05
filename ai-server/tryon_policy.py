@@ -172,6 +172,10 @@ SLEEVELESS_LAYERS = {'Жилет', 'Майка', 'Топ'}
 SLEEVES_IN_OUTFIT = True
 LONG_SLEEVED = {'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 'Тренч', 'Плащ', 'Пуховик', 'Парка', 'Шуба',
                 'Кардиган', 'Свитер', 'Худи', 'Свитшот', 'Лонгслив', 'Водолазка'}
+# Short sleeves under long ones: told their sleeves were "inside the coat's sleeves",
+# a T-shirt came out as a long-sleeve, its white cuffs showing at the wrists, unevenly.
+SHORT_SLEEVED = {'Футболка', 'Поло'}
+SHORT_SLEEVES_TOLD = True
 
 
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
@@ -294,7 +298,11 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
             worn += ', its sleeves long, reaching the wrists'
         elif outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost) \
                 and category not in SLEEVELESS_LAYERS:
-            worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
+            if category in SHORT_SLEEVED and SHORT_SLEEVES_TOLD:
+                worn += (f', with short sleeves ending above the elbow, hidden under the {noun_of(outermost)}: '
+                         'nothing of it shows at the wrists')
+            else:
+                worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
         described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
     # The user's fastening choices belong to the outfit itself, so they are told with it.
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]

@@ -442,7 +442,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.generate.await_count, 1, 'four layers are still one call')
         self.assertEqual(len(self.generate.await_args.args[3]), 5)
         prompt = self.generate.await_args.args[4]
-        self.assertIn('image 2 is the top: a t-shirt, its sleeves hidden inside the sleeves of the jacket; image 3 is the lower-body garment; '
+        self.assertIn('image 2 is the top: a t-shirt, with short sleeves ending above the elbow, hidden under the jacket: nothing of it shows at the wrists; image 3 is the lower-body garment; '
                       'image 4 is the outerwear: a long-sleeve t-shirt, its sleeves hidden inside the sleeves of the jacket; '
                       'image 5 is the second layer, worn over the outerwear: a hoodie, its sleeves hidden inside the sleeves of the jacket; '
                       'image 6 is the outermost layer, worn over everything: a jacket, its sleeves long, reaching the wrists', prompt)
@@ -559,6 +559,14 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('reaching the wrists', shirt, 'a shirt may be short-sleeved: its length comes from its photo')
         vest = tryon_policy.look_prompt(['top', 'bottom', 'top2', 'outer', 'shoes'], 'Рубашка', 'Пиджак', 'auto', app._CATEGORY_NOUNS, {'top2': 'Жилет'})
         self.assertNotIn('a vest, its sleeves', vest, 'a vest has no sleeves to hide')
+
+    def test_a_t_shirt_under_a_coat_keeps_its_short_sleeves(self):
+        # Told its sleeves were inside the coat's, a T-shirt came out as a long-sleeve with cuffs at the wrists.
+        for category in ('Футболка', 'Поло'):
+            prompt = tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], category, 'Плащ', 'auto', app._CATEGORY_NOUNS, {})
+            self.assertIn('with short sleeves ending above the elbow, hidden under the raincoat: nothing of it shows at the wrists', prompt)
+            self.assertNotIn('sleeves hidden inside the sleeves', prompt)
+            self.assertIn('the outerwear: a raincoat, its sleeves long, reaching the wrists', prompt)
 
     async def test_a_top_is_not_called_a_crop_top(self):
         # Named so, a long sleeveless top was cut off at the ribs.
