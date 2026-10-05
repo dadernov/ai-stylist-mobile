@@ -384,7 +384,19 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
             reach = max(2, round(width * .25))
             near_clothes = cv2.dilate(np.isin(generated_labels, CLOTHES_LABELS).astype(np.uint8),
                                       cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach * 2 + 1, reach * 2 + 1))).astype(bool)
-            keep |= scene & below_mouth & ((generated_labels == 11) | ((generated_labels == 0) & near_clothes))
+            # The editor's skin only from the chin down, where it is the neck: between
+            # the mouth and the chin it is the editor's own jaw and ear lobe, drawn a
+            # little wider than the photo's, and kept it showed as a second jawline.
+            # The parser's neck stops a pixel or two short of its edge; there the
+            # photo's wall came through as a light streak, so the edge is kept too.
+            below_chin = np.arange(alpha.shape[0])[:, None] > gy + .92 * gh
+            edge = max(2, round(width * .05))
+            neck = cv2.dilate((generated_labels == 11).astype(np.uint8),
+                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
+            # The photo's own neck edge is half wall too: below the chin it gives way
+            # to the editor's neck within the same margin of the wall.
+            near_scene = cv2.dilate(scene.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
+            keep |= (near_scene & neck & below_chin) | (scene & below_mouth & (generated_labels == 0) & near_clothes)
         alpha *= 1 - cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
