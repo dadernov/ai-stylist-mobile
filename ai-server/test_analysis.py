@@ -25,10 +25,27 @@ class SleeveTests(unittest.TestCase):
         # A jacket hanging on a hook read as sleeveless at 0.93.
         self.assertEqual(decide_sleeves([.05, .02, .93], 'Куртка'), 'long')
 
+    def test_a_coat_short_for_sure_is_hip_length_even_when_cropped_or_hip_is_unclear(self):
+        from clothing_analysis import decide
+        # Read from a short camel coat: cropped 0.56, hip 0.33, long 0.10.
+        self.assertEqual(decide('length', [.563, .333, .104], 'Пальто'), 'hip')
+        self.assertEqual(decide('length', [.05, .25, .7], 'Пальто'), 'long')
+        self.assertIsNone(decide('length', [.2, .4, .4], 'Пальто'))
+
     def test_an_unsure_reading_says_nothing(self):
         # A sweater with its sleeves folded, a close-up of a shirt collar.
         self.assertIsNone(decide_sleeves([.15, .82, .03], 'Свитер'))
         self.assertIsNone(decide_sleeves([.34, .52, .14], 'Рубашка'))
+
+
+class GarmentTraitsEndpoint(unittest.TestCase):
+    def test_an_old_item_is_read_once_like_a_try_on_reads_it(self):
+        upload = UploadFile(file=BytesIO(b'jpeg-bytes'), filename='item.jpg')
+        with patch.object(app.access, 'throttle'), patch.object(app, 'read_garment', return_value={'sleeves': 'short', 'opening': 'none'}) as read:
+            self.assertEqual(app.garment_traits(upload, 'Поло', 'masha'), {'traits': {'sleeves': 'short', 'opening': 'none'}})
+        read.assert_called_once_with(b'jpeg-bytes', 'Поло')
+        with patch.object(app.access, 'throttle'), self.assertRaises(HTTPException):
+            app.garment_traits(UploadFile(file=BytesIO(b'x'), filename='item.jpg'), 'Космос', 'masha')
 
 
 class AnalysisTests(unittest.TestCase):

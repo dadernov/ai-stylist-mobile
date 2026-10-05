@@ -213,7 +213,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.fashn = AsyncMock(side_effect=AssertionError('FASHN must not be called'))
         self.protect = AsyncMock(return_value='data:image/png;base64,protected')
         self.published = []
-        self.sleeves = Mock(return_value=None)
+        self.traits = Mock(return_value={})
         self.patches = [
             patch.object(app, '_prepare_identity_source', return_value='prepared'),
             patch.object(app.fal_tryon, 'generate', self.generate),
@@ -222,8 +222,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             patch.object(app, '_face_locked_output_url', self.protect),
             patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (64, 128)))),
             patch.object(app.access, 'throttle'),
-            # The sleeve reader is tried on its own below; here no garment photo is read.
-            patch.object(app, 'sleeve_length', self.sleeves),
+            # The garment reader is tried on its own below; here no garment photo is read.
+            patch.object(app, 'read_garment', self.traits),
             patch.object(app.jobs, 'progress', side_effect=lambda owner, job_id, payload: self.published.append(payload['progress'])),
         ]
         for item in self.patches:
@@ -264,7 +264,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         for index, name in enumerate(('top: a t-shirt', 'lower-body garment', 'outerwear: a trench coat', 'pair of shoes'), start=2):
             self.assertIn(f'image {index} is the {name}', prompt)
         self.assertIn('Fully tuck the top', prompt)
-        self.assertIn('never shorten it', prompt)
+        self.assertIn('neither shorten nor lengthen it', prompt)
 
     async def test_the_identity_lock_gets_every_changed_slot(self):
         await self.look()
@@ -361,7 +361,9 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('first a long-sleeve t-shirt from image 2, worn over a t-shirt', prompt)
         self.assertIn('then a blazer from image 3, unbuttoned and open over a long-sleeve t-shirt', prompt)
         self.assertIn('then a raincoat from image 4', prompt)
-        self.assertIn('The garment in image 4 is long', prompt)
+        # Unread, a raincoat keeps the length of its photo; only one read as long is told so.
+        self.assertIn('Keep the length of the garment in image 4 exactly as in its photo: neither shorten nor lengthen it.', prompt)
+        self.assertNotIn('The garment in image 4 is long', prompt)
         self.assertEqual(result['creditsCharged'], 2)
         self.assertEqual(access.spent_today('masha'), 2)
         self.assertEqual([step['step'] for step in result['steps']], ['outfit', 'layers'])
@@ -549,8 +551,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         # Told to close "up to the collar", a blazer stayed wide open over the top.
         prompt = await self.options_look('request_000000000088', {'outer': {'fasten': 'closed'}},
                                          top_file=photo('black'), top_category='Топ', outer_file=photo('navy'), outer_category='Пиджак')
-        self.assertIn('The blazer from image 4 is worn buttoned over the sleeveless top: its front button is fastened at the waist', prompt)
-        self.assertIn('the lapels open in a V that shows only the neckline of the sleeveless top', prompt)
+        self.assertIn('The blazer from image 4 is worn buttoned over the top: its front button is fastened at the waist', prompt)
+        self.assertIn('the lapels open in a V that shows only the neckline of the top', prompt)
         self.assertNotIn('zipped or buttoned all the way up', prompt)
 
     def test_the_outermost_sleeves_are_long_in_the_outfit_itself(self):
@@ -573,9 +575,10 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
 
     def test_sleeves_follow_each_garments_photo_not_its_category(self):
         names = app._CATEGORY_NOUNS
+        read = lambda sleeves: {slot: {'sleeves': value} for slot, value in sleeves.items()}
         look = lambda top, outer, sleeves, top2=None: tryon_policy.look_prompt(
             ['top', 'bottom', *(['top2'] if top2 else []), 'outer', 'shoes'], top, outer, 'auto', names,
-            {'top2': top2} if top2 else {}, {}, sleeves)
+            {'top2': top2} if top2 else {}, {}, read(sleeves))
         # A short-sleeved shirt under a blazer keeps its short sleeves; a long-sleeved one tucks them into the blazer's.
         self.assertIn('a button-up shirt, with short sleeves ending above the elbow, hidden under the blazer',
                       look('Рубашка', 'Пиджак', {'top': 'short', 'outer': 'long'}))
@@ -592,19 +595,48 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('keep their full length down to the wrists', cardigan)
         self.assertIn('has short sleeves, as in its photo: never lengthen them', cardigan)
         # A garment worn on its own says what its photo shows.
-        dress = tryon_policy.look_prompt(['top', 'shoes'], 'Платье', '', 'auto', names, {}, {}, {'top': 'short'})
+        dress = tryon_policy.look_prompt(['top', 'shoes'], 'Платье', '', 'auto', names, {}, {}, {'top': {'sleeves': 'short'}})
         self.assertIn('image 2 is the top: one-piece garment, with short sleeves', dress)
-        blouse = tryon_policy.look_prompt(['top', 'bottom'], 'Блуза', '', 'auto', names, {}, {}, {'top': 'none'})
+        blouse = tryon_policy.look_prompt(['top', 'bottom'], 'Блуза', '', 'auto', names, {}, {}, {'top': {'sleeves': 'none'}})
         self.assertIn('a blouse, sleeveless', blouse)
 
+    def test_length_and_front_opening_follow_each_garments_photo(self):
+        names = app._CATEGORY_NOUNS
+        coat = lambda length: tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], 'Футболка', 'Пальто', 'auto', names, {}, {},
+                                                       {'outer': {'length': length}})
+        self.assertIn('The garment in image 4 is long: keep its full length below the hips', coat('long'))
+        self.assertIn('The garment in image 4 is cropped: it ends at the waist, as in its photo; never lengthen it.', coat('cropped'))
+        short = coat('hip')
+        self.assertNotIn('is long', short, 'a hip-length coat is not lengthened')
+        self.assertIn('an overcoat, hip-length, ending at the hips', short, 'said with the coat, whose name suggests a long one')
+        self.assertIn('neither shorten nor lengthen it', coat(None), 'unread, its photo decides')
+        # A crop top and a tunic keep their length too.
+        crop = tryon_policy.look_prompt(['top', 'bottom'], 'Свитшот', '', 'auto', names, {}, {}, {'top': {'length': 'cropped'}})
+        self.assertIn('The garment in image 2 is cropped', crop)
+        # A zip hoodie as the third layer is worn open over what is under it; a pullover hoodie goes on over the head.
+        layered = lambda opening: tryon_policy.look_prompt(['top', 'bottom', 'top2', 'top3', 'shoes'], 'Футболка', '', 'auto', names,
+                                                            {'top2': 'Рубашка', 'top3': 'Худи'}, {}, {'top3': {'opening': opening}})
+        self.assertNotIn('pulled on over the layers beneath it', layered('front'))
+        self.assertIn('pulled on over the layers beneath it', layered('none'))
+        over = tryon_policy.layer_prompt(['top2'], {'top2': 'Худи'}, names, 'Футболка', {'top2': {'opening': 'front'}})
+        self.assertIn('unbuttoned and open over', over)
+        self.assertEqual(tryon_policy.composite_slot('outer', 'Пальто', 'hip'), 'outer', 'a short coat leaves the legs alone')
+        self.assertEqual(tryon_policy.composite_slot('outer', 'Куртка', 'long'), 'long_outer')
+
+    def test_a_zip_hoodie_is_worn_open_as_chosen_and_a_pullover_is_not(self):
+        chosen = {'top2': {'fasten': 'open'}}
+        self.assertEqual(tryon_policy.garment_options(chosen, {'top2': 'Худи'}, {'top2': 'front'}), chosen)
+        self.assertEqual(tryon_policy.garment_options(chosen, {'top2': 'Худи'}, {'top2': 'none'}), {})
+        self.assertEqual(tryon_policy.garment_options(chosen, {'top2': 'Кардиган'}, {}), chosen, 'unread, the category decides')
+
     async def test_each_upper_garments_photo_is_read_for_its_sleeves(self):
-        self.sleeves.side_effect = lambda content, category: {'Рубашка': 'short', 'Пиджак': 'long'}.get(category)
+        self.traits.side_effect = lambda content, category: {'Рубашка': {'sleeves': 'short'}, 'Пиджак': {'sleeves': 'long'}}.get(category, {})
         prompt = await self.options_look('request_000000000095', {}, top_file=photo('white'), top_category='Рубашка',
                                          outer_file=photo('navy'), outer_category='Пиджак')
         self.assertIn('a button-up shirt, with short sleeves ending above the elbow, hidden under the blazer', prompt)
-        self.assertEqual(sorted(call.args[1] for call in self.sleeves.call_args_list), ['Пиджак', 'Рубашка'], 'only the upper garments')
+        self.assertEqual(sorted({call.args[1] for call in self.traits.call_args_list}), ['Пиджак', 'Рубашка'], 'only the upper garments')
         # A reader that fails leaves the garment to its category; the try-on goes on.
-        self.sleeves.side_effect = RuntimeError('model missing')
+        self.traits.side_effect = RuntimeError('model missing')
         prompt = await self.options_look('request_000000000096', {}, top_file=photo('white'), top_category='Футболка',
                                          outer_file=photo('navy'), outer_category='Плащ')
         self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the raincoat', prompt)
@@ -612,7 +644,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
     async def test_a_top_is_not_called_a_crop_top(self):
         # Named so, a long sleeveless top was cut off at the ribs.
         prompt = await self.options_look('request_000000000089', {}, top_file=photo('black'), top_category='Топ')
-        self.assertIn('image 2 is the top: a sleeveless top', prompt)
+        self.assertIn('image 2 is the top: a top, sleeveless', prompt)
         self.assertNotIn('crop top', prompt)
 
     async def test_tights_go_under_the_dress_and_into_the_shoes(self):

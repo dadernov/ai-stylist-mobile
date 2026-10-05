@@ -94,40 +94,104 @@ TEMPLATES = [
 # ambiguous ones. The previous 0.80/0.40 flagged almost two thirds of items,
 # including more than half of the answers that were in fact correct — which is
 # what made recognition feel broken even when it was right.
-# Sleeve length is the garment's own, not its category's: a polo, a shirt, a
-# blouse, a dress, a sweater come short- and long-sleeved alike. The model reads
-# it from the photo; a category's usual answer weighs in, so a jacket hanging
-# on a hook, its sleeves out of sight, is not taken for sleeveless. Measured on
-# 70 labelled garments (real photos and product shots): 67 decided right,
-# none wrong, 3 left undecided at SLEEVES_SURE.
-SLEEVES = [
-    ("long", ["a garment with long sleeves", "a long-sleeved top with sleeves down to the wrists", "a long sleeve shirt"]),
-    ("short", ["a garment with short sleeves", "a short-sleeved top with sleeves ending above the elbow", "a short sleeve shirt"]),
-    ("none", ["a sleeveless garment", "a sleeveless top with bare arms and shoulders", "a tank top or camisole without sleeves"]),
-]
-_ALWAYS_LONG = ("Пиджак", "Бомбер", "Куртка", "Пальто", "Тренч", "Плащ", "Пуховик", "Парка", "Шуба")
-SLEEVE_PRIORS = {
-    **{category: (.97, .02, .01) for category in _ALWAYS_LONG},
-    **{category: (.95, .04, .01) for category in ("Худи", "Свитшот", "Лонгслив", "Водолазка")},
-    "Свитер": (.8, .17, .03), "Кардиган": (.8, .17, .03),
-    "Рубашка": (.6, .35, .05), "Блуза": (.45, .35, .2),
-    "Поло": (.2, .78, .02), "Футболка": (.05, .93, .02),
-    "Платье": (.35, .3, .35), "Комбинезон": (.35, .3, .35),
-    **{category: (.05, .15, .8) for category in ("Топ", "Майка", "Сарафан", "Жилет")},
+# What a garment is like is its own, not its category's: polos, shirts, blouses,
+# dresses and cardigans come short- and long-sleeved alike, a coat may be short,
+# a hoodie or a sweater may zip open, a cardigan may be thin or chunky. Each is
+# read from the photo, zero-shot; how its category usually is weighs in, so a
+# jacket hanging on a hook, its sleeves out of sight, is not taken for
+# sleeveless. Unsure readings say nothing (None), and the category answers.
+# Measured on labelled garments, real photos and product shots, at TRAIT_SURE:
+# sleeves 67 right / 0 wrong / 3 unsure of 70, front opening 36/0/3 of 39,
+# bulk 17/0/2 of 19, length 30/2/7 of 39 (both misses between hip and long).
+_OUTERWEAR = ("Пиджак", "Бомбер", "Куртка", "Пальто", "Тренч", "Плащ", "Пуховик", "Парка", "Шуба")
+TRAITS = {
+    "sleeves": {
+        "classes": [
+            ("long", ["a garment with long sleeves", "a long-sleeved top with sleeves down to the wrists", "a long sleeve shirt"]),
+            ("short", ["a garment with short sleeves", "a short-sleeved top with sleeves ending above the elbow", "a short sleeve shirt"]),
+            ("none", ["a sleeveless garment", "a sleeveless top with bare arms and shoulders", "a tank top or camisole without sleeves"]),
+        ],
+        "priors": {
+            **{category: (.97, .02, .01) for category in _OUTERWEAR},
+            **{category: (.95, .04, .01) for category in ("Худи", "Свитшот", "Лонгслив", "Водолазка")},
+            "Свитер": (.8, .17, .03), "Кардиган": (.8, .17, .03),
+            "Рубашка": (.6, .35, .05), "Блуза": (.45, .35, .2),
+            "Поло": (.2, .78, .02), "Футболка": (.05, .93, .02),
+            "Платье": (.35, .3, .35), "Комбинезон": (.35, .3, .35),
+            **{category: (.05, .15, .8) for category in ("Топ", "Майка", "Сарафан", "Жилет")},
+        },
+        "default": (.4, .4, .2),
+    },
+    "length": {
+        "classes": [
+            ("cropped", ["a cropped garment ending at the waist", "a cropped jacket or top that ends above the waist", "a short cropped top"]),
+            ("hip", ["a hip-length garment", "a regular length jacket or top ending at the hips", "a standard length garment"]),
+            ("long", ["a long coat reaching the knees", "a long garment reaching below the hips to the thighs or knees", "a longline knee-length coat"]),
+        ],
+        "priors": {
+            "Тренч": (.02, .18, .8), "Плащ": (.02, .18, .8), "Пальто": (.03, .4, .57), "Шуба": (.05, .45, .5), "Парка": (.03, .62, .35),
+            "Пуховик": (.2, .6, .2), "Куртка": (.25, .7, .05), "Бомбер": (.12, .86, .02), "Пиджак": (.15, .78, .07),
+            "Кардиган": (.25, .55, .2), "Жилет": (.2, .7, .1), "Топ": (.5, .45, .05), "Майка": (.2, .75, .05),
+            **{category: (.2, .75, .05) for category in ("Худи", "Свитшот", "Свитер")},
+            **{category: (.1, .85, .05) for category in ("Футболка", "Лонгслив", "Поло", "Водолазка")},
+            "Рубашка": (.08, .8, .12), "Блуза": (.08, .8, .12),
+        },
+        "default": (.15, .7, .15),
+    },
+    "opening": {
+        "classes": [
+            ("front", ["a jacket or cardigan with a zipper running down the whole front", "a shirt or cardigan with buttons all the way down the front",
+                       "a zip-up hoodie with a front zipper from hem to collar"]),
+            ("none", ["a pullover hoodie with no zipper", "a pullover sweater or sweatshirt with no buttons or zipper", "a plain t-shirt or tank top"]),
+        ],
+        "priors": {
+            **{category: (.97, .03) for category in _OUTERWEAR},
+            "Рубашка": (.95, .05), "Кардиган": (.95, .05), "Блуза": (.6, .4), "Жилет": (.5, .5), "Худи": (.3, .7),
+            "Свитшот": (.12, .88), "Свитер": (.08, .92), "Поло": (.05, .95), "Лонгслив": (.03, .97), "Водолазка": (.03, .97),
+            "Футболка": (.02, .98), "Топ": (.02, .98), "Майка": (.02, .98), "Платье": (.3, .7), "Сарафан": (.3, .7), "Комбинезон": (.3, .7),
+        },
+        "default": (.5, .5),
+    },
+    "bulk": {
+        "classes": [
+            ("bulky", ["a thick bulky padded or chunky garment", "a puffy quilted or chunky knit garment", "a heavy thick warm garment"]),
+            ("thin", ["a thin lightweight fitted garment", "a thin fine fabric garment", "a light thin shirt or top"]),
+        ],
+        "priors": {
+            "Пуховик": (.9, .1), "Шуба": (.9, .1), "Парка": (.9, .1), "Пальто": (.6, .4),
+            "Свитер": (.5, .5), "Кардиган": (.5, .5), "Худи": (.5, .5), "Куртка": (.35, .65), "Бомбер": (.35, .65), "Свитшот": (.35, .65),
+            "Пиджак": (.2, .8), "Тренч": (.15, .85), "Плащ": (.15, .85),
+        },
+        "default": (.05, .95),
+    },
 }
-SLEEVE_PRIOR_DEFAULT = (.4, .4, .2)
-SLEEVES_SURE = 0.75
+TRAIT_SURE = 0.75
+# Below this a garment is not long, whether cropped or hip-length.
+NOT_LONG = 0.3
+# Garments a trait means nothing for: no sleeves or front on trousers and shoes.
+TRAIT_SECTIONS = {"Верх", "Верхняя одежда"}
 
 
-def decide_sleeves(probabilities, category=""):
-    """'long', 'short' or 'none' from the photo's probabilities and the category's prior, or None when unsure."""
-    prior = SLEEVE_PRIORS.get(category, SLEEVE_PRIOR_DEFAULT)
+def decide(trait, probabilities, category=""):
+    """The trait's value from the photo's probabilities and the category's prior, or None when unsure."""
+    spec = TRAITS[trait]
+    prior = spec["priors"].get(category, spec["default"])
     joint = [weight * float(probability) for weight, probability in zip(prior, probabilities)]
     total = sum(joint)
     if total <= 0:
         return None
     best = max(range(len(joint)), key=joint.__getitem__)
-    return SLEEVES[best][0] if joint[best] / total >= SLEEVES_SURE else None
+    if joint[best] / total >= TRAIT_SURE:
+        return spec["classes"][best][0]
+    if trait == "length" and joint[2] / total < NOT_LONG:
+        # Short for sure, cropped or hip-length unclear: a short coat must not be read as "unsure", or the
+        # prompt falls back on "overcoat" and the editor draws it to the knees.
+        return "hip"
+    return None
+
+
+def decide_sleeves(probabilities, category=""):
+    return decide("sleeves", probabilities, category)
 
 
 CONFIDENCE_MIN = 0.70
@@ -214,8 +278,8 @@ class ClothingClassifier:
     def __init__(self, directory=None):
         directory = Path(directory or os.getenv("AI_ANALYSIS_MODEL_DIR", Path(__file__).parent / "models" / "clip"))
         self.directory = directory
-        self._sleeve_features = None
-        self._sleeve_lock = threading.Lock()
+        self._trait_features = None
+        self._trait_lock = threading.Lock()
         config = json.loads((directory / "preprocessor_config.json").read_text())
         crop = config.get("crop_size") or config.get("size")
         self.size = crop["height"] if isinstance(crop, dict) else int(crop)
@@ -278,17 +342,18 @@ class ClothingClassifier:
             warnings.append(f"Рисунок определён неуверенно — предложен «{pattern.lower()}».")
         if worn:
             warnings.append('На фото человек: проверь цвет и тип вещи. Для точного анализа лучше отдельное фото одежды.')
-        return {"category": top["category"], "section": top["section"], "categoryCandidates": candidates,
+        traits = self.traits(original, top["category"]) if top["section"] in TRAIT_SECTIONS else {}
+        return {"category": top["category"], "section": top["section"], "categoryCandidates": candidates, "traits": traits,
                 "needsReview": uncertain, "pattern": pattern, "season": _season_for(top["category"], top["section"]),
                 "seasonSource": "category", "warnings": warnings, "analysisSource": "fashion-siglip-onnx",
                 "wornByPerson": worn}
 
 
-    def _sleeve_text(self):
+    def _trait_text(self):
         # Built on first use from the text model, apart from the category features:
         # their fingerprint stays as it was, and so does recognition.
-        with self._sleeve_lock:
-            if self._sleeve_features is None:
+        with self._trait_lock:
+            if self._trait_features is None:
                 tokenizer = Tokenizer.from_file(str(self.directory / "tokenizer.json"))
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 1
@@ -296,43 +361,52 @@ class ClothingClassifier:
                 options.enable_cpu_mem_arena = False
                 model = ort.InferenceSession(str(self.directory / "onnx/text_model_quantized.onnx"), sess_options=options,
                                              providers=["CPUExecutionProvider"])
-                features = []
-                for _name, phrases in SLEEVES:
-                    vectors = [normalise(model.run(["text_embeds"], {"input_ids": np.array([tokenizer.encode(template.format(phrase)).ids],
-                                                                                           dtype=np.int64)})[0])
-                               for phrase in phrases for template in TEMPLATES]
-                    features.append(normalise(np.mean(vectors, axis=0))[0])
-                self._sleeve_features = np.array(features)
-            return self._sleeve_features
+                embed = lambda text: normalise(model.run(["text_embeds"], {"input_ids": np.array([tokenizer.encode(text).ids], dtype=np.int64)})[0])
+                self._trait_features = {
+                    trait: np.array([normalise(np.mean([embed(template.format(phrase)) for phrase in phrases for template in TEMPLATES], axis=0))[0]
+                                     for _name, phrases in spec["classes"]])
+                    for trait, spec in TRAITS.items()}
+            return self._trait_features
+
+    def traits(self, image: Image.Image, category=""):
+        """Sleeves, length, front opening and bulk read from the whole photo; each None when unsure."""
+        frame = self._fit(ImageOps.fit(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
+        vector = self._embed([frame])[0]
+        result = {}
+        for trait, features in self._trait_text().items():
+            scores = vector @ features.T * 100
+            probabilities = np.exp(scores - scores.max())
+            result[trait] = decide(trait, probabilities / probabilities.sum(), category)
+        return result
 
     def sleeves(self, image: Image.Image, category=""):
-        """How long the garment's sleeves are, from the whole photo: 'long', 'short', 'none', or None when unsure."""
-        frame = self._fit(ImageOps.fit(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
-        scores = self._embed([frame])[0] @ self._sleeve_text().T * 100
-        probabilities = np.exp(scores - scores.max())
-        return decide_sleeves(probabilities / probabilities.sum(), category)
+        return self.traits(image, category)["sleeves"]
 
 
 _classifier = None
 _load_lock = threading.Lock()
-_sleeve_cache = {}
-_SLEEVE_CACHE_SIZE = 512
+_trait_cache = {}
+_TRAIT_CACHE_SIZE = 512
+
+
+def read_garment(content: bytes, category=""):
+    """A garment photo's traits (sleeves, length, opening, bulk), cached by its bytes; {} when it cannot be read."""
+    key = (hashlib.sha1(content).hexdigest(), category)
+    if key in _trait_cache:
+        return _trait_cache[key]
+    try:
+        with Image.open(BytesIO(content)) as image:
+            answer = get_classifier().traits(ImageOps.exif_transpose(image), category)
+    except Exception:
+        return {}
+    if len(_trait_cache) >= _TRAIT_CACHE_SIZE:
+        _trait_cache.pop(next(iter(_trait_cache)))
+    _trait_cache[key] = answer
+    return answer
 
 
 def sleeve_length(content: bytes, category=""):
-    """The sleeve length of a garment photo, cached by its bytes; None when unsure or when it cannot be read."""
-    key = (hashlib.sha1(content).hexdigest(), category)
-    if key in _sleeve_cache:
-        return _sleeve_cache[key]
-    try:
-        with Image.open(BytesIO(content)) as image:
-            answer = get_classifier().sleeves(ImageOps.exif_transpose(image), category)
-    except Exception:
-        return None
-    if len(_sleeve_cache) >= _SLEEVE_CACHE_SIZE:
-        _sleeve_cache.pop(next(iter(_sleeve_cache)))
-    _sleeve_cache[key] = answer
-    return answer
+    return read_garment(content, category).get("sleeves")
 
 
 def get_classifier():

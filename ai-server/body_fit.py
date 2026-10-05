@@ -18,7 +18,7 @@ from PIL import Image
 BAG = 16
 # Never narrower than this: a bigger correction would be the editor's other mistake.
 MAX_SQUEEZE = .10
-# Garments that really add volume keep some of it.
+# Garments that really add volume keep some of it; BULKY is only the guess for a garment whose photo was not read.
 BULKY = {'Пальто', 'Пуховик', 'Парка', 'Шуба', 'Свитер', 'Худи', 'Кардиган'}
 BULKY_ALLOWANCE = 1.04
 # Rows measured, as a share of the person's height: shoulders to waist, above any flared skirt or coat hem.
@@ -29,9 +29,18 @@ def enabled():
     return os.getenv('TRYON_BODY_FIT', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
 
 
-def allowance(categories):
-    """How much wider than the photo the clothes of this look may make the body."""
-    return BULKY_ALLOWANCE if any(category in BULKY for category in categories) else 1.0
+def allowance(categories, bulk=()):
+    """How much wider than the photo the clothes of this look may make the body.
+
+    `bulk` holds what each garment's photo showed, in the order of `categories`
+    ('bulky', 'thin' or None when unsure): a thick puffer or a chunky knit keeps
+    some volume, a thin cardigan does not, whatever its category. The category
+    answers only for a garment its photo left open.
+    """
+    categories, bulk = list(categories), list(bulk)
+    bulk += [None] * (len(categories) - len(bulk))
+    return BULKY_ALLOWANCE if any(read == 'bulky' or (read is None and category in BULKY)
+                                  for category, read in zip(categories, bulk)) else 1.0
 
 
 def _person(labels):

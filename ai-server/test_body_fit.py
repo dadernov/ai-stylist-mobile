@@ -41,6 +41,12 @@ class Measure(unittest.TestCase):
         self.assertEqual(body_fit.allowance(['Свитер', '']), body_fit.BULKY_ALLOWANCE)
         self.assertEqual(body_fit.measure(person(60), person(62), body_fit.BULKY_ALLOWANCE), (1.0, None))
 
+    def test_volume_follows_each_garments_photo(self):
+        # A thin cardigan keeps no extra width, a bulky denim jacket does; unread, the category decides.
+        self.assertEqual(body_fit.allowance(['Кардиган', 'Юбка'], ['thin', None]), 1.0)
+        self.assertEqual(body_fit.allowance(['Куртка', 'Джинсы'], ['bulky', None]), body_fit.BULKY_ALLOWANCE)
+        self.assertEqual(body_fit.allowance(['Пуховик'], [None]), body_fit.BULKY_ALLOWANCE)
+
     def test_a_body_filling_the_frame_is_left_alone(self):
         self.assertEqual(body_fit.measure(person(230), person(250)), (1.0, None))
 

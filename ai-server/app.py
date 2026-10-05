@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
-from clothing_analysis import get_classifier, extract_palette, sleeve_length, CATEGORIES, SHORT_NAMES
+from clothing_analysis import get_classifier, extract_palette, read_garment, CATEGORIES, SHORT_NAMES
 import tryon_composite
 import face_guard
 import footwear_guard
@@ -56,9 +56,18 @@ try:
 except Exception:
     REMBG_RUNTIME_AVAILABLE = False
 
+def _warm_garment_reader():
+    try:
+        get_classifier()._trait_text()
+    except Exception as exc:
+        print(f'Garment reader unavailable: {type(exc).__name__}', flush=True)
+
+
 @asynccontextmanager
 async def lifespan(_app):
     await asyncio.to_thread(jobs.recover_interrupted)
+    # The garment reader builds its text side on first use; built now, the first try-on does not wait for it.
+    threading.Thread(target=_warm_garment_reader, daemon=True).start()
 
     async def retention():
         while True:
@@ -760,7 +769,8 @@ FAL_GARMENT_SIDE = 1024
 FAL_JPEG_QUALITY = 92
 
 
-async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None, options=None):
+async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None, options=None,
+                        traits=None):
     """One call for the whole look: the photo first, then each garment."""
     categories = dict(categories or {})
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
@@ -769,42 +779,45 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
     frame_size = Image.open(BytesIO(decoded[0])).size if decoded else None
     garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
                                             FAL_GARMENT_SIDE, FAL_JPEG_QUALITY) for slot in slots]
+    if traits is None:
+        traits = await _garment_traits(garments, {'top': top_category, 'outer': outer_category, **categories})
     if model.family == 'bria':
-        prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck)
+        prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck, (traits.get('outer') or {}).get('length'))
     else:
-        sleeves = await _garment_sleeves(garments, slots, {'top': top_category, 'outer': outer_category, **categories})
-        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options, sleeves)
+        prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options, traits)
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
 UPPER_SLOTS = ('top', 'top2', 'top3', 'top4', 'outer', 'outer2')
 
 
-async def _garment_sleeves(garments, slots, categories):
-    """Each upper garment's sleeve length read from its own photo, where the reading is sure.
+async def _garment_traits(garments, categories):
+    """What each upper garment's own photo shows: sleeves, length, front opening, bulk (clothing_analysis).
 
-    Never in the way of the try-on: a garment that cannot be read is simply left to its category.
+    Read once per garment and cached; a garment that cannot be read is left to
+    its category, and the reading never stands in the way of the try-on.
     """
-    sleeves = {}
-    for slot in slots:
+    traits = {}
+    for slot in garments:
         if slot not in UPPER_SLOTS:
             continue
         try:
-            length = await asyncio.to_thread(sleeve_length, garments[slot][0], categories.get(slot, ''))
+            read = await asyncio.to_thread(read_garment, garments[slot][0], categories.get(slot, ''))
         except Exception:
-            length = None
-        if length:
-            sleeves[slot] = length
-    if sleeves:
-        print('Try-on sleeves: ' + ','.join(f'{slot}:{length}' for slot, length in sleeves.items()), flush=True)
-    return sleeves
+            read = {}
+        if read:
+            traits[slot] = read
+    if traits:
+        print('Try-on garments: ' + '; '.join(f'{slot}:' + ','.join(f'{name}={value or "?"}' for name, value in read.items())
+                                              for slot, read in traits.items()), flush=True)
+    return traits
 
 
-async def _run_fal_layers(client, model, base_url, garments, upper, categories, seed, frame_size=None):
+async def _run_fal_layers(client, model, base_url, garments, upper, categories, seed, frame_size=None, traits=None):
     """Second call of a layered look: the upper layers over the finished base look."""
     garment_urls = [await asyncio.to_thread(_prepare_tryon_image_data_url, garments[slot][0], garments[slot][1],
                                             FAL_GARMENT_SIDE, FAL_JPEG_QUALITY) for slot in upper]
-    prompt = tryon_policy.layer_prompt(upper, categories, _CATEGORY_NOUNS, categories.get('top', ''))
+    prompt = tryon_policy.layer_prompt(upper, categories, _CATEGORY_NOUNS, categories.get('top', ''), traits)
     return await fal_tryon.generate(client, model, base_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
@@ -838,7 +851,8 @@ def _stage_specs(garments, top_category, outer_category, tuck):
             continue
         content, mime = garments[slot]
         category = outer_category if slot == 'outer' else top_category if slot == 'top' else ''
-        prompt = tryon_policy.garment_prompt(slot, category, tuck, keep_outer_open=(slot == 'outer' and 'top' in garments))
+        length = read_garment(content, category).get('length') if slot == 'outer' else None
+        prompt = tryon_policy.garment_prompt(slot, category, tuck, keep_outer_open=(slot == 'outer' and 'top' in garments), length=length)
         specs.append((slot, content, mime, prompt))
     return specs
 
@@ -1269,6 +1283,22 @@ def auth_me(login: str = Depends(access.require_account)):
             "spentToday": access.spent_today(login), "dailyQuota": access.daily_credits()}
 
 
+@app.post("/garment-traits")
+def garment_traits(file: UploadFile = File(...), category: str = Form(""), device: str = Depends(access.require_account)):
+    """What a garment's photo shows (sleeves, length, front opening, bulk), for items added before /analyze returned it.
+
+    The app reads each such item once and keeps the answer; the reading is the
+    one a try-on makes (clothing_analysis.read_garment), so both agree.
+    """
+    access.throttle(device, 'garment-traits', _env_int('AI_TRAITS_PER_MINUTE', 30))
+    if category and category not in {entry[0] for entry in CATEGORIES}:
+        raise HTTPException(422, "Неизвестная категория вещи.")
+    content = file.file.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    return {"traits": read_garment(content, category)}
+
+
 @app.post("/analyze")
 def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
     access.throttle(device, 'analyze', _env_int('AI_ANALYZE_PER_MINUTE', 20))
@@ -1536,10 +1566,20 @@ async def tryon_generate_look(
         (outer_content, outer_mime, outer_category, outer_options), (outer2_content, outer2_mime, outer2_category, outer2_options) = \
             tryon_policy.natural_layers([(outer_content, outer_mime, outer_category, option_of('outer')),
                                          (outer2_content, outer2_mime, outer2_category, option_of('outer2'))], tryon_policy.OUTER_LAYER_ORDER)
+        # A zip hoodie can be worn open, a pullover cannot: whether each garment opens at the front is read from its photo.
+        openings = {}
+        for slot, content, category in (('top', top_content, top_category), ('top2', top2_content, top2_category),
+                                        ('top3', top3_content, top3_category), ('top4', top4_content, top4_category),
+                                        ('outer', outer_content, outer_category), ('outer2', outer2_content, outer2_category)):
+            if content:
+                try:
+                    openings[slot] = (await asyncio.to_thread(read_garment, content, category.strip())).get('opening')
+                except Exception:
+                    openings[slot] = None  # unread: its category decides, and the try-on goes on
         slot_options = tryon_policy.garment_options(
             {'top': top_options, 'top2': top2_options, 'top3': top3_options, 'top4': top4_options, 'outer': outer_options, 'outer2': outer2_options},
             {'top': top_category.strip(), 'top2': top2_category.strip(), 'top3': top3_category.strip(), 'top4': top4_category.strip(),
-             'outer': outer_category.strip(), 'outer2': outer2_category.strip()})
+             'outer': outer_category.strip(), 'outer2': outer2_category.strip()}, openings)
         if not bottom_content:
             # Tucking needs trousers or a skirt to tuck into.
             slot_options = {slot: {key: value for key, value in option.items() if key != 'tuck'} for slot, option in slot_options.items()}
@@ -1657,6 +1697,8 @@ async def tryon_generate_look(
             elif not fal_model:
                 current_model = await asyncio.to_thread(_prepare_provider_frame, person_content, tryon_max_side, tryon_jpeg_quality)
 
+            # What each garment's own photo shows (sleeves, length, opening, bulk), read once for every step below.
+            garment_traits = await _garment_traits(garments, {'top': top_category.strip(), 'outer': outer_category.strip(), **slot_categories})
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
                 if fal_model:
                     upper = [slot for slot in fal_tryon.UPPER_LAYERS if slot in garments] if fal_layer_pass else []
@@ -1666,7 +1708,7 @@ async def tryon_generate_look(
                     result = await _run_fal_look(client, fal_model, person_content,
                                                  {slot: value for slot, value in garments.items() if slot not in upper},
                                                  top_category.strip(), outer_category.strip(), tuck_mode_normalized, seed, slot_categories,
-                                                 slot_options)
+                                                 slot_options, garment_traits)
                     elapsed = round(time.monotonic() - step_started, 2)
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
@@ -1689,7 +1731,7 @@ async def tryon_generate_look(
                         jobs.attempt(device, job_id, fal_tryon.units())
                         step_started = time.monotonic()
                         layered = await _run_fal_layers(client, fal_model, current_model, garments, upper, slot_categories, seed,
-                                                        base_frame.size if base_frame is not None else None)
+                                                        base_frame.size if base_frame is not None else None, garment_traits)
                         elapsed = round(time.monotonic() - step_started, 2)
                         steps.append({'step': 'layers', 'result': layered, 'durationSeconds': elapsed})
                         print(f'Try-on timing: stage=layers; model={fal_model.key}; seconds={elapsed}; '
@@ -1741,12 +1783,14 @@ async def tryon_generate_look(
                 await publish(names, stage='composite', preview_url=preview_url)
 
             # A second layer changes the same body region as the first one.
-            changed_slots = sorted({tryon_policy.composite_slot(slot.rstrip('2'), slot_categories.get(slot, '') if slot != 'bottom' and slot != 'shoes' else '')
+            changed_slots = sorted({tryon_policy.composite_slot(slot.rstrip('2'), slot_categories.get(slot, '') if slot != 'bottom' and slot != 'shoes' else '',
+                                                                (garment_traits.get(slot) or {}).get('length'))
                                     for slot in garments})
 
             composite_started = time.monotonic()
             # Only an editor's frame is refitted; FASHN keeps the body by itself.
-            fit_allowance = body_fit.allowance(slot_categories.values()) if fal_model else None
+            fit_allowance = body_fit.allowance(list(slot_categories.values()),
+                                               [(garment_traits.get(slot) or {}).get('bulk') for slot in slot_categories]) if fal_model else None
             warning = None
             locked = True
             face_restored = False

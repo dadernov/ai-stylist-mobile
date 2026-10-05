@@ -87,12 +87,13 @@ def fit_instruction(tuck):
     return ''
 
 
-def garment_prompt(slot, category='', tuck='auto', keep_outer_open=False):
+def garment_prompt(slot, category='', tuck='auto', keep_outer_open=False, length=None):
     if slot == 'outer':
         inner_fit = f'For the inner top only, never the outerwear: {fit_instruction(tuck)}' if tuck in ('tucked', 'untucked') else ''
         length = ('This is a long outer garment, not a shirt. Reproduce the entire garment from collar to hem, '
                   'including the panels extending below the hips and over the legs. Match the hem length in the product photo. '
-                  'Do not crop, tuck, shorten or transform it into a T-shirt. ' if category in LONG_OUTER else '')
+                  'Do not crop, tuck, shorten or transform it into a T-shirt. '
+                  if length == 'long' or (length is None and category in LONG_OUTER) else '')
         opening = ('Wear the outer garment fully open and unfastened. Leave all buttons and zippers undone, '
                    'with separated front panels and the selected inner top and its print clearly visible. '
                    'Do not close, button up, zip up, or belt the coat shut. ' if keep_outer_open else
@@ -114,11 +115,11 @@ def garment_prompt(slot, category='', tuck='auto', keep_outer_open=False):
     return f'{IDENTITY} Replace only the footwear. Keep all clothing unchanged. {fit_instruction(tuck)}'
 
 
-def composite_slot(slot, category=''):
+def composite_slot(slot, category='', length=None):
     if slot == 'legwear':
         # Tights change the legs, as trousers would.
         return 'bottom'
-    if slot == 'outer' and category in LONG_OUTER:
+    if slot == 'outer' and (length == 'long' or (length is None and category in LONG_OUTER)):
         return 'long_outer'
     if slot == 'top' and category in ONE_PIECE:
         return 'one_piece'
@@ -126,8 +127,10 @@ def composite_slot(slot, category=''):
 
 
 # The classifier's names describe a typical photo of each category; in a prompt
-# they become orders. "A crop top" cut a long sleeveless top off at the ribs.
-PROMPT_NOUNS = {'Топ': 'a sleeveless top'}
+# they become orders. "A crop top" cut a long sleeveless top off at the ribs, and
+# "a sleeveless top" took the sleeves off a T-shirt-like top: its sleeves and
+# length are said from its own photo instead (look_prompt).
+PROMPT_NOUNS = {'Топ': 'a top'}
 
 
 # A shirt photographed open at the collar put its neck label on the front of the
@@ -178,21 +181,64 @@ SHORT_SLEEVED = {'Футболка', 'Поло'}
 SHORT_SLEEVES_TOLD = True
 
 
-def sleeve_length(slot, categories, sleeves):
+def _trait(traits, slot, name):
+    value = (traits or {}).get(slot)
+    return value.get(name) if isinstance(value, dict) else None
+
+
+def sleeve_length(slot, categories, traits):
     """'long', 'short', 'none' or None: measured from the garment's photo, else what its category always has.
 
     A category is only a guess: polos, shirts, blouses, dresses and sweaters come
     with either sleeve, so each garment's photo is read (clothing_analysis); the
     category answers only when the photo left it open.
     """
-    if sleeves.get(slot):
-        return sleeves[slot]
+    if _trait(traits, slot, 'sleeves'):
+        return _trait(traits, slot, 'sleeves')
     category = categories.get(slot, '')
     if category in SLEEVELESS_LAYERS:
         return 'none'
     if category in LONG_SLEEVED:
         return 'long'
     return 'short' if category in SHORT_SLEEVED else None
+
+
+def is_long(slot, categories, traits=None):
+    """Long below the hips: read from its photo; a coat, a trench or a parka is assumed so only when the photo left it open."""
+    measured = _trait(traits, slot, 'length')
+    return measured == 'long' or (measured is None and categories.get(slot, '') in LONG_OUTER)
+
+
+def opens_at_front(slot, categories, traits=None):
+    """Zips or buttons down the front: read from its photo (a zip hoodie does, a pullover does not), else by its category."""
+    measured = _trait(traits, slot, 'opening')
+    return measured == 'front' or (measured is None and categories.get(slot, '') in OPEN_FRONT)
+
+
+def length_sentence(slot, image, categories, traits=None):
+    """What the prompt says of a garment's length: what its photo showed, never what its category suggests."""
+    measured = _trait(traits, slot, 'length')
+    if measured == 'long':
+        return f'The garment in image {image} is long: keep its full length below the hips and never shorten it. '
+    if measured == 'cropped':
+        return f'The garment in image {image} is cropped: it ends at the waist, as in its photo; never lengthen it. '
+    if measured is None and categories.get(slot, '') in LONG_OUTER:
+        # Unread, a coat is not assumed long: a short one came out down to the knees.
+        return f'Keep the length of the garment in image {image} exactly as in its photo: neither shorten nor lengthen it. '
+    return ''
+
+
+def length_words(slot, categories, traits=None):
+    """The length said with the garment itself, where its name would suggest another: a short overcoat, a long cardigan."""
+    measured = _trait(traits, slot, 'length')
+    category = categories.get(slot, '')
+    if measured == 'cropped':
+        return ', cropped, ending at the waist'
+    if measured == 'hip' and category in LONG_OUTER:
+        return ', hip-length, ending at the hips'
+    if measured == 'long' and category not in LONG_OUTER and category not in ONE_PIECE:
+        return ', long, reaching below the hips'
+    return ''
 
 
 # Upper layers over the base top, from the inside out. Seedream layered a shirt
@@ -218,8 +264,14 @@ TUCKABLE = {'Футболка', 'Поло', 'Лонгслив', 'Рубашка'
 FASTENABLE = {'Рубашка', 'Блуза', 'Кардиган', 'Жилет', 'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 'Тренч', 'Плащ', 'Пуховик', 'Парка', 'Шуба'}
 
 
-def garment_options(raw, categories):
-    """The per-garment choices that apply: {slot: {'tuck': ..., 'fasten': ...}} without 'auto' or nonsense."""
+def garment_options(raw, categories, openings=None):
+    """The per-garment choices that apply: {slot: {'tuck': ..., 'fasten': ...}} without 'auto' or nonsense.
+
+    `openings` holds whether each garment's photo shows it opening at the front
+    ('front', 'none' or None when unsure): a zip hoodie is fastened or opened as
+    chosen, a pullover is not; only an unread garment is judged by its category.
+    """
+    openings = openings or {}
     chosen = {}
     for slot, value in (raw or {}).items():
         if not isinstance(value, dict):
@@ -228,7 +280,8 @@ def garment_options(raw, categories):
         option = {}
         if value.get('tuck') in ('tucked', 'untucked') and category in TUCKABLE:
             option['tuck'] = value['tuck']
-        if value.get('fasten') in ('open', 'closed') and category in FASTENABLE:
+        opens = openings.get(slot) == 'front' or (openings.get(slot) is None and category in FASTENABLE)
+        if value.get('fasten') in ('open', 'closed') and opens:
             option['fasten'] = value['fasten']
         if option:
             chosen[slot] = option
@@ -284,17 +337,18 @@ def layer_tuck_instruction(state, noun, image):
     return f'Wear the {noun} from image {image} untucked: its hem hangs loose over the trousers at its full length. '
 
 
-def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None, options=None, sleeves=None):
+def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=None, categories=None, options=None, traits=None):
     """`slots` in the order their images follow the photo; `names` maps a category to an English noun.
 
     `categories` maps a slot to its wardrobe category; the two arguments before
     it are the categories of `top` and `outer` for callers without layers.
     `options` holds the user's per-garment choices (garment_options); the
-    base top's tuck comes in `tuck`. `sleeves` maps a slot to the sleeve length
-    read from its photo ('long', 'short', 'none'), where it was read with confidence.
+    base top's tuck comes in `tuck`. `traits` maps a slot to what was read from
+    the garment's own photo (clothing_analysis.read_garment): its sleeves, length
+    and front opening, each None where the reading was unsure.
     """
     names = names or {}
-    sleeves = sleeves or {}
+    traits = traits or {}
     categories = {'top': top_category, 'outer': outer_category, **(categories or {})}
     options = options or {}
     noun_of = lambda slot: _bare(names.get(categories.get(slot, ''), '')) or 'garment'
@@ -307,13 +361,13 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     described = []
     # The outermost layer with sleeves: told at its end of the prompt only, a jacket over a
     # long-sleeve came out with sleeves ending at the elbow and the long-sleeve's black cuffs below.
-    length = lambda slot: sleeve_length(slot, categories, sleeves)
+    length = lambda slot: sleeve_length(slot, categories, traits)
     sleeved = [slot for slot in layer_order if slot in upper and length(slot) != 'none']
     outermost = sleeved[-1] if sleeved and SLEEVES_IN_OUTFIT and length(sleeved[-1]) == 'long' else None
     for slot in slots:
         category = categories.get(slot, '')
         noun = 'one-piece garment' if slot == 'top' and category in ONE_PIECE else names.get(category, '')
-        worn = {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
+        worn = length_words(slot, categories, traits) + {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
         inner = outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost)
         if slot == outermost:
             worn += ', its sleeves long, reaching the wrists'
@@ -322,9 +376,11 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
                      'nothing of it shows at the wrists')
         elif inner and length(slot) == 'long':
             worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
-        elif not inner and slot in layer_order and sleeves.get(slot):
+        elif inner and length(slot) == 'none':
+            worn += ', sleeveless'
+        elif not inner and slot in layer_order and (_trait(traits, slot, 'sleeves') or length(slot) == 'none'):
             # Read from its photo: said so the editor keeps them, whatever the person wears in image 1.
-            worn += {'long': ', with long sleeves', 'short': ', with short sleeves', 'none': ', sleeveless'}[sleeves[slot]]
+            worn += {'long': ', with long sleeves', 'short': ', with short sleeves', 'none': ', sleeveless'}[length(slot)]
         described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
     # The user's fastening choices belong to the outfit itself, so they are told with it.
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]
@@ -348,6 +404,9 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += 'Show the complete one-piece garment down to its hem; do not cut it off at the waist. '
     elif 'top' in slots:
         text += 'Use only the new neckline and sleeves; no collar, cuffs or hem of the old top may remain. '
+        # A crop top or a tunic: its own length, read from its photo.
+        if _trait(traits, 'top', 'length') in ('cropped', 'long'):
+            text += length_sentence('top', image['top'], categories, traits)
         # Under a coat worn closed a tuck does not show; asked for anyway, it made the editor open the coat.
         text += '' if closed_over('top') else fit_instruction(tuck)
     if 'top' in slots and 'top2' in slots:
@@ -362,7 +421,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     # A sweater or a hoodie over other tops goes on over the head: the layers
     # under it are closed and show only at its neckline, the ones over it are
     # open over it. Looks without one read exactly as before.
-    pullover = next((slot for slot in upper if slot in ('top3', 'top4') and categories.get(slot) not in OPEN_FRONT), None)
+    pullover = next((slot for slot in upper if slot in ('top3', 'top4') and not opens_at_front(slot, categories, traits)), None)
     if pullover:
         noun = lambda slot: _bare(names.get(categories.get(slot, ''), '')) or 'garment'
         stack = [slot for slot in ('top', *upper) if slot in slots]
@@ -393,8 +452,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         if chosen.get('tuck') and not closed_over(slot):
             sentence = sentence.replace('Do not tuck the outerwear. ', '') + layer_tuck_instruction(chosen['tuck'], noun_of(slot), image[slot])
         text += sentence
-        if categories.get(slot) in LONG_OUTER:
-            text += f'The garment in image {image[slot]} is long: keep its full length below the hips and never shorten it. '
+        text += length_sentence(slot, image[slot], categories, traits)
         if length(slot) == 'long':
             # A jacket over a long-sleeve came out with sleeves ending mid-forearm, the inner cuffs showing below.
             text += (f'The sleeves of the garment in image {image[slot]} keep their full length down to the wrists, '
@@ -417,7 +475,7 @@ def _bare(noun):
     return noun
 
 
-def layer_prompt(upper, categories, names, base_top=''):
+def layer_prompt(upper, categories, names, base_top='', traits=None):
     """Second call of a layered look: put the upper layers over a finished base look.
 
     `upper` lists the layers inside out; each image follows the photo in that
@@ -430,7 +488,7 @@ def layer_prompt(upper, categories, names, base_top=''):
     below = base
     for index, slot in enumerate(upper, start=2):
         garment = noun(categories.get(slot, ''), 'the garment')
-        how = 'unbuttoned and open over' if categories.get(slot) in OPEN_FRONT or not slot.startswith('top') else 'worn over'
+        how = 'unbuttoned and open over' if opens_at_front(slot, categories, traits) or not slot.startswith('top') else 'worn over'
         steps.append(f'{"first" if index == 2 else "then"} {garment} from image {index}, {how} {below}')
         visible.append(f'{garment} {"around it" if index == 2 else "outside"}')
         below = garment
@@ -445,8 +503,7 @@ def layer_prompt(upper, categories, names, base_top=''):
             f'{INSIDE_LABELS}'
             'Prints, logos and details of one garment must never appear on another. ')
     for index, slot in enumerate(upper, start=2):
-        if categories.get(slot) in LONG_OUTER:
-            text += f'The garment in image {index} is long: keep its full length below the hips and never shorten it. '
+        text += length_sentence(slot, index, categories, traits)
     return text + 'The result is a photorealistic photo with the lighting of image 1.'
 
 
@@ -474,7 +531,7 @@ def natural_layers(layers, order):
 OPEN_FRONT = {'Рубашка', 'Блуза', 'Кардиган', 'Жилет'}
 
 
-def bria_instruction(slots, top_category='', outer_category='', tuck='auto'):
+def bria_instruction(slots, top_category='', outer_category='', tuck='auto', outer_length=None):
     """Extra direction for Bria's try-on, which has its own base instruction."""
     parts = []
     if 'top' in slots and top_category not in ONE_PIECE:
@@ -482,7 +539,7 @@ def bria_instruction(slots, top_category='', outer_category='', tuck='auto'):
     if 'outer' in slots:
         if 'top' in slots:
             parts.append('Wear the outerwear open over the top.')
-        if outer_category in LONG_OUTER:
+        if outer_length == 'long' or (outer_length is None and outer_category in LONG_OUTER):
             parts.append('Keep the full length of the long outerwear.')
     parts.append('Keep the face, pose, framing and background unchanged.')
     return ' '.join(part.strip() for part in parts if part.strip())
