@@ -397,17 +397,22 @@ class FaceTransplant(unittest.TestCase):
         self.assertLess(result[112, 174].max(), 40, f'the inside of the hood below the mouth, got {result[112, 174]}')
         self.assertGreater(result[90, 200][0], 180, 'the face itself is still the photo\'s')
 
-    def test_under_the_chin_the_neck_is_the_editors(self):
-        # The photo's jaw and the editor's neck blurred into each other in a band under the chin.
+    def test_the_editors_ear_beside_the_head_is_covered_by_the_photo(self):
+        # The editor drew an ear where the photo's hair hides it; faded, it showed as a second ear.
         original = np.full((800, 400, 3), 230, np.uint8)
-        original[64:140, 180:220] = (200, 150, 120)  # face and a light neck in the photo
-        generated = np.full((800, 400, 3), 230, np.uint8)
-        generated[64:114, 180:220] = (190, 140, 110)
-        generated[114:140, 185:215] = (60, 40, 30)  # the editor's neck in shadow
+        original[64:114, 180:220] = (200, 150, 120)
+        source_labels = np.zeros((800, 400), np.uint8)
+        source_labels[64:114, 180:220] = 11
+        generated = original.copy()
+        generated[84:100, 172:180] = (150, 100, 80)   # the editor's ear, read as face
+        generated[96:103, 168:173] = (40, 30, 25)     # a tuft of beard the parser missed, under the ear
+        generated_labels = source_labels.copy()
+        generated_labels[84:100, 172:180] = 11
         with patch.object(face_guard, 'detect_faces', return_value=[face()]):
-            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face())).astype(int)
-        self.assertLess(result[118, 200].max(), 80, f'just under the chin, got {result[118, 200]}')
-        self.assertGreater(result[90, 200][0], 180, 'the face itself is the photo\'s')
+            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
+                                                           source_labels, generated_labels)).astype(int)
+        self.assertGreater(result[92, 176].min(), 215, f'the ear, got {result[92, 176]}')
+        self.assertGreater(result[100, 170].min(), 215, f'the tuft, got {result[100, 170]}')
 
     def test_a_turned_head_or_other_expression_is_refused(self):
         original, generated = self.scene()

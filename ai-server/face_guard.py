@@ -337,11 +337,11 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     alpha = cv2.warpAffine(region.astype(np.float32), matrix, generated.size, flags=cv2.INTER_LINEAR)
     ghost = None
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
-        # The editor's own hair outside the photo's head would stay as a second
-        # outline; the photo's scene there (a wall, mostly) covers it.
+        # The editor's own hair and ears outside the photo's head would stay as a
+        # second outline; the photo's scene there (a wall, mostly) covers it.
         gx, gy, gw, gh = faces[0].box
         yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
-        extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + gh)
+        extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + 1.15 * gh)
         ghost = np.isin(generated_labels, HEAD_LABELS) & extent
     # Grow the mask before feathering: a feather that starts at the hair line
     # leaves the editor's strands half visible, a ghost beside the real hair.
@@ -350,24 +350,20 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     feather = lambda mask: cv2.GaussianBlur(cv2.dilate(mask.astype(np.uint8), kernel).astype(np.float32), (0, 0), max(2., width * .04))
     alpha = feather(alpha > .5)
     if ghost is not None:
-        # Long hair below the jaw fades back to the editor's instead of ending
-        # at a hard line across both sides of the head.
-        alpha = np.maximum(alpha, feather(ghost) * np.clip((gy + gh - yy) / (.45 * gh), 0, 1))
-    # Under the chin the photo's jaw and beard met the editor's neck in a band a
-    # sixth of a face wide, and the two blurred into each other. Across the
-    # face's own width the photo now ends at the chin, where its shadow is.
-    tx, ty, tw, th = faces[0].box
-    rows = np.arange(alpha.shape[0], dtype=np.float32)[:, None]
-    cols = np.arange(alpha.shape[1], dtype=np.float32)[None, :]
-    under_chin = np.clip((rows - (ty + .97 * th)) / (.07 * th), 0, 1)
-    neck = ((cols >= tx - .05 * tw) & (cols <= tx + 1.05 * tw)).astype(np.float32)
-    neck = cv2.GaussianBlur(np.repeat(neck, 3, axis=0), (0, 0), max(1., .06 * tw))[1:2]
-    alpha *= 1 - under_chin * neck
+        # Down to the chin the head is the photo's alone: faded earlier, the
+        # editor's ear showed through beside the photo's hair as a second ear.
+        # Just below the chin it fades back to the editor's: further down long
+        # hair lies on the new clothes, and the photo's would bring its own.
+        # The parser misses the rim of an ear or a tuft of beard beside the jaw,
+        # so the editor's head is covered with twice the margin of the photo's own.
+        wide = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 4 + 1, grow * 4 + 1))
+        cover = cv2.GaussianBlur(cv2.dilate(ghost.astype(np.uint8), wide).astype(np.float32), (0, 0), max(2., width * .04))
+        alpha = np.maximum(alpha, cover * np.clip((gy + 1.15 * gh - yy) / (.2 * gh), 0, 1))
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # A hood or a high collar now hugs the jaw: the photo's wall there came
         # back as white patches beside the chin. Only the photo's own head may
-        # cover the new clothes, and the photo's scene may cover only the
-        # editor's stray hair or background, never its skin or clothes.
+        # cover the new clothes; below the mouth the photo's scene does not
+        # cover the editor's neck or the shadow inside a hood or collar either.
         generated_labels = np.asarray(generated_labels)
         own_head = region if source_labels is None or np.asarray(source_labels).shape != region.shape \
             else np.isin(source_labels, HEAD_LABELS)
@@ -379,10 +375,16 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         if source_labels is not None and np.asarray(source_labels).shape == region.shape:
             scene = ~cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
                                     flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
-            # Below the mouth the editor's dark "background" beside the jaw is the
-            # inside of a hood or a collar the parser cannot tell from a shadow.
+            # Below the mouth the editor's dark "background" next to its clothes is
+            # the inside of a hood or a collar the parser cannot tell from a shadow.
+            # Above it the photo's scene covers the editor's own ears and temples:
+            # kept, an ear the photo's hair hides came out twice.
             below_mouth = np.arange(alpha.shape[0])[:, None] > target[3:, 1].mean()
-            keep |= scene & (~np.isin(generated_labels, (0, 2)) | (below_mouth & (generated_labels == 0)))
+            # A hood's shadow beside the jaw reaches a quarter of a face's width from its fabric.
+            reach = max(2, round(width * .25))
+            near_clothes = cv2.dilate(np.isin(generated_labels, CLOTHES_LABELS).astype(np.uint8),
+                                      cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach * 2 + 1, reach * 2 + 1))).astype(bool)
+            keep |= scene & below_mouth & ((generated_labels == 11) | ((generated_labels == 0) & near_clothes))
         alpha *= 1 - cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
