@@ -282,6 +282,8 @@ def _similarity(source, target):
 
 HEAD_LABELS = [1, 2, 3, 11]  # hat, hair, sunglasses, face in the clothes parsing
 CLOTHES_LABELS = [4, 5, 6, 7, 17]  # upper clothes, skirt, pants, dress, scarf
+# How far below the top of the face box the photo's neck is carried over, in face heights.
+NECK_DEPTH = 1.9
 
 
 def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face, source_labels=None, generated_labels=None,
@@ -329,11 +331,15 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     region = np.asarray(mask) > 0
     if source_labels is not None and np.asarray(source_labels).shape == region.shape:
         # The whole head, not only the face: hair, ears and glasses make the
-        # likeness as much as the eyes do. Nothing below the chin, where the
-        # new collar is.
+        # likeness as much as the eyes do. And the neck down to the new collar:
+        # on the editor's neck, wider and lit otherwise, the photo's jaw sat
+        # like a mask, its edges showing on both sides. The new clothes stay on
+        # top of it (`keep` below).
         yy, xx = np.ogrid[:region.shape[0], :region.shape[1]]
         extent = (xx >= x - .65 * width) & (xx <= x + 1.65 * width) & (yy >= y - .9 * height) & (yy <= y + height)
         region |= np.isin(source_labels, HEAD_LABELS) & extent
+        neck_rows = (xx >= x - .35 * width) & (xx <= x + 1.35 * width) & (yy > y + height) & (yy <= y + NECK_DEPTH * height)
+        region |= (np.asarray(source_labels) == 11) & neck_rows
     alpha = cv2.warpAffine(region.astype(np.float32), matrix, generated.size, flags=cv2.INTER_LINEAR)
     ghost = None
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
@@ -343,6 +349,15 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         yy, xx = np.ogrid[:alpha.shape[0], :alpha.shape[1]]
         extent = (xx >= gx - .65 * gw) & (xx <= gx + 1.65 * gw) & (yy >= gy - .9 * gh) & (yy <= gy + 1.15 * gh)
         ghost = np.isin(generated_labels, HEAD_LABELS) & extent
+        # The editor's neck where the photo has none (wider, or not where the photo's
+        # is) is covered by the photo's scene; where the photo wears its old clothes
+        # the editor's skin stays, an open neckline.
+        neck_cols = (xx >= gx - .35 * gw) & (xx <= gx + 1.35 * gw) & (yy > gy + gh) & (yy <= gy + NECK_DEPTH * gh)
+        photo_clothes = np.zeros(alpha.shape, bool)
+        if source_labels is not None and np.asarray(source_labels).shape == region.shape:
+            photo_clothes = cv2.warpAffine(np.isin(source_labels, CLOTHES_LABELS).astype(np.uint8), matrix, generated.size,
+                                           flags=cv2.INTER_NEAREST).astype(bool)
+        neck_ghost = (np.asarray(generated_labels) == 11) & neck_cols & ~photo_clothes
     # Grow the mask before feathering: a feather that starts at the hair line
     # leaves the editor's strands half visible, a ghost beside the real hair.
     grow = max(3, round(width * .08))
@@ -359,6 +374,12 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         wide = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow * 4 + 1, grow * 4 + 1))
         cover = cv2.GaussianBlur(cv2.dilate(ghost.astype(np.uint8), wide).astype(np.float32), (0, 0), max(2., width * .04))
         alpha = np.maximum(alpha, cover * np.clip((gy + 1.15 * gh - yy) / (.2 * gh), 0, 1))
+        neck_cover = cv2.GaussianBlur(cv2.dilate(neck_ghost.astype(np.uint8), kernel).astype(np.float32), (0, 0), max(2., width * .04))
+        alpha = np.maximum(alpha, neck_cover * np.clip((gy + NECK_DEPTH * gh - yy) / (.15 * gh), 0, 1))
+        # Below the chin nothing of the photo's own clothes comes along: its high
+        # collar came out as a black smear on the bare neck of a strapless dress.
+        old_collar = cv2.dilate((photo_clothes & (yy > gy + .9 * gh)).astype(np.uint8), kernel)
+        alpha *= 1 - cv2.GaussianBlur(old_collar.astype(np.float32), (0, 0), max(1., width * .02))
     if generated_labels is not None and np.asarray(generated_labels).shape == alpha.shape:
         # A hood or a high collar now hugs the jaw: the photo's wall there came
         # back as white patches beside the chin. Only the photo's own head may
@@ -371,7 +392,9 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         # The photo's outline is half wall: over the new clothes it shows as a light rim.
         rim = max(2, round(width * .03))
         own_head = cv2.erode(own_head.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (rim * 2 + 1, rim * 2 + 1))).astype(bool)
-        keep = np.isin(generated_labels, CLOTHES_LABELS) & ~own_head
+        # Below the chin the new clothes are on top of the photo's neck and hair.
+        chin_line = np.arange(alpha.shape[0])[:, None] > gy + gh
+        keep = np.isin(generated_labels, CLOTHES_LABELS) & (~own_head | chin_line)
         if source_labels is not None and np.asarray(source_labels).shape == region.shape:
             scene = ~cv2.warpAffine((np.asarray(source_labels) > 0).astype(np.uint8), matrix, generated.size,
                                     flags=cv2.INTER_NEAREST, borderValue=1).astype(bool)
@@ -384,19 +407,7 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
             reach = max(2, round(width * .25))
             near_clothes = cv2.dilate(np.isin(generated_labels, CLOTHES_LABELS).astype(np.uint8),
                                       cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach * 2 + 1, reach * 2 + 1))).astype(bool)
-            # The editor's skin only from the chin down, where it is the neck: between
-            # the mouth and the chin it is the editor's own jaw and ear lobe, drawn a
-            # little wider than the photo's, and kept it showed as a second jawline.
-            # The parser's neck stops a pixel or two short of its edge; there the
-            # photo's wall came through as a light streak, so the edge is kept too.
-            below_chin = np.arange(alpha.shape[0])[:, None] > gy + .92 * gh
-            edge = max(2, round(width * .05))
-            neck = cv2.dilate((generated_labels == 11).astype(np.uint8),
-                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
-            # The photo's own neck edge is half wall too: below the chin it gives way
-            # to the editor's neck within the same margin of the wall.
-            near_scene = cv2.dilate(scene.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (edge * 2 + 1, edge * 2 + 1))).astype(bool)
-            keep |= (near_scene & neck & below_chin) | (scene & below_mouth & (generated_labels == 0) & near_clothes)
+            keep |= scene & below_mouth & (generated_labels == 0) & near_clothes
         alpha *= 1 - cv2.GaussianBlur(keep.astype(np.float32), (0, 0), max(1., width * .015))
     face = cv2.warpAffine(np.asarray(original.convert('RGB')), matrix, generated.size,
                           flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)

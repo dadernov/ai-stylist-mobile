@@ -414,25 +414,39 @@ class FaceTransplant(unittest.TestCase):
         self.assertGreater(result[92, 176].min(), 215, f'the ear, got {result[92, 176]}')
         self.assertGreater(result[100, 170].min(), 215, f'the tuft, got {result[100, 170]}')
 
-    def test_the_editors_jaw_beside_the_photos_is_covered_and_its_neck_kept(self):
-        # A second jawline: the editor's ear lobe and jaw, a little wider than the photo's, were kept as "neck".
+    def setup_neck(self, generated_labels_extra=None):
         original = np.full((800, 400, 3), 230, np.uint8)
         original[64:114, 180:220] = (200, 150, 120)
-        original[114:160, 188:212] = (200, 150, 120)  # the photo's neck
+        original[114:170, 190:210] = (200, 150, 120)  # the photo's neck, narrower than the editor's
+        original[160:170, 180:220] = (20, 20, 20)     # and the photo's own black collar
         source_labels = np.zeros((800, 400), np.uint8)
-        source_labels[64:160, 180:220] = 11
-        source_labels[114:160, 180:188] = source_labels[114:160, 212:220] = 0
+        source_labels[64:114, 180:220] = 11
+        source_labels[114:170, 190:210] = 11
+        source_labels[160:170, 180:220] = 4
         generated = original.copy()
-        generated[100:108, 172:180] = (120, 80, 60)   # the editor's jaw and lobe, between the mouth and the chin
-        generated[114:160, 184:216] = (120, 80, 60)   # its neck, wider than the photo's
-        generated_labels = source_labels.copy()
+        generated[114:170, 184:216] = (120, 80, 60)   # the editor's neck, wider and darker
+        generated[100:108, 172:180] = (120, 80, 60)   # its jaw and lobe beside the photo's
+        generated[150:170, 170:230] = (40, 60, 160)   # a new blue collar over the neck
+        generated_labels = np.zeros((800, 400), np.uint8)
+        generated_labels[64:114, 180:220] = 11
         generated_labels[100:108, 172:180] = 11
-        generated_labels[114:160, 184:216] = 11
+        generated_labels[114:150, 184:216] = 11
+        generated_labels[150:170, 170:230] = 4
         with patch.object(face_guard, 'detect_faces', return_value=[face()]):
-            result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
-                                                           source_labels, generated_labels)).astype(int)
+            return np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
+                                                         source_labels, generated_labels)).astype(int)
+
+    def test_the_photos_jaw_and_neck_come_together(self):
+        # The photo's jaw sat on the editor's wider, darker neck like a mask, its edges showing.
+        result = self.setup_neck()
         self.assertGreater(result[104, 175].min(), 215, f'the editor\'s jaw beside the photo\'s, got {result[104, 175]}')
-        self.assertLess(result[140, 186].max(), 140, f'the editor\'s neck edge, got {result[140, 186]}')
+        self.assertGreater(result[135, 200][0], 180, f'the neck is the photo\'s, got {result[135, 200]}')
+        self.assertGreater(result[135, 186].min(), 215, f'beside the photo\'s narrower neck the wall shows, got {result[135, 186]}')
+
+    def test_the_new_collar_stays_on_top_and_the_old_one_never_comes(self):
+        result = self.setup_neck()
+        self.assertLess(abs(result[160, 200] - np.array([40, 60, 160])).max(), 25, f'the new collar, got {result[160, 200]}')
+        self.assertGreater(result[165, 175][2], 120, f'no black photo collar beside it, got {result[165, 175]}')
 
     def test_a_turned_head_or_other_expression_is_refused(self):
         original, generated = self.scene()
