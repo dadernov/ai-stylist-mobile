@@ -2,8 +2,8 @@ import { TryOnProgress } from '../services/ai';
 
 type Translate = (source: string, vars?: Record<string, string | number>) => string;
 
-// A try-on takes about two minutes from the tap to the finished look.
-export const EXPECTED_TRYON_MS = 120000;
+// A try-on takes about a minute from the tap to the finished look (50-60 s measured).
+export const EXPECTED_TRYON_MS = 60000;
 
 /** What a running try-on is doing now, in words; `stageName` names a garment of an older per-garment try-on. */
 export function tryOnStatusLabel(progress: TryOnProgress | undefined, t: Translate, stageName?: (stage: string) => string) {

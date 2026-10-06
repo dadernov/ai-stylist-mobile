@@ -29,8 +29,10 @@ type DockApi = {
   open: (jobId: string, leave?: () => void) => void;
   prepare: (request: TryOnRequest) => void;
   started: (jobId: string, leave?: () => void) => void;
+  /** A finished look was looked at elsewhere (the recent try-ons): it leaves the small window. */
+  viewed: (jobId: string) => void;
 };
-const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {} });
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {}, viewed: () => {} });
 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
@@ -105,7 +107,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     setActionError(null);
     setSetup({ ...request, options: request.options || {} });
   }, []);
-  const api = useMemo(() => ({ open, prepare, started }), [open, prepare, started]);
+  const viewed = useCallback((id: string) => setDocked(previous => previous.filter(current => current !== id)), []);
+  const api = useMemo(() => ({ open, prepare, started, viewed }), [open, prepare, started, viewed]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.

@@ -656,7 +656,7 @@ export const en: Record<string, string> = {
   "Не удалось связать лицо с силуэтом человека.": "Couldn't match the face to the person's silhouette.",
   "Не удалось сгенерировать примерку.": "Couldn't generate the try-on.",
   "Надеваем весь образ…": "Putting on the whole look…",
-  "Обычно около двух минут. Окно можно свернуть — примерка продолжится.": "Usually about two minutes. You can minimise the window: the try-on keeps going.",
+  "Обычно около минуты. Окно можно свернуть — примерка продолжится.": "Usually about a minute. You can minimise the window: the try-on keeps going.",
   "Некоторых вещей из этого образа уже нет в гардеробе.": "Some items of this look are no longer in your wardrobe.",
   "Очередь: {position}": "Queue: {position}",
   "Развернуть примерку: {name}": "Expand the try-on: {name}",

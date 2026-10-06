@@ -4,6 +4,7 @@ import { ArrowRight, Check, RefreshCw, Save, X } from 'lucide-react-native';
 import { SavedLook } from '../types/looks';
 import { TryOnJob } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
+import { useGenerationDock } from './GenerationDock';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
@@ -14,6 +15,8 @@ import { ZoomableImage } from './ui/ZoomableImage';
 
 export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLook) => void; onOpenHistory: () => void }) {
   const { jobs, store, error } = useTryOnJobs();
+  // Looked at here, a finished look no longer waits in the small window.
+  const dock = useGenerationDock();
   const { colors: c } = useTheme();
   const t = useT();
   const [selected, setSelected] = useState<TryOnJob>();
@@ -26,7 +29,7 @@ export function RecentTryOns({ onSave, onOpenHistory }: { onSave: (look: SavedLo
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
       {jobs.slice(0, 12).map(job => <View key={job.id} style={{ width: 128, gap: 6 }}>
         <AppPressable accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
-          disabled={!job.result} onPress={() => setSelected(job)} style={[styles.thumb, { backgroundColor: c.surface }]}>
+          disabled={!job.result} onPress={() => { setSelected(job); dock.viewed(job.id); }} style={[styles.thumb, { backgroundColor: c.surface }]}>
           {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
             : job.status === 'pending' ? <ActivityIndicator color={c.accentGold} /> : <RefreshCw color={c.muted} size={24} />}
         </AppPressable>

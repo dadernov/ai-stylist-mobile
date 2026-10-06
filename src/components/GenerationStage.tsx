@@ -194,7 +194,7 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
 
   useEffect(() => {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
-    // The bar follows the usual two minutes and waits at 95%.
+    // The bar follows the usual minute and waits at 95%.
     const target = done ? 1 : busy ? Math.min(0.95, 1 - Math.exp(-2.2 * elapsed / EXPECTED_TRYON_MS)) : 0;
     Animated.timing(progress, { toValue: target, duration: done ? 350 : 500, easing: Easing.out(Easing.quad), useNativeDriver: false }).start();
   }, [now, startedAt, busy, done, progress]);
@@ -244,7 +244,7 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
               <Animated.View style={[styles.bar, { backgroundColor: c.accentGold,
                 width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
             </View>
-            <Text style={[styles.note, { color: c.muted }]}>{t('Обычно около двух минут. Окно можно свернуть — примерка продолжится.')}</Text>
+            <Text style={[styles.note, { color: c.muted }]}>{t('Обычно около минуты. Окно можно свернуть — примерка продолжится.')}</Text>
           </>
         ) : null}
         {error && !busy ? <Text style={[styles.note, { color: c.danger }]}>{error}</Text> : null}
