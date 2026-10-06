@@ -291,6 +291,8 @@ SEAM_FLOOR, SEAM_EDGE, SEAM_LEAN = 4., 40., 8.
 # Free pixels lean to the photo down to a fifth of a face above the chin and to the frame
 # a fifth below it, passing over in between.
 LEAN_START, LEAN_LENGTH = .2, .4
+# The photo's hair is kept down to this many face heights below the chin, above the shoulders.
+HAIR_KEEP = .6
 
 
 def _long_hair(labels, box):
@@ -580,7 +582,13 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     jaw[columns] = rows_count - 1 - np.argmax(oval[::-1, columns], axis=0)
     under = rows > jaw[None, :] + .03 * gh
     lean = np.where((frame_head | frame_hair) & in_head & ~under, lean + 3 * SEAM_LEAN * over, lean)
-    lean = np.where((photo_face | (photo_hair & (rows <= chin))) & ~under, lean + 2 * SEAM_LEAN * over, lean)
+    lean = np.where(photo_face & ~under, lean + 2 * SEAM_LEAN * over, lean)
+    # The photo's own hair keeps its length down to the shoulders: leaning to the frame from the chin on,
+    # side locks hanging past the jaw were cut at the ear and the wall drawn where they were.
+    hair_reach = np.clip((chin + HAIR_KEEP * gh - rows) / (.15 * gh), 0, 1)
+    # Only beside the face: hair falling onto the shoulders brings the photo's wall between its strands.
+    beside_face = (xx >= gx - .35 * gw) & (xx <= gx + 1.35 * gw)
+    lean = np.where(photo_hair & beside_face, np.maximum(lean, 0) + 2 * SEAM_LEAN * hair_reach, lean)
     lean = np.where(under & ~photo_hair, np.minimum(lean, 0) - SEAM_LEAN, lean)
     # The dark inside of a hood or collar beside the jaw, read as background: the frame's, not the photo's wall.
     mouth = float(np.asarray(target.landmarks)[3:, 1].mean())
