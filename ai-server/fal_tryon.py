@@ -59,6 +59,8 @@ class Model(NamedTuple):
 
 MODELS = {model.key: model for model in (
     Model('seedream-5-lite', 'fal-ai/bytedance/seedream/v5/lite/edit', 'seedream', 9, flat_usd=0.035, seeded=False),
+    # Measured 2026-10-06: 20-25 s against Lite's 40-110 s; not yet compared for quality across looks.
+    Model('seedream-5-flash', 'bytedance/seedream/v5/flash/edit', 'seedream', 9, flat_usd=0.027, seeded=False),
     Model('bria-tryon', 'bria/fibo-edit-1.5/virtual-try-on', 'bria', 3, flat_usd=0.04),
     Model('seedream-4.5', 'fal-ai/bytedance/seedream/v4.5/edit', 'seedream', 9, flat_usd=0.04),
     Model('seedream-4', 'fal-ai/bytedance/seedream/v4/edit', 'seedream', 9, flat_usd=0.03),
@@ -229,8 +231,68 @@ def _now():
     return time.monotonic()
 
 
+def race_size():
+    """How many identical requests one look starts with (TRYON_FAL_RACE, 1 to switch the race off)."""
+    try:
+        return min(3, max(1, int(os.getenv('TRYON_FAL_RACE', '2'))))
+    except ValueError:
+        return 2
+
+
+def hedge_seconds():
+    """When none of them is back yet, one more goes out (TRYON_FAL_HEDGE_SECONDS, 0 for never)."""
+    try:
+        return max(0., float(os.getenv('TRYON_FAL_HEDGE_SECONDS', '0')))
+    except ValueError:
+        return 0.
+
+
 async def generate(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0,
                    frame_size=None):
+    """One look from the first of several identical requests to come back.
+
+    Seedream 5.0 Lite's own run time spread from 40 to 110 seconds on the same
+    look (2026-10-06, queue time about 1 s): the spread is the model's, not
+    ours. Two requests go out at once and the first image back is taken
+    (54-70 s over six live looks). A third sent after 55 s never came first:
+    it starts too late, so `hedge_seconds` is off by default. A started request
+    cannot be cancelled at fal, so each one is paid: a look costs about twice.
+    A request that fails does not end the race while another still runs.
+    """
+    count, hedge = race_size(), hedge_seconds()
+    run = lambda: asyncio.ensure_future(_generate_one(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds,
+                                                      poll_seconds, frame_size))
+    if count == 1 and not hedge:
+        return await run()
+    started = _now()
+    pending = {run() for _ in range(count)}
+    sent, hedged, failure = count, False, None
+    try:
+        while pending:
+            timeout = None if hedged or not hedge else max(0., started + hedge - _now())
+            done, pending = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                hedged, sent = True, sent + 1
+                pending.add(run())
+                continue
+            for task in done:
+                result = task.result()
+                if result.get('status') == 'succeeded':
+                    result['costUsd'] = round((result.get('costUsd') or 0) * sent, 4)
+                    result['raced'] = sent
+                    return result
+                # Out of balance or blocked: the others will be too, and are not waited for.
+                if result.get('balance') or result.get('blocked'):
+                    return result
+                failure = failure or result
+        return failure or {'error': 'fal returned no image'}
+    finally:
+        for task in pending:
+            task.cancel()
+
+
+async def _generate_one(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0,
+                        frame_size=None):
     """Submit one look to the fal queue and wait for its image URL.
 
     Returns {'status': 'succeeded', 'outputUrl', 'costUsd', 'model'} or

@@ -1,3 +1,4 @@
+import asyncio
 """A look in one fal call: the queue client, prices, and the real endpoint.
 
 The fal queue is faked with httpx.MockTransport; in the endpoint tests the
@@ -42,9 +43,48 @@ def queue(status_sequence, result=None, submit_status=200, submit_body=None, res
     return httpx.AsyncClient(transport=httpx.MockTransport(handler)), calls
 
 
+class Race(unittest.IsolatedAsyncioTestCase):
+    """Two identical requests, the first image back wins; a third if neither is back in time."""
+
+    async def race(self, outcomes, env):
+        calls = []
+
+        async def one(*args, **kwargs):
+            delay, result = outcomes[len(calls)]
+            calls.append(delay)
+            await asyncio.sleep(delay)
+            return dict(result)
+        with patch.dict(os.environ, env), patch.object(fal_tryon, '_generate_one', side_effect=one):
+            result = await fal_tryon.generate(None, fal_tryon.MODELS['seedream-5-lite'], 'p', ['g'], 'prompt', 1)
+        return result, calls
+
+    async def test_the_first_image_back_is_taken_and_both_are_paid(self):
+        ok = {'status': 'succeeded', 'outputUrl': 'u', 'costUsd': 0.035}
+        result, calls = await self.race([(0.2, {**ok, 'outputUrl': 'slow'}), (0.05, {**ok, 'outputUrl': 'fast'})],
+                                        {'TRYON_FAL_RACE': '2', 'TRYON_FAL_HEDGE_SECONDS': '5'})
+        self.assertEqual(result['outputUrl'], 'fast')
+        self.assertEqual(result['costUsd'], 0.07)
+        self.assertEqual(len(calls), 2)
+
+    async def test_a_third_goes_out_when_neither_is_back_in_time(self):
+        ok = {'status': 'succeeded', 'outputUrl': 'u', 'costUsd': 0.035}
+        result, calls = await self.race([(1., ok), (1., ok), (0.01, {**ok, 'outputUrl': 'third'})],
+                                        {'TRYON_FAL_RACE': '2', 'TRYON_FAL_HEDGE_SECONDS': '0.05'})
+        self.assertEqual(result['outputUrl'], 'third')
+        self.assertEqual(len(calls), 3)
+
+    async def test_a_failed_request_does_not_end_the_race_but_an_empty_balance_does(self):
+        ok = {'status': 'succeeded', 'outputUrl': 'u', 'costUsd': 0.035}
+        result, _ = await self.race([(0.01, {'error': 'fal model error'}), (0.05, ok)], {'TRYON_FAL_RACE': '2', 'TRYON_FAL_HEDGE_SECONDS': '0'})
+        self.assertEqual(result['outputUrl'], 'u')
+        result, _ = await self.race([(0.01, {'error': 'fal balance', 'balance': True}), (0.5, ok)], {'TRYON_FAL_RACE': '2', 'TRYON_FAL_HEDGE_SECONDS': '0'})
+        self.assertTrue(result.get('balance'))
+
+
 class FalClient(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {'FAL_KEY': 'key-123', 'TRYON_PROVIDER': 'fal'})
+        # One request per look here; the race of several is tried on its own (Race).
+        self.env = patch.dict(os.environ, {'FAL_KEY': 'key-123', 'TRYON_PROVIDER': 'fal', 'TRYON_FAL_RACE': '1', 'TRYON_FAL_HEDGE_SECONDS': '0'})
         self.env.start()
 
     def tearDown(self):
