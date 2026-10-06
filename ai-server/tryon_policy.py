@@ -370,12 +370,14 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         worn = length_words(slot, categories, traits) + {'closed': ', worn fastened shut', 'open': ', worn open'}.get(options.get(slot, {}).get('fasten'), '')
         inner = outermost and slot in layer_order and layer_order.index(slot) < layer_order.index(outermost)
         if slot == outermost:
-            worn += ', its sleeves long, reaching the wrists'
+            # Said loosely, the same jacket came out with sleeves at the forearm in one look and over the hands in the next.
+            worn += ', its sleeves long: both end at the same height, right at the wrist bones, as in its photo'
         elif inner and length(slot) == 'short' and SHORT_SLEEVES_TOLD:
             worn += (f', with short sleeves ending above the elbow, hidden under the {noun_of(outermost)}: '
                      'nothing of it shows at the wrists')
         elif inner and length(slot) == 'long':
-            worn += f', its sleeves hidden inside the sleeves of the {noun_of(outermost)}'
+            worn += (f', its sleeves hidden inside the sleeves of the {noun_of(outermost)} all the way: '
+                     'no cuff or band of it shows below them at the wrists')
         elif inner and length(slot) == 'none':
             worn += ', sleeveless'
         elif not inner and slot in layer_order and (_trait(traits, slot, 'sleeves') or length(slot) == 'none'):

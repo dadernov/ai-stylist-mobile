@@ -448,9 +448,9 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.generate.await_args.args[3]), 5)
         prompt = self.generate.await_args.args[4]
         self.assertIn('image 2 is the top: a t-shirt, with short sleeves ending above the elbow, hidden under the jacket: nothing of it shows at the wrists; image 3 is the lower-body garment; '
-                      'image 4 is the outerwear: a long-sleeve t-shirt, its sleeves hidden inside the sleeves of the jacket; '
-                      'image 5 is the second layer, worn over the outerwear: a hoodie, its sleeves hidden inside the sleeves of the jacket; '
-                      'image 6 is the outermost layer, worn over everything: a jacket, its sleeves long, reaching the wrists', prompt)
+                      'image 4 is the outerwear: a long-sleeve t-shirt, its sleeves hidden inside the sleeves of the jacket all the way: no cuff or band of it shows below them at the wrists; '
+                      'image 5 is the second layer, worn over the outerwear: a hoodie, its sleeves hidden inside the sleeves of the jacket all the way: no cuff or band of it shows below them at the wrists; '
+                      'image 6 is the outermost layer, worn over everything: a jacket, its sleeves long: both end at the same height, right at the wrist bones, as in its photo', prompt)
         self.assertIn('The result must show all 5 garments at once', prompt)
         self.assertIn('Wear the second layer from image 5 pulled on over the layers beneath it: '
                       'they may show only at its neckline and never below its hem.', prompt)
@@ -465,7 +465,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         await self.four_layers('request_000000000072', top_file=photo('white'), top_category='Футболка',
                                outer_file=photo('gray'), outer_category='Пальто', outer2_file=photo('navy'), outer2_category='Пиджак')
         prompt = self.generate.await_args.args[4]
-        self.assertIn('image 4 is the outerwear: a blazer, its sleeves hidden inside the sleeves of the overcoat; image 5 is the second layer, worn over the outerwear: an overcoat, its sleeves long, reaching the wrists', prompt)
+        self.assertIn('image 4 is the outerwear: a blazer, its sleeves hidden inside the sleeves of the overcoat all the way: no cuff or band of it shows below them at the wrists; image 5 is the second layer, worn over the outerwear: an overcoat, its sleeves long: both end at the same height, right at the wrist bones, as in its photo', prompt)
 
     async def test_more_than_four_upper_layers_are_refused_before_paying(self):
         result = await self.four_layers(
@@ -558,8 +558,8 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
     def test_the_outermost_sleeves_are_long_in_the_outfit_itself(self):
         # Said at the end only, a jacket over a long-sleeve came out with sleeves at the elbow.
         prompt = tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], 'Лонгслив', 'Куртка', 'auto', app._CATEGORY_NOUNS, {})
-        self.assertIn('a long-sleeve t-shirt, its sleeves hidden inside the sleeves of the jacket; ', prompt)
-        self.assertIn('the outerwear: a jacket, its sleeves long, reaching the wrists', prompt)
+        self.assertIn('a long-sleeve t-shirt, its sleeves hidden inside the sleeves of the jacket all the way: no cuff or band of it shows below them at the wrists; ', prompt)
+        self.assertIn('the outerwear: a jacket, its sleeves long: both end at the same height, right at the wrist bones, as in its photo', prompt)
         shirt = tryon_policy.look_prompt(['top', 'bottom', 'top2', 'shoes'], 'Футболка', '', 'auto', app._CATEGORY_NOUNS, {'top2': 'Рубашка'})
         self.assertNotIn('reaching the wrists', shirt, 'a shirt may be short-sleeved: its length comes from its photo')
         vest = tryon_policy.look_prompt(['top', 'bottom', 'top2', 'outer', 'shoes'], 'Рубашка', 'Пиджак', 'auto', app._CATEGORY_NOUNS, {'top2': 'Жилет'})
@@ -571,7 +571,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             prompt = tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], category, 'Плащ', 'auto', app._CATEGORY_NOUNS, {})
             self.assertIn('with short sleeves ending above the elbow, hidden under the raincoat: nothing of it shows at the wrists', prompt)
             self.assertNotIn('sleeves hidden inside the sleeves', prompt)
-            self.assertIn('the outerwear: a raincoat, its sleeves long, reaching the wrists', prompt)
+            self.assertIn('the outerwear: a raincoat, its sleeves long: both end at the same height, right at the wrist bones, as in its photo', prompt)
 
     def test_sleeves_follow_each_garments_photo_not_its_category(self):
         names = app._CATEGORY_NOUNS
@@ -582,13 +582,13 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         # A short-sleeved shirt under a blazer keeps its short sleeves; a long-sleeved one tucks them into the blazer's.
         self.assertIn('a button-up shirt, with short sleeves ending above the elbow, hidden under the blazer',
                       look('Рубашка', 'Пиджак', {'top': 'short', 'outer': 'long'}))
-        self.assertIn('a button-up shirt, its sleeves hidden inside the sleeves of the blazer',
+        self.assertIn('a button-up shirt, its sleeves hidden inside the sleeves of the blazer all the way: no cuff or band of it shows below them at the wrists',
                       look('Рубашка', 'Пиджак', {'top': 'long', 'outer': 'long'}))
         unsure = look('Рубашка', 'Пиджак', {'outer': 'long'})
         self.assertNotIn('a button-up shirt, with short', unsure)
         self.assertNotIn('a button-up shirt, its sleeves', unsure, 'unread, its sleeves are not guessed')
         # A long-sleeved polo is not a T-shirt.
-        self.assertIn('a polo shirt, its sleeves hidden inside the sleeves of the raincoat', look('Поло', 'Плащ', {'top': 'long'}))
+        self.assertIn('a polo shirt, its sleeves hidden inside the sleeves of the raincoat all the way: no cuff or band of it shows below them at the wrists', look('Поло', 'Плащ', {'top': 'long'}))
         # A short-sleeved cardigan over a T-shirt: nothing is said to reach the wrists.
         cardigan = look('Футболка', '', {'top': 'short', 'top2': 'short'}, top2='Кардиган')
         self.assertNotIn('reaching the wrists', cardigan)
