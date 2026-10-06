@@ -300,8 +300,12 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
     url = _image_url(output)
     if not url:
         return {'error': 'fal returned no image'}
+    done_at = _now()
+    # Waiting in fal's queue and the model's own work, apart: a slow look is one or the other.
+    queue_seconds = round((started_at if started_at is not None else done_at) - submitted_at, 1)
     return {'status': 'succeeded', 'outputUrl': url, 'model': model.key,
-            'costUsd': estimate_usd(model, len(garment_urls)), 'requestId': queued.get('request_id')}
+            'costUsd': estimate_usd(model, len(garment_urls)), 'requestId': queued.get('request_id'),
+            'queueSeconds': queue_seconds, 'runSeconds': round(done_at - submitted_at - queue_seconds, 1)}
 
 
 def user_error(result):
