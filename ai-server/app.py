@@ -25,6 +25,7 @@ import face_guard
 import footwear_guard
 import tryon_policy
 import body_fit
+import hand_guard
 import image_color
 import garment_guard
 import tryon_matte
@@ -342,22 +343,22 @@ def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_fr
 
 
 def _fit_body(framed, labels, generated_labels, allowed, face=None):
-    """The frame narrowed to the photo's body width (body_fit), with its labels; as it was when it fits."""
+    """The frame narrowed to the photo's body width (body_fit), with its labels and the refit used (None when none)."""
     if allowed is None or generated_labels is None or not body_fit.enabled():
-        return framed, generated_labels
+        return framed, generated_labels, None
     try:
         factor, zone = body_fit.measure(labels, generated_labels, allowed)
         if not zone:
-            return framed, generated_labels
+            return framed, generated_labels, None
         # The head keeps its size, so the photo's face still fits it; the narrowing starts below the chin.
         chin, neck = (face.box[1] + face.box[3], face.box[3] * .6) if face is not None else (None, 0)
         narrowed, narrowed_labels = body_fit.narrow(framed, generated_labels, factor, zone, chin, neck)
         print(f'Try-on body fit: x{factor:.3f}', flush=True)
-        return narrowed, narrowed_labels
+        return narrowed, narrowed_labels, (factor, zone, chin, neck)
     except Exception as exc:
         # The look is shown as the editor made it rather than lost.
         print(f'Try-on body fit failed: {type(exc).__name__}', flush=True)
-        return framed, generated_labels
+        return framed, generated_labels, None
 
 
 def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
@@ -376,7 +377,13 @@ def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
             print(f'Try-on head parsing unavailable: {type(exc).__name__}', flush=True)
             generated_labels = None
         # The editor draws the body wider than it is; it goes back to the photo's width first.
-        framed, generated_labels = _fit_body(framed, labels, generated_labels, fit_allowance, faces[0])
+        framed, generated_labels, fit = _fit_body(framed, labels, generated_labels, fit_allowance, faces[0])
+        # The photo's own hands, put through the same refit: the editor redraws them, a thumb sometimes twice.
+        if hand_guard.enabled():
+            try:
+                framed = hand_guard.restore(original, framed, labels, generated_labels, fit)
+            except Exception as exc:
+                print(f'Try-on hands restore failed: {type(exc).__name__}', flush=True)
         try:
             restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels)
         except face_guard.AlignmentError as exc:
