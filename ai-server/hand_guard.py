@@ -31,7 +31,8 @@ SCALES = (.92, 1., 1.08, 1.16, 1.24)
 
 
 def enabled():
-    return os.getenv('TRYON_HANDS', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
+    # Off: laid back from the photo the hands came out worse than the editor's own (2026-10-07). TRYON_HANDS=on to try again.
+    return os.getenv('TRYON_HANDS', 'off').strip().lower() in ('1', 'on', 'true', 'yes')
 
 
 def _hands(labels, height):

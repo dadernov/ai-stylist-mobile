@@ -179,6 +179,9 @@ LONG_SLEEVED = {'Пиджак', 'Бомбер', 'Куртка', 'Пальто', 
 # a T-shirt came out as a long-sleeve, its white cuffs showing at the wrists, unevenly.
 SHORT_SLEEVED = {'Футболка', 'Поло'}
 SHORT_SLEEVES_TOLD = True
+# Tucked or untucked said with the garment itself; a print kept on its own garment under a layer.
+TUCK_IN_OUTFIT = True
+PRINTS_STAY = True
 
 
 def _trait(traits, slot, name):
@@ -383,6 +386,20 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         elif not inner and slot in layer_order and (_trait(traits, slot, 'sleeves') or length(slot) == 'none'):
             # Read from its photo: said so the editor keeps them, whatever the person wears in image 1.
             worn += {'long': ', with long sleeves', 'short': ', with short sleeves', 'none': ', sleeveless'}[length(slot)]
+        # How it is worn, said with the garment: told only after the outfit, a top asked to hang loose came out tucked.
+        tucked = tuck if slot == 'top' else options.get(slot, {}).get('tuck')
+        if slot in layer_order and 'bottom' in slots and not closed_over(slot) and TUCK_IN_OUTFIT:
+            if tucked == 'tucked':
+                worn += ', tucked into the trousers or skirt all around, so the waistband and belt show over it'
+            elif tucked == 'untucked':
+                worn += ', worn untucked: its hem hangs loose outside the trousers, over the waistband, hiding the belt'
+        # A print belongs to its own garment: with a jacket open over a T-shirt, the T-shirt's logo came out on the jacket.
+        over = [other for other in layer_order[layer_order.index(slot) + 1:]] if slot in layer_order else []
+        if over and PRINTS_STAY:
+            cover = noun_of(over[-1])
+            worn += (f'; any print or lettering on it stays on it, at the same place on its front: where the {cover} covers it '
+                     f'that part is hidden, only the part showing between the fronts of the {cover} is seen, '
+                     f'and it never appears on the {cover}')
         described.append(f'image {image[slot]} is the {role.get(slot) or LOOK_NAMES[slot]}' + (f': {noun}' if noun else '') + worn)
     # The user's fastening choices belong to the outfit itself, so they are told with it.
     stack = [slot for slot in ('top', *UPPER_LAYERS) if slot in slots]

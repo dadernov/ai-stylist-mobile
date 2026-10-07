@@ -477,6 +477,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             person_file=photo('white'), bottom_file=photo('blue'), shoes_file=None, tuck_mode='auto', compare_mode='false',
             quality_mode='quality', request_id=request, async_mode='false', fresh='false', device='masha', **fields)
 
+    @patch.object(tryon_policy, 'PRINTS_STAY', False)  # the print rule is tried on its own below
     async def test_four_upper_layers_go_on_inside_out_whatever_the_taps(self):
         # The user: two layers of tops is too few; a T-shirt, a long-sleeve,
         # a hoodie and a jacket make one look, picked in any order.
@@ -501,6 +502,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('Wear the outerwear fully open', prompt)
         self.assertIn('Wear the jacket from image 6 open over the hoodie', prompt)
 
+    @patch.object(tryon_policy, 'PRINTS_STAY', False)  # the print rule is tried on its own below
     async def test_two_outer_layers_go_on_inside_out(self):
         await self.four_layers('request_000000000072', top_file=photo('white'), top_category='Футболка',
                                outer_file=photo('gray'), outer_category='Пальто', outer2_file=photo('navy'), outer2_category='Пиджак')
@@ -680,6 +682,20 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         prompt = await self.options_look('request_000000000096', {}, top_file=photo('white'), top_category='Футболка',
                                          outer_file=photo('navy'), outer_category='Плащ')
         self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the raincoat', prompt)
+
+    def test_tuck_and_print_are_said_with_the_garment(self):
+        names = app._CATEGORY_NOUNS
+        look = lambda tuck: tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], 'Футболка', 'Куртка', tuck, names, {},
+                                                     {'outer': {'fasten': 'open'}, 'top': {'tuck': tuck}})
+        self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the jacket: nothing of it shows at the wrists, '
+                      'tucked into the trousers or skirt all around', look('tucked'))
+        self.assertIn('worn untucked: its hem hangs loose outside the trousers, over the waistband, hiding the belt', look('untucked'))
+        self.assertNotIn('tucked into the trousers or skirt all around', look('auto'))
+        # The T-shirt's logo stays on the T-shirt, partly hidden by the open jacket, never on the jacket.
+        self.assertIn('any print or lettering on it stays on it, at the same place on its front: where the jacket covers it that part is hidden',
+                      look('auto'))
+        closed = tryon_policy.look_prompt(['top', 'bottom', 'outer', 'shoes'], 'Футболка', 'Куртка', 'tucked', names, {}, {'outer': {'fasten': 'closed'}})
+        self.assertNotIn('tucked into the trousers or skirt all around', closed, 'under a closed jacket a tuck is not asked for')
 
     async def test_a_top_is_not_called_a_crop_top(self):
         # Named so, a long sleeveless top was cut off at the ribs.
