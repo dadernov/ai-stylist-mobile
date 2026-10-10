@@ -1260,8 +1260,9 @@ def auth_register(body: Credentials, _: bool = Depends(access.require_app)):
 
 
 @app.post("/auth/login")
-def auth_login(body: Credentials, _: bool = Depends(access.require_app)):
-    return accounts.login_user(body.login, body.password)
+def auth_login(body: Credentials, _: bool = Depends(access.require_app), x_real_ip: str | None = Header(default=None)):
+    # nginx sets X-Real-IP to the connecting address; a client's own value is overwritten there.
+    return accounts.login_user(body.login, body.password, (x_real_ip or "").strip()[:64] or None)
 
 
 @app.post("/auth/logout")

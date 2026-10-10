@@ -56,6 +56,7 @@ def _database():
 
 def reset_state_for_tests():
     global _connection
+    _address_misses.clear()
     with _LOCK:
         if _connection is not None:
             _connection.close()
@@ -120,8 +121,20 @@ def register(login: str, password: str, display_name: str = ""):
     return {"token": _issue_session(login), "login": login, "displayName": (display_name or "").strip()[:64]}
 
 
-def login_user(login: str, password: str):
+# Five misses from one address lock that address out of the account for a minute:
+# locked for everyone, a stranger typing wrong passwords kept the owner out.
+# Across all addresses the account still closes for a while after many misses.
+ADDRESS_MISSES, ADDRESS_LOCK_SECONDS = 5, 60
+ACCOUNT_MISSES, ACCOUNT_LOCK_SECONDS = 30, 600
+_address_misses = {}
+
+
+def login_user(login: str, password: str, address: str | None = None):
     login = normalise_login(login)
+    key = (login, address or "")
+    misses, locked_until = _address_misses.get(key, (0, 0))
+    if locked_until > time.time():
+        raise HTTPException(429, "Слишком много попыток. Попробуй через минуту.")
     with _LOCK:
         row = _database().execute(
             "SELECT password, display_name, locked_until, failed_attempts FROM users WHERE login = ?", (login,)
@@ -135,16 +148,24 @@ def login_user(login: str, password: str):
     if not password_matches(password or "", stored) or not row:
         if row:
             _register_failure(login, row[3] or 0)
+        misses += 1
+        with _LOCK:
+            _address_misses[key] = (0, time.time() + ADDRESS_LOCK_SECONDS) if misses >= ADDRESS_MISSES else (misses, 0)
+            if len(_address_misses) > 20000:
+                now = time.time()
+                for stale in [k for k, (count, until) in _address_misses.items() if until < now and not count]:
+                    del _address_misses[stale]
         raise HTTPException(401, "Неверный логин или пароль.")
+    _address_misses.pop(key, None)
     _reset_failures(login)
     return {"token": _issue_session(login), "login": login, "displayName": row[1] or ""}
 
 
 def _register_failure(login: str, attempts: int):
     attempts += 1
-    # Блокировка на минуту после пяти промахов: перебор становится бессмысленно
-    # медленным, а живой человек, забывший пароль, почти не страдает.
-    locked_until = time.time() + 60 if attempts >= 5 else 0
+    # The account as a whole closes only after many misses from anywhere: a guess from
+    # many addresses stays slow, and one stranger cannot keep the owner out.
+    locked_until = time.time() + ACCOUNT_LOCK_SECONDS if attempts >= ACCOUNT_MISSES else 0
     with _LOCK:
         database = _database()
         database.execute("UPDATE users SET failed_attempts = ?, locked_until = ? WHERE login = ?",

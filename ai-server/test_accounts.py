@@ -55,6 +55,7 @@ class Registration(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_repeated_misses_lock_the_account_briefly(self):
+        accounts._address_misses.clear()
         accounts.register("masha", "very-long-password")
         for _ in range(5):
             with self.assertRaises(HTTPException):
@@ -62,6 +63,27 @@ class Registration(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             accounts.login_user("masha", "very-long-password")
         self.assertEqual(raised.exception.status_code, 429, "перебор должен упираться в паузу")
+
+    def test_a_stranger_guessing_does_not_lock_the_owner_out(self):
+        accounts._address_misses.clear()
+        accounts.register("dasha", "very-long-password")
+        for _ in range(5):
+            with self.assertRaises(HTTPException):
+                accounts.login_user("dasha", "nope-nope-nope", "203.0.113.9")
+        with self.assertRaises(HTTPException) as raised:
+            accounts.login_user("dasha", "very-long-password", "203.0.113.9")
+        self.assertEqual(raised.exception.status_code, 429, "the guessing address is paused")
+        self.assertIn("token", accounts.login_user("dasha", "very-long-password", "198.51.100.7"), "the owner elsewhere gets in")
+
+    def test_many_misses_from_anywhere_close_the_account_for_a_while(self):
+        accounts._address_misses.clear()
+        accounts.register("glasha", "very-long-password")
+        for attempt in range(accounts.ACCOUNT_MISSES):
+            with self.assertRaises(HTTPException):
+                accounts.login_user("glasha", "nope-nope-nope", f"10.0.{attempt}.1")
+        with self.assertRaises(HTTPException) as raised:
+            accounts.login_user("glasha", "very-long-password", "198.51.100.7")
+        self.assertEqual(raised.exception.status_code, 429)
 
     def test_password_is_not_stored_in_the_clear(self):
         accounts.register("masha", "very-long-password")
