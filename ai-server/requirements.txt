@@ -2,9 +2,9 @@ fastapi==0.141.1
 starlette==1.7.0
 uvicorn==0.30.6
 python-multipart==0.0.32
-pillow==12.2.0
+pillow==12.3.0
 # [cpu] обязателен: без него не ставится onnxruntime и remove() падает на первом запросе
-rembg[cpu]==2.0.74
+rembg[cpu]==2.0.75
 numpy==2.3.4
 httpx==0.28.1
 opencv-python-headless>=4.10,<5
