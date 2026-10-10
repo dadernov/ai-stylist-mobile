@@ -181,6 +181,8 @@ SHORT_SLEEVED = {'Футболка', 'Поло'}
 SHORT_SLEEVES_TOLD = True
 # Tucked or untucked said with the garment itself; a print kept on its own garment under a layer.
 TUCK_IN_OUTFIT = True
+HOODED = {'Худи', 'Парка'}
+HOOD_DOWN = True
 PRINTS_STAY = True
 
 
@@ -386,6 +388,9 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         elif not inner and slot in layer_order and (_trait(traits, slot, 'sleeves') or length(slot) == 'none'):
             # Read from its photo: said so the editor keeps them, whatever the person wears in image 1.
             worn += {'long': ', with long sleeves', 'short': ', with short sleeves', 'none': ', sleeveless'}[length(slot)]
+        # A hood pulled up round the chin cut the restored face's chin off: it lies down behind the neck.
+        if category in HOODED and HOOD_DOWN:
+            worn += ', its hood down, lying flat behind the neck on the upper back, never raised or bunched around the chin, jaw or neck'
         # How it is worn, said with the garment: told only after the outfit, a top asked to hang loose came out tucked.
         tucked = tuck if slot == 'top' else options.get(slot, {}).get('tuck')
         if slot in layer_order and 'bottom' in slots and not closed_over(slot) and TUCK_IN_OUTFIT:

@@ -478,6 +478,7 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             quality_mode='quality', request_id=request, async_mode='false', fresh='false', device='masha', **fields)
 
     @patch.object(tryon_policy, 'PRINTS_STAY', False)  # the print rule is tried on its own below
+    @patch.object(tryon_policy, 'HOOD_DOWN', False)  # the hood rule is tried on its own
     async def test_four_upper_layers_go_on_inside_out_whatever_the_taps(self):
         # The user: two layers of tops is too few; a T-shirt, a long-sleeve,
         # a hoodie and a jacket make one look, picked in any order.
@@ -682,6 +683,11 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         prompt = await self.options_look('request_000000000096', {}, top_file=photo('white'), top_category='Футболка',
                                          outer_file=photo('navy'), outer_category='Плащ')
         self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the raincoat', prompt)
+
+    def test_a_hood_lies_down_behind_the_neck(self):
+        prompt = tryon_policy.look_prompt(['top', 'bottom'], 'Худи', '', 'auto', app._CATEGORY_NOUNS, {}, {})
+        self.assertIn('its hood down, lying flat behind the neck', prompt)
+        self.assertNotIn('hood down', tryon_policy.look_prompt(['top', 'bottom'], 'Свитшот', '', 'auto', app._CATEGORY_NOUNS, {}, {}))
 
     def test_tuck_and_print_are_said_with_the_garment(self):
         names = app._CATEGORY_NOUNS
