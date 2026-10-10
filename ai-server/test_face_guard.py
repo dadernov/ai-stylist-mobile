@@ -411,7 +411,7 @@ class FaceTransplant(unittest.TestCase):
         with patch.object(face_guard, 'detect_faces', return_value=[face()]):
             result = np.asarray(face_guard.transplant_face(Image.fromarray(original), Image.fromarray(generated), face(),
                                                            source_labels, generated_labels)).astype(int)
-        self.assertGreater(result[92, 176].min(), 215, f'the ear, got {result[92, 176]}')
+        self.assertGreater(result[92, 176].min(), 205, f'the ear (150) gives way to the wall (230), got {result[92, 176]}')
         self.assertGreater(result[100, 170].min(), 215, f'the tuft, got {result[100, 170]}')
 
     def test_the_editors_jaw_beside_the_photos_is_covered_and_its_neck_kept(self):

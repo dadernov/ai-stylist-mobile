@@ -288,6 +288,8 @@ HAIR_DEPTH, HAIR_SIDE = 1.2, 3.0
 # The seam between the photo and the frame: what a step along it costs at the least, how
 # much an edge of either picture makes it cheaper, and how hard a free pixel leans to one side.
 SEAM_FLOOR, SEAM_EDGE, SEAM_LEAN = 4., 40., 8.
+# Local spread of grey below which a wall counts as plain and can be painted in.
+PLAIN_WALL = 9.
 # Free pixels lean to the photo down to a fifth of a face above the chin and to the frame
 # a fifth below it, passing over in between.
 LEAN_START, LEAN_LENGTH = .2, .4
@@ -367,6 +369,24 @@ def _min_cut(photo, frame, must_photo, must_frame, lean, scale=2):
     # Rounded off: at half size the seam has corners.
     taken = cv2.GaussianBlur(taken, (0, 0), 1.5 * scale) > .5
     return (taken | must_photo) & ~(must_frame & ~must_photo)
+
+
+def _wall_in(frame, hole, labels, reach):
+    """`frame` with `hole` painted from its own background only, never from skin, hair or clothes beside it."""
+    ys, xs = np.where(hole)
+    pad = 6 * reach
+    top, bottom = max(0, ys.min() - pad), min(hole.shape[0], ys.max() + pad + 1)
+    left, right = max(0, xs.min() - pad), min(hole.shape[1], xs.max() + pad + 1)
+    crop = np.ascontiguousarray(frame[top:bottom, left:right].clip(0, 255).astype(np.uint8))
+    grow = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1,) * 2)
+    unknown = cv2.dilate((hole[top:bottom, left:right] | (labels[top:bottom, left:right] != 0)).astype(np.uint8), grow)
+    if unknown.all():
+        return frame
+    filled = cv2.GaussianBlur(cv2.inpaint(crop, unknown, 7, cv2.INPAINT_TELEA).astype(np.float32), (0, 0), max(2., reach * .6))
+    weight = cv2.GaussianBlur(cv2.dilate(hole[top:bottom, left:right].astype(np.uint8), grow).astype(np.float32), (0, 0), 2.)[..., None]
+    out = frame.copy()
+    out[top:bottom, left:right] = crop * (1 - weight) + filled * weight
+    return out
 
 
 def _pull_push(values, weights):
@@ -571,6 +591,18 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     photo = cv2.cvtColor(photo_lab.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32)
     if labelled:
         frame = _match_neck(frame, photo, frame_labels, photo_labels, target, photo_chin, np.asarray(original.convert('RGB')), source_face)
+        # The editor's hair and ears beyond the photo's head are painted out with the editor's own wall:
+        # laid over them, the photo's wall (another door frame, other leaves) showed as a halo round the head.
+        # Above the mouth only: lower down a beard or the shade inside a hood beside the jaw came out as a white wedge.
+        ghost = (frame_head | frame_hair) & (photo_labels == 0) & ~oval & reach & (rows <= float(np.asarray(target.landmarks)[3:, 1].mean()))
+        # Only over a plain wall: leaves or a room cannot be painted in smooth, and a blur there showed worse
+        # than the editor's own hair kept round the photo's.
+        gray = cv2.cvtColor(frame.clip(0, 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
+        busy = np.sqrt(np.maximum(cv2.GaussianBlur(gray ** 2, (0, 0), 6.) - cv2.GaussianBlur(gray, (0, 0), 6.) ** 2, 0))
+        plain = cv2.erode((busy < PLAIN_WALL).astype(np.uint8), kernel(width * .05)).astype(bool) | (frame_labels != 0)
+        ghost &= cv2.erode(plain.astype(np.uint8), kernel(width * .02)).astype(bool)
+        if ghost.sum() > 30:
+            frame = _wall_in(frame, ghost, frame_labels, max(3, round(width * .05)))
     over = _lean(rows, chin, gh)
     lean = SEAM_LEAN * (2 * over - 1) * np.ones((1, cols_count), np.float32)
     # Deeper down harder to the frame, so the seam leaves long hair well before the photo's reach ends.
@@ -594,6 +626,17 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     mouth = float(np.asarray(target.landmarks)[3:, 1].mean())
     near_clothes = cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(width * .25)).astype(bool)
     lean = np.where((frame_labels == 0) & near_clothes & (rows > mouth) & (photo_labels == 0), np.minimum(lean, 0) - SEAM_LEAN, lean)
+    # The photo's wall is the photo's own background: where it does not look like the frame's, the seam keeps to the hair.
+    differ = np.clip(cv2.GaussianBlur(np.linalg.norm(photo - frame, axis=2), (0, 0), 2.) / 30., 0, 1)
+    # Right beside the editor's head it is the editor's ear or beard the parser missed, not its wall: there the photo wins.
+    hugging = cv2.dilate(frame_head.astype(np.uint8), kernel(width * .08)).astype(bool) & (rows <= chin)
+    # Below the mouth the photo's wall never wins over the new clothes' shade: a white wedge showed in hoods.
+    hugging |= (rows > float(np.asarray(target.landmarks)[3:, 1].mean())) & cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(width * .3)).astype(bool)
+    photo_wall = (photo_labels == 0) & ~oval & ~hugging
+    lean = np.where(photo_wall, np.minimum(lean, SEAM_LEAN) - 3 * SEAM_LEAN * differ, lean)
+    # The parser's outlines come in blocks: the hard constraints are rounded off, or the seam ran down them in steps.
+    smooth = lambda mask: cv2.GaussianBlur(mask.astype(np.float32), (0, 0), max(2., width * .015)) > .5
+    must_photo, must_frame = smooth(must_photo), smooth(must_frame) & ~must_photo
     ys, xs = np.where(reach)
     top, bottom = max(0, ys.min() - 4), min(rows_count, ys.max() + 5)
     left, right = max(0, xs.min() - 4), min(cols_count, xs.max() + 5)
@@ -611,7 +654,8 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         field[window] = _pull_push(difference[window], agree[window].astype(np.float32))
         scene = cv2.GaussianBlur(((photo_labels == 0) & ~oval).astype(np.float32), (0, 0), max(1., width * .02))
         photo += np.clip(field, -25, 25) * (taken * scene)[..., None]
-    alpha = cv2.GaussianBlur(taken.astype(np.float32), (0, 0), max(1., width * .008))
+    alpha = cv2.GaussianBlur(cv2.GaussianBlur(taken.astype(np.float32), (0, 0), max(2., width * .012)).__gt__(.5).astype(np.float32),
+                             (0, 0), max(1.5, width * .012))
     if labelled:
         shared = lambda mask: cv2.GaussianBlur(cv2.erode(mask.astype(np.uint8), kernel(width * .03)).astype(np.float32), (0, 0), width * .03)
         both = np.maximum(shared((photo_labels == 2) & (frame_labels == 2)),
