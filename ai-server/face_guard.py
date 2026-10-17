@@ -290,6 +290,9 @@ HAIR_DEPTH, HAIR_SIDE = 1.2, 3.0
 SEAM_FLOOR, SEAM_EDGE, SEAM_LEAN = 4., 40., 8.
 # Local spread of grey below which a wall counts as plain and can be painted in.
 PLAIN_WALL = 9.
+# The editor's face narrowed to the photo's: on, by at most this share of a face width, down to this far below
+# the chin, fading out over this margin beside the face.
+HEAD_FIT, HEAD_FIT_MAX, HEAD_FIT_BELOW, HEAD_FIT_MARGIN = True, .15, .45, .35
 # Free pixels lean to the photo down to a fifth of a face above the chin and to the frame
 # a fifth below it, passing over in between.
 LEAN_START, LEAN_LENGTH = .2, .4
@@ -387,6 +390,56 @@ def _wall_in(frame, hole, labels, reach):
     out = frame.copy()
     out[top:bottom, left:right] = crop * (1 - weight) + filled * weight
     return out
+
+
+def _skin_span(labels, row, centre, widest):
+    """(left, right) of the unbroken skin run through `centre` on `row`, or None."""
+    skin = np.concatenate([[0], (labels[row] == 11).astype(np.int8), [0]])
+    starts, ends = np.where(np.diff(skin) == 1)[0], np.where(np.diff(skin) == -1)[0]
+    for a, b in zip(starts, ends):
+        if a <= centre < b and b - a <= widest:
+            return float(a), float(b)
+    return None
+
+
+def _fit_head(frame, frame_labels, photo_labels, landmarks, centre, top, height, width):
+    """The editor's face and neck narrowed column-wise to the photo's skin width, row by row, from the cheekbones down."""
+    rows_count, cols_count = frame_labels.shape
+    start = int(landmarks[:2, 1].mean())
+    stop = min(rows_count - 1, int(top + height * (1 + HEAD_FIT_BELOW)))
+    lefts, rights, valid = np.zeros(rows_count), np.zeros(rows_count), np.zeros(rows_count, bool)
+    c = int(round(centre))
+    for row in range(max(0, start), stop):
+        mine, theirs = _skin_span(frame_labels, row, c, 1.4 * width), _skin_span(photo_labels, row, c, 1.4 * width)
+        if mine and theirs:
+            # Only narrower: a photo face wider than the editor's is left as it is.
+            lefts[row] = np.clip(theirs[0] - mine[0], 0, HEAD_FIT_MAX * width)
+            rights[row] = np.clip(mine[1] - theirs[1], 0, HEAD_FIT_MAX * width)
+            valid[row] = True
+    if valid.sum() < 10:
+        return frame, frame_labels
+    idx = np.arange(rows_count)
+    lefts = np.interp(idx, idx[valid], lefts[valid]); rights = np.interp(idx, idx[valid], rights[valid])
+    # Faded in from the cheekbones and out below the neck, smooth from row to row.
+    fade = np.clip((idx - start) / (.15 * height), 0, 1) * np.clip((stop - idx) / (.25 * height), 0, 1)
+    sigma = max(2., .06 * height)
+    lefts = cv2.GaussianBlur((lefts * fade).reshape(-1, 1).astype(np.float32), (0, 0), sigma).ravel()
+    rights = cv2.GaussianBlur((rights * fade).reshape(-1, 1).astype(np.float32), (0, 0), sigma).ravel()
+    if max(lefts.max(), rights.max()) < 1.:
+        return frame, frame_labels
+    # Each row: the columns just outside the face come in by the measured amount and the shift fades out
+    # over a margin to either side; the middle of the face does not move.
+    xs = np.arange(cols_count, dtype=np.float32)[None, :]
+    margin = HEAD_FIT_MARGIN * width
+    half = .5 * width
+    left_edge, right_edge = centre - half, centre + half
+    wl = np.where(xs < left_edge - margin, np.clip(1 - (left_edge - margin - xs) / margin, 0, 1), np.clip((centre - xs) / half, 0, 1))
+    wr = np.where(xs > right_edge + margin, np.clip(1 - (xs - right_edge - margin) / margin, 0, 1), np.clip((xs - centre) / half, 0, 1))
+    map_x = (xs - lefts[:, None] * wl + rights[:, None] * wr).astype(np.float32)
+    map_y = np.repeat(np.arange(rows_count, dtype=np.float32)[:, None], cols_count, axis=1)
+    fitted = cv2.remap(frame.astype(np.float32), map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    fitted_labels = cv2.remap(frame_labels.astype(np.uint8), map_x, map_y, cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE)
+    return fitted, fitted_labels
 
 
 def _pull_push(values, weights):
@@ -555,6 +608,11 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     photo_labels = cv2.warpAffine(np.asarray(source_labels).astype(np.uint8), matrix, size, flags=cv2.INTER_NEAREST) \
         if labelled else np.zeros((rows_count, cols_count), np.uint8)
     photo_chin = float(matrix[1] @ np.array([x + width / 2, y + height, 1.]))
+    if labelled and HEAD_FIT:
+        # The editor draws the face a little fuller than the photo's: laid over it, the photo's narrower face left
+        # the editor's cheeks and jaw round it as a second outline. The editor's head and neck are narrowed, row
+        # by row, to the photo's own width first, so the two outlines meet.
+        frame, frame_labels = _fit_head(frame, frame_labels, photo_labels, np.asarray(target.landmarks), gx + gw / 2, gy, gh, gw)
     chin = max(gy + gh, photo_chin)
     kernel = lambda radius: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * max(1, round(radius)) + 1,) * 2)
     oval = Image.new('L', original.size, 0)
@@ -642,7 +700,7 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         busy = np.sqrt(np.maximum(cv2.GaussianBlur(gray ** 2, (0, 0), 6.) - cv2.GaussianBlur(gray, (0, 0), 6.) ** 2, 0))
         plain = cv2.erode((busy < PLAIN_WALL).astype(np.uint8), kernel(width * .05)).astype(bool) | (frame_labels != 0)
         ghost &= cv2.erode(plain.astype(np.uint8), kernel(width * .02)).astype(bool)
-        ghost &= ~hat_zone
+        ghost &= ~hat_zone & ~np.full(hat_zone.shape, bool(keep))
         if ghost.sum() > 30:
             frame = _wall_in(frame, ghost, frame_labels, max(3, round(width * .05)))
     over = _lean(rows, chin, gh)
