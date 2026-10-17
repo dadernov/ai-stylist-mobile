@@ -34,7 +34,7 @@ import { RADII, SERIF, SHADOWS, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { analyzeImage, AiResult } from '../services/ai';
+import { analyzeImage, AiResult, flattenGarment } from '../services/ai';
 import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
@@ -306,6 +306,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const columns = width >= 720 ? 3 : 2;
 
   const [draftPhoto, setDraftPhoto] = useState<string | null>(null);
+  // The smoothed card picture (garment-flat) and the cutout it replaces; the user may keep either.
+  const [draftFlat, setDraftFlat] = useState<{ flat: string | null; cutout: string | null; busy: boolean }>({ flat: null, cutout: null, busy: false });
   const [draftSize, setDraftSize] = useState('');
   const [draftStore, setDraftStore] = useState('');
   const [draftMaterial, setDraftMaterial] = useState('');
@@ -325,7 +327,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const [analysisError, setAnalysisError] = useState('');
   const [draftExistingId, setDraftExistingId] = useState<string | null>(null);
   const [categoryConfirmed, setCategoryConfirmed] = useState(false);
-  const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); };
+  const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); setDraftFlat({ flat: null, cutout: null, busy: false }); };
   const manual = (field: string, setter: (value: string) => void) => (value: string) => {
     manualFields.current.add(field); setter(value);
   };
@@ -462,6 +464,17 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       if (result.pattern && !manualFields.current.has('pattern')) setDraftPattern(result.pattern);
       if (result.bgRemovedBase64) {
         setDraftPhoto(result.bgRemovedBase64);
+      }
+      // A smoothed, laid-flat picture for the card, in the background: wrinkles and a crooked shot look neat.
+      // Only the card shows it; the try-on goes on using the original photo (sourceImageUri).
+      if (result.category && !['Обувь', 'Сумки', 'Аксессуары'].includes(getSectionByCategory(result.category))) {
+        const cutout = result.bgRemovedBase64 || photoUri;
+        setDraftFlat({ flat: null, cutout, busy: true });
+        flattenGarment(photoUri).then(flat => {
+          if (analysisRequestRef.current !== requestId) return;
+          setDraftFlat({ flat, cutout, busy: false });
+          setDraftPhoto(flat);
+        }).catch(() => { if (analysisRequestRef.current === requestId) setDraftFlat({ flat: null, cutout, busy: false }); });
       }
     } catch (error: any) {
       if (analysisRequestRef.current !== requestId) return;
@@ -734,6 +747,17 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                 {isAnalyzing ? (
                   <View style={styles.progressWrap}>
                     <ProgressGlow visible />
+                  </View>
+                ) : null}
+                {draftFlat.busy ? <Text style={styles.flatHint}>{t('Выравниваем фото…')}</Text> : null}
+                {draftFlat.flat && draftFlat.cutout ? (
+                  <View style={styles.flatRow}>
+                    {[[draftFlat.flat, 'Ровное фото'], [draftFlat.cutout, 'Исходное']].map(([uri, label]) => (
+                      <AppPressable key={label} haptics onPress={() => setDraftPhoto(uri)}
+                        style={[styles.flatChip, draftPhoto === uri && styles.flatChipActive]}>
+                        <Text style={[styles.retakePillText, draftPhoto === uri && styles.flatChipTextActive]}>{t(label)}</Text>
+                      </AppPressable>
+                    ))}
                   </View>
                 ) : null}
                 <AppPressable haptics style={styles.retakePill} onPress={handleRetake}>
@@ -1134,6 +1158,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   progressWrap: {
     marginTop: 12
   },
+  flatRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  flatChip: { borderWidth: 1, borderColor: c.goldHairline, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  flatChipActive: { backgroundColor: c.accentGold, borderColor: c.accentGold },
+  flatChipTextActive: { color: c.buttonPrimaryText },
+  flatHint: { marginTop: 8, fontSize: 12, color: c.muted },
   retakePill: {
     alignSelf: 'flex-start',
     borderWidth: 1,

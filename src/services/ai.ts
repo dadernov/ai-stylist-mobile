@@ -204,6 +204,15 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 
 }
 
+/** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo. */
+export async function flattenGarment(uri: string): Promise<string> {
+  const form = new FormData();
+  await appendPhoto(form, 'file', uri);
+  const result = await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000);
+  if (typeof result?.image !== 'string') throw new Error('no image');
+  return result.image;
+}
+
 /** The traits of an item added before /analyze returned them: read once, then kept with the item. */
 export async function readGarmentTraits(uri: string, category: string): Promise<GarmentTraits> {
   const form = new FormData();

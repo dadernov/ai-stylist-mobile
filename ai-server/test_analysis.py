@@ -48,6 +48,18 @@ class GarmentTraitsEndpoint(unittest.TestCase):
             app.garment_traits(UploadFile(file=BytesIO(b'x'), filename='item.jpg'), 'Космос', 'masha')
 
 
+class GarmentFlat(unittest.IsolatedAsyncioTestCase):
+    async def test_a_flat_card_picture_comes_back_as_jpeg(self):
+        from unittest.mock import AsyncMock
+        png = BytesIO(); Image.new('RGB', (40, 60), 'red').save(png, 'PNG')
+        upload = UploadFile(file=BytesIO(png.getvalue()), filename='item.png')
+        with patch.object(app.access, 'throttle'), patch.object(app.fal_tryon, 'enabled', return_value=True), \
+                patch.object(app.fal_tryon, '_generate_one', AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://x/y.png'})), \
+                patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (900, 900), 'grey'))):
+            result = await app.garment_flat(upload, 'masha')
+        self.assertTrue(result['image'].startswith('data:image/jpeg;base64,'))
+
+
 class AnalysisTests(unittest.TestCase):
     def setUp(self):
         app._ANALYSIS_CACHE.clear()

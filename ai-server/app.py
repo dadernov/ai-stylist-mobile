@@ -1291,6 +1291,46 @@ def auth_me(login: str = Depends(access.require_account)):
             "spentToday": access.spent_today(login), "dailyQuota": access.daily_credits()}
 
 
+FLAT_PROMPT = ('Product photo of exactly this garment alone, neatly laid out flat and smoothed, front side up, the whole garment '
+               'visible with its sleeves spread naturally, on a plain light grey background, soft even light. Keep exactly its colour, '
+               'fabric texture, print, lettering, buttons, pockets, seams, proportions and length. Remove wrinkles, the hanger, any '
+               'person, mannequin and background. Do not add, remove or change any detail of the garment.')
+
+
+@app.post("/garment-flat")
+async def garment_flat(file: UploadFile = File(...), device: str = Depends(access.require_account)):
+    """A smoothed, laid-flat picture of a garment for its card in the wardrobe.
+
+    Only for the card: the try-on keeps the item's own photo, so whatever the
+    editor invents here never reaches a look. Seedream 5.0 Flash, about 25 s.
+    """
+    access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
+    if not fal_tryon.enabled():
+        raise HTTPException(503, "Выравнивание фото сейчас недоступно.")
+    content = await file.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    try:
+        source = await asyncio.to_thread(_prepare_tryon_image_data_url, content, file.content_type or 'image/jpeg', FAL_GARMENT_SIDE, FAL_JPEG_QUALITY)
+    except Exception:
+        raise HTTPException(422, "Не удалось открыть фото.")
+    model = fal_tryon.MODELS['seedream-5-flash']
+    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+        result = await fal_tryon._generate_one(client, model, source, [], FLAT_PROMPT, 1)
+        if result.get('error') or not result.get('outputUrl'):
+            print(f"Garment flat failed: {result.get('error')}", flush=True)
+            raise HTTPException(502, fal_tryon.user_error(result))
+        image = await _load_image_from_url_or_data_url(client, result['outputUrl'])
+    if image is None:
+        raise HTTPException(502, "Не удалось получить выровненное фото.")
+    image = image.convert('RGB')
+    image.thumbnail((1280, 1280))
+    buffer = BytesIO()
+    image.save(buffer, 'JPEG', quality=90)
+    print(f"Garment flat: {result.get('runSeconds')} s, usd={model.flat_usd}", flush=True)
+    return {"image": 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode()}
+
+
 @app.post("/garment-traits")
 def garment_traits(file: UploadFile = File(...), category: str = Form(""), device: str = Depends(access.require_account)):
     """What a garment's photo shows (sleeves, length, front opening, bulk), for items added before /analyze returned it.
