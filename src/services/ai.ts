@@ -4,8 +4,9 @@ import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { readStoredSession, Session } from './auth';
-import { GarmentTraits } from '../data/mock';
+import { GarmentProfile, GarmentTraits, WardrobeItem } from '../data/mock';
 import { fetchJson } from './http';
+import { decodeGarmentProfile } from '../domain/garmentTraits';
 import { translate } from '../constants/i18n';
 
 export type AiResult = {
@@ -220,6 +221,30 @@ export async function readGarmentTraits(uri: string, category: string): Promise<
   form.append('category', category);
   const result = await fetchJson(AI_BASE_URL + '/garment-traits', { method: 'POST', headers: await authHeaders(), body: form }, 30000);
   return result?.traits && typeof result.traits === 'object' ? result.traits : {};
+}
+
+/** A stylist's reading of an item's photo, made once and kept with the item. */
+export async function readGarmentProfile(uri: string, category: string): Promise<GarmentProfile | undefined> {
+  const form = new FormData();
+  await appendPhoto(form, 'file', uri);
+  form.append('category', category);
+  const result = await fetchJson(AI_BASE_URL + '/garment-profile', { method: 'POST', headers: await authHeaders(), body: form }, 45000);
+  return decodeGarmentProfile(result?.profile);
+}
+
+export type StylistLook = { itemIds: string[]; title: string; why: string; tips: string[] };
+export type StylistRequest = { style: string; event: string; gender: string; temperature: number | null; precipitation: string | null;
+  anchorId?: string; avoid: string[]; language: string; count: number };
+/** Outfit ideas put together by the stylist model from the wardrobe's descriptions (no photos are sent). */
+export async function requestStylistLooks(items: WardrobeItem[], request: StylistRequest): Promise<StylistLook[]> {
+  const body = { ...request, items: items.slice(0, 400).map(item => ({ id: item.id, section: item.section, category: item.category,
+    name: item.name.slice(0, 120), color: item.color.slice(0, 40), profile: item.profile ?? null, traits: item.traits ?? null })) };
+  const result = await fetchJson(AI_BASE_URL + '/looks', { method: 'POST', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) }, 40000);
+  if (!Array.isArray(result?.looks)) return [];
+  return result.looks.filter((look: any) => Array.isArray(look?.itemIds)).map((look: any) => ({
+    itemIds: look.itemIds.filter((id: unknown) => typeof id === 'string'), title: typeof look.title === 'string' ? look.title : '',
+    why: typeof look.why === 'string' ? look.why : '', tips: Array.isArray(look.tips) ? look.tips.filter((tip: unknown) => typeof tip === 'string') : [] }));
 }
 
 // What may spoil a try-on on this photo, found by the server's local models

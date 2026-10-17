@@ -22,7 +22,8 @@ import { WardrobeItem } from './src/data/mock';
 import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
 import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
-import { readGarmentTraits } from './src/services/ai';
+import { readGarmentProfile, readGarmentTraits } from './src/services/ai';
+import { decodeGarmentProfile } from './src/domain/garmentTraits';
 import { hasAiConsent } from './src/services/aiConsent';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
@@ -44,6 +45,8 @@ type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profil
 
 const STORAGE_KEYS = DATA_KEYS;
 const DISMISS_DAYS = 14;
+// The sections the outfit ideas are built from: their items get a stylist's profile.
+const PROFILED_SECTIONS = new Set(['Верх', 'Низ', 'Обувь', 'Верхняя одежда', 'Сумки']);
 
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
@@ -448,29 +451,44 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     persist(STORAGE_KEYS.favorites, favoriteLooks, 'избранное');
   }, [isReady, favoriteLooks]);
 
-  // Items added before the server read their photo get its reading once, in the background:
-  // sleeves, length, front opening and bulk then come from each garment itself, not from its
-  // category. Only with the AI consent already given; one item every few seconds; an item that
-  // could not be read is tried again on the next launch.
+  // Items the server has not read yet get its reading once, in the background: the traits
+  // (sleeves, length, front opening, bulk) for the try-on, and the stylist's profile (kind,
+  // fabric, fit, formality, warmth, styles) for the outfit ideas. Only with the AI consent already
+  // given; one item every couple of seconds; an item that could not be read is tried again on the
+  // next launch.
   const traitsAsked = useRef(new Set<string>());
+  const profileAsked = useRef(new Set<string>());
   useEffect(() => {
     if (!isReady) return;
-    const pending = items.filter(item => !item.traits && ['Верх', 'Верхняя одежда'].includes(item.section)
-      && (item.sourceImageUri || item.imageUri) && !traitsAsked.current.has(item.id));
+    const photo = (item: WardrobeItem) => item.sourceImageUri || item.imageUri;
+    const needsTraits = (item: WardrobeItem) => !item.traits && ['Верх', 'Верхняя одежда'].includes(item.section) && !traitsAsked.current.has(item.id);
+    const needsProfile = (item: WardrobeItem) => !item.profile && PROFILED_SECTIONS.has(item.section) && !profileAsked.current.has(item.id);
+    const pending = items.filter(item => photo(item) && (needsTraits(item) || needsProfile(item)));
     if (!pending.length) return;
     let cancelled = false;
     void (async () => {
       if (!(await hasAiConsent(session.login))) return;
       for (const item of pending) {
         if (cancelled || !alive.current) return;
-        traitsAsked.current.add(item.id);
-        try {
-          const traits = decodeTraits(await readGarmentTraits(item.sourceImageUri || item.imageUri || '', item.category));
-          if (traits && alive.current) {
-            setItems(current => current.map(candidate => candidate.id === item.id && !candidate.traits ? { ...candidate, traits } : candidate));
-          }
-        } catch { /* offline or busy: read again on the next launch */ }
-        await new Promise(resolve => setTimeout(resolve, 2500));
+        if (needsTraits(item)) {
+          traitsAsked.current.add(item.id);
+          try {
+            const traits = decodeTraits(await readGarmentTraits(photo(item) || '', item.category));
+            if (traits && alive.current) {
+              setItems(current => current.map(candidate => candidate.id === item.id && !candidate.traits ? { ...candidate, traits } : candidate));
+            }
+          } catch { /* offline or busy: read again on the next launch */ }
+        }
+        if (needsProfile(item)) {
+          profileAsked.current.add(item.id);
+          try {
+            const profile = decodeGarmentProfile(await readGarmentProfile(photo(item) || '', item.category));
+            if (profile && alive.current) {
+              setItems(current => current.map(candidate => candidate.id === item.id && !candidate.profile ? { ...candidate, profile } : candidate));
+            }
+          } catch { /* the same: again on the next launch */ }
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     })();
     return () => { cancelled = true; };
@@ -576,7 +594,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen items={items} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+      return <RecommendationsScreen items={items} login={session.login} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
         dismissed={dismissedLooks.map(entry => entry.core)}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
         onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}

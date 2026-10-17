@@ -22,6 +22,17 @@ export type GarmentTraits = {
   bulk?: 'bulky' | 'thin' | null;
 };
 
+/**
+ * A stylist's reading of the garment's photo (server stylist.profile): what it
+ * is, its colours, fabric and fit, how formal and how warm it is, the styles it
+ * belongs to. The outfit ideas read the wardrobe through it; a missing
+ * `profile` means the item has not been read yet.
+ */
+export type GarmentProfile = {
+  kind?: string; colors?: string[]; hex?: string | null; pattern?: string; material?: string; fit?: string;
+  formality?: number | null; warmth?: number | null; styles?: string[]; occasions?: string[]; seasons?: string[]; notes?: string;
+};
+
 export type WardrobeItem = ClothingItem & {
   imageUri?: string;
   sourceImageUri?: string;
@@ -29,6 +40,7 @@ export type WardrobeItem = ClothingItem & {
   store?: string;
   material?: string;
   traits?: GarmentTraits;
+  profile?: GarmentProfile;
 };
 
 export const wardrobeItems: WardrobeItem[] = [];

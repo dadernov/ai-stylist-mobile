@@ -15,6 +15,9 @@ export type GeneratedLook = {
   matchPercent?: number;
   fitReasons?: string[];
   tuckMode?: 'auto' | 'tucked' | 'untucked';
+  /** Put together by the stylist model (server /looks) rather than the rules; `why` is its idea of the look. */
+  source?: 'stylist' | 'rules';
+  why?: string;
   tryOnImageUri?: string;
   tryOnWarning?: string;
   tryOnUpdatedAt?: number;

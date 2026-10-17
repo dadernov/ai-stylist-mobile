@@ -35,6 +35,7 @@ import tryon_debug
 import access
 import accounts
 import fal_tryon
+import stylist
 import fashn_credits
 import photo_check
 import closet
@@ -1346,6 +1347,74 @@ def garment_traits(file: UploadFile = File(...), category: str = Form(""), devic
     if not content or len(content) > 15 * 1024 * 1024:
         raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
     return {"traits": read_garment(content, category)}
+
+
+@app.post("/garment-profile")
+def garment_profile(file: UploadFile = File(...), category: str = Form(""), device: str = Depends(access.require_account)):
+    """A stylist's reading of a garment's photo (kind, colours, material, fit, formality, warmth, styles), once per item.
+
+    The outfit ideas (/looks) read the wardrobe as these profiles.
+    """
+    access.throttle(device, 'garment-profile', _env_int('AI_PROFILE_PER_MINUTE', 30))
+    if not fal_tryon.enabled():
+        raise HTTPException(503, "Описание вещи сейчас недоступно.")
+    content = file.file.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    try:
+        return {"profile": stylist.profile(content, category[:40])}
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(422, "Не удалось открыть фото.")
+    except Exception as error:
+        print(f"Garment profile failed: {type(error).__name__}: {str(error)[:160]}", flush=True)
+        raise HTTPException(502, "Не удалось описать вещь.")
+
+
+class LookItem(BaseModel):
+    id: str = Field(max_length=64)
+    section: str = Field('', max_length=40)
+    category: str = Field('', max_length=40)
+    name: str = Field('', max_length=120)
+    color: str = Field('', max_length=40)
+    profile: dict | None = None
+    traits: dict | None = None
+
+
+class LooksRequest(BaseModel):
+    items: list[LookItem] = Field(max_length=400)
+    style: str = Field('', max_length=40)
+    event: str = Field('', max_length=40)
+    gender: str = Field('', max_length=20)
+    temperature: float | None = None
+    precipitation: str | None = Field(None, max_length=10)
+    anchorId: str | None = Field(None, max_length=64)
+    avoid: list[str] = Field(default_factory=list, max_length=40)
+    language: str = Field('ru', max_length=8)
+    count: int = Field(4, ge=1, le=6)
+
+
+@app.post("/looks")
+def looks(body: LooksRequest, device: str = Depends(access.require_account)):
+    """Outfit ideas for this wardrobe and situation, put together by the stylist model and checked by rules.
+
+    The app falls back to its own rule-based ideas when this fails, and fills
+    the rest of the list with them when fewer looks come back.
+    """
+    access.throttle(device, 'looks', _env_int('AI_LOOKS_PER_MINUTE', 12))
+    if not fal_tryon.enabled():
+        raise HTTPException(503, "Подбор образов сейчас недоступен.")
+    items = [item.model_dump() for item in body.items]
+    context = body.model_dump(exclude={'items', 'count'})
+    if context['temperature'] is not None:
+        context['temperature'] = round(context['temperature'])
+    started = time.time()
+    try:
+        result = stylist.compose(items, context, body.count)
+    except Exception as error:
+        print(f"Looks failed: {type(error).__name__}: {str(error)[:160]}", flush=True)
+        raise HTTPException(502, "Не удалось подобрать образы.")
+    print(f"Looks: {len(result)} of {body.count} in {time.time() - started:.1f} s, {len(items)} items", flush=True)
+    return {"looks": result}
 
 
 @app.post("/analyze")

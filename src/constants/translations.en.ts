@@ -79,6 +79,7 @@ export const en: Record<string, string> = {
   "Других вещей в этой категории нет.": "No other items in this category.",
   "Свернуть": "Collapse",
   "Почему сочетается": "Why it works",
+  "Стилист подбирает образы…": "The stylist is putting looks together…",
   "Примерить сочетание": "Try on this combination",
   "Не сейчас": "Not now",
   "Палитра: {colors}.": "Palette: {colors}.",

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowRight, ArrowRightLeft, Check, ChevronDown, ChevronUp, Heart, Lightbulb, MapPin, RefreshCw, SlidersHorizontal, Thermometer } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
@@ -11,7 +11,7 @@ import { LookPreview } from '../components/LookPreview';
 import { Chip } from '../components/Chip';
 import { SERIF, ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
-import { useT } from '../constants/i18n';
+import { useLanguage, useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { Gender } from '../types/profile';
@@ -19,6 +19,7 @@ import { buildLooks, evaluateLook, EVENTS, getOutfitAdvice, getOutfitSwaps, look
 import { MatchSummary } from '../components/MatchSummary';
 import { useWeather } from '../components/useWeather';
 import { describeWeatherCode } from '../services/weather';
+import { useStylistLooks } from '../services/stylistLooks';
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
@@ -27,11 +28,14 @@ type Props = {
   anchorRequest?: { id: string; at: number };
   // Looks put aside with "Not now" in the last weeks sink in the ideas.
   dismissed?: string[]; onDismiss?: (core: string) => void;
+  // The account the stylist model is asked for; without it only the rule-based ideas are shown.
+  login?: string;
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login }: Props) {
   const t = useT();
+  const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
   const { colors: c } = useTheme();
   const [event, setEvent] = useState('Прогулка');
@@ -57,10 +61,30 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     : weatherLoading ? t('Определяем погоду…') : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.')
     : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
-  const looks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
+  const ruleLooks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
     anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart
   }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart]);
-  const visible = looks.filter(look => !hidden.includes(look.id));
+  // The stylist model's looks come first; the rule-based ones fill the list after them, and stand
+  // in alone while it is off, or when it failed.
+  const stylist = useStylistLooks(items, { style, event, gender, temperature, precipitation, anchorId: anchor?.id, avoid: dismissedAtStart.slice(0, 20),
+    language: lang, count: 4 }, login);
+  const looks = useMemo(() => {
+    const known = new Map(items.map(item => [item.id, item]));
+    const dismissedCores = new Set(dismissedAtStart);
+    const fromStylist: GeneratedLook[] = [];
+    for (const look of stylist.looks) {
+      const selection = look.itemIds.map(id => known.get(id)).filter(Boolean) as WardrobeItem[];
+      const core = lookCore(selection);
+      if (!core || dismissedCores.has(core) || fromStylist.some(other => other.id === `ai:${core}`)) continue;
+      fromStylist.push({ id: `ai:${core}`, title: look.title, why: look.why, stylingTips: look.tips, source: 'stylist', itemIds: selection.map(item => item.id),
+        weather: temperature === null ? '' : `${temperature}°C`, temperature, style, event, makeup: ruleLooks[0]?.makeup || '', hair: ruleLooks[0]?.hair || '' });
+    }
+    const taken = new Set(fromStylist.map(look => look.id.slice(3)));
+    const rest = ruleLooks.filter(look => !taken.has(lookCore(look.itemIds.map(id => known.get(id)).filter(Boolean) as WardrobeItem[])));
+    return [...fromStylist, ...rest].slice(0, Math.max(ruleLooks.length, fromStylist.length));
+  }, [stylist.looks, ruleLooks, items, dismissedAtStart]);
+  const thinking = stylist.status === 'loading';
+  const visible = thinking ? [] : looks.filter(look => !hidden.includes(look.id));
   return <FormScrollView contentContainerStyle={styles.content}>
     <ScreenHeader eyebrow={t('Из твоего гардероба')} title={t('Что надеть')} />
     <View style={styles.controls}>
@@ -116,7 +140,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       </View>
     </View> : null}
     <View style={styles.sectionHeading}><Text style={styles.heading}>{t('Твои сочетания')}</Text><Text style={styles.count}>{String(visible.length).padStart(2, '0')}</Text></View>
-    {!visible.length && <View style={styles.empty}>
+    {thinking ? <View style={styles.thinking}><ActivityIndicator color={c.muted} /><Text style={styles.muted}>{t('Стилист подбирает образы…')}</Text></View> : null}
+    {!visible.length && !thinking && <View style={styles.empty}>
       <Text style={styles.heading}>{t(!items.length ? 'Начнём с гардероба' : hidden.length ? 'Все варианты просмотрены' : 'Пока нет подходящих вещей')}</Text>
       <PrimaryButton title={t(hidden.length ? 'Вернуть варианты' : 'К гардеробу')} icon={hidden.length ? RefreshCw : ArrowRight} onPress={hidden.length ? () => setHidden([]) : onWardrobe} />
     </View>}
@@ -147,11 +172,14 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
   const alternatives = selectedForSwap ? items.filter(item => item.section === selectedForSwap.section && !ids.includes(item.id) && onePiece(item) === onePiece(selectedForSwap)) : [];
   const replace = (from: string, to: string) => { setIds(previous => previous.map(id => id === from ? to : id)); setReplaceId(null); };
   const palette = [...new Set(selection.map(item => item.color))].filter(color => color && color !== 'Не определено');
-  const title = selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => t(item.category)).join(' + ') || t('Образ {number}', { number: index + 1 });
+  // The stylist's own words hold while the look is as it put it together; after a swap the rules explain it.
+  const asComposed = look.source === 'stylist' && ids.join(',') === look.itemIds.join(',');
+  const tips = asComposed ? [...(look.why ? [look.why] : []), ...(look.stylingTips || [])] : advice.tips;
+  const title = asComposed && look.title ? look.title : selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => t(item.category)).join(' + ') || t('Образ {number}', { number: index + 1 });
   return <View style={styles.look}>
     <View style={styles.lookHeading}>
       <View style={{ flex: 1, gap: 5 }}><Text style={styles.number}>{t('ВАРИАНТ {number}', { number: String(index + 1).padStart(2, '0') })}</Text><Text style={styles.lookTitle}>{title}</Text></View>
-      <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: advice.tips, warnings: advice.warnings, tuckMode: advice.tuckMode })} />
+      <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode })} />
     </View>
     <LookPreview items={selection} swappingId={replaceId} canSwap={item => item.id !== anchorId}
       swapLabel={item => t('Заменить {name}', { name: item.name })} onSwap={item => setReplaceId(replaceId === item.id ? null : item.id)} />
@@ -160,12 +188,12 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
     </View>}
     <MatchSummary percent={match.percent} criteria={match.criteria} detailed={expanded} />
     {palette.length ? <Text style={styles.muted}>{palette.map(color => t(color)).join(' · ')}</Text> : null}
-    {advice.tips.slice(0, 1).map(tip => <Text key={tip} style={styles.body}>{tip}</Text>)}
+    {tips.slice(0, 1).map(tip => <Text key={tip} style={styles.body}>{tip}</Text>)}
     {advice.warnings.slice(0, expanded ? undefined : 1).map(warning => <View key={warning} style={styles.warning}><Text style={styles.body}>{warning}</Text></View>)}
     {swaps.map(swap => <AppPressable key={swap.from.id} accessibilityRole="button" onPress={() => replace(swap.from.id, swap.to.id)} style={styles.swap}>
       <ArrowRightLeft size={18} color={c.accentGold} /><View style={{ flex: 1, gap: 4 }}><Text style={styles.label}>{swap.to.name}</Text><Text style={styles.muted}>{swap.reason} · {t('Вместо «{name}»', { name: swap.from.name })}</Text></View><ArrowRight size={16} color={c.muted} />
     </AppPressable>)}
-    {expanded && <View style={{ gap: 10 }}>{advice.tips.slice(1).map(text => <Text key={text} style={styles.body}>{text}</Text>)}
+    {expanded && <View style={{ gap: 10 }}>{tips.slice(1).map(text => <Text key={text} style={styles.body}>{text}</Text>)}
       {beautyAdvice && <Text style={styles.body}>{[look.makeup, look.hair].filter(Boolean).map(text => t(text)).join('\n')}</Text>}
     </View>}
     <AppPressable accessibilityRole="button" onPress={() => setExpanded(!expanded)} style={styles.details}><Text style={styles.label}>{t(expanded ? 'Свернуть' : 'Почему сочетается')}</Text>{expanded ? <ChevronUp size={16} color={c.muted} /> : <ChevronDown size={16} color={c.muted} />}</AppPressable>
@@ -190,6 +218,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   heading: { color: c.text, fontFamily: SERIF, fontSize: 18, letterSpacing: 0.4 },
   count: { color: c.muted, fontFamily: SERIF, fontSize: 16 },
   empty: { gap: 20, paddingVertical: 24 },
+  thinking: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 24 },
   look: { gap: 14, paddingBottom: 24, marginBottom: 12, borderBottomWidth: 1, borderColor: c.border },
   number: { color: c.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0 },
   lookTitle: { color: c.text, fontFamily: SERIF, fontSize: 20, lineHeight: 25, letterSpacing: -0.2 },

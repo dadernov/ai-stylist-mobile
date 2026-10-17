@@ -398,6 +398,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     const existing = draftExistingId ? items.find(item => item.id === draftExistingId) : undefined;
     const traits = analysis?.traits ? decodeTraits(analysis.traits)
       : existing && existing.sourceImageUri === (sourcePhoto || draftPhoto) ? existing.traits : undefined;
+    // The stylist's profile stays while the photo and the category do; otherwise it is read anew.
+    const profile = existing && existing.sourceImageUri === (sourcePhoto || draftPhoto) && existing.category === draftCategory ? existing.profile : undefined;
     const newItem: WardrobeItem = {
       id: draftExistingId || Date.now().toString(),
       name: draftName.trim() || suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }) || t(draftCategory),
@@ -412,7 +414,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       size: draftSize,
       store: draftStore,
       material: draftMaterial,
-      traits
+      traits,
+      profile
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
     closeDraft();
