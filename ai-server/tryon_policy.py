@@ -145,7 +145,7 @@ INSIDE_LABELS = ('A brand, size or care label sewn inside a garment, at the back
 # as the single-garment prompts above.
 LOOK_NAMES = {'top': 'top', 'top2': 'outerwear', 'top3': 'outerwear', 'top4': 'outerwear', 'bottom': 'lower-body garment',
               'outer': 'outerwear', 'outer2': 'outermost layer, worn over the outerwear', 'shoes': 'pair of shoes',
-              'legwear': 'pair of tights'}
+              'legwear': 'pair of tights', 'hat': 'hat', 'scarf': 'scarf', 'gloves': 'pair of gloves', 'bag': 'bag'}
 LOOK_IDENTITY = ('Keep everything else in image 1 exactly as it is: the same canvas, framing, camera angle and zoom, '
                  'pose, face, expression, hair, skin, body shape, hands and background. '
                  'Image 1 is the exact canvas of the result: the head, face and body keep exactly the same position, '
@@ -322,6 +322,29 @@ def fasten_instruction(state, noun, image, under=None, category=''):
             'and its front panels hang apart, showing the clothes under it. ')
 
 
+def accessory_instruction(slots, image, bag_category=''):
+    """How a hat, a scarf, gloves and a bag are worn; nothing for a look without them."""
+    text = ''
+    if 'hat' in slots:
+        text += (f'Put the hat from image {image["hat"]} on the person\'s head, sitting naturally at the size it has on a real head, '
+                 'the hair under it and falling out below it as hair does; the whole face, forehead below the brim, eyes and ears '
+                 'stay visible and unchanged. ')
+    if 'scarf' in slots:
+        text += (f'Wear the scarf from image {image["scarf"]} around the neck over the clothes, its ends hanging in front; '
+                 'it never covers the chin or the mouth. ')
+    if 'gloves' in slots:
+        text += (f'Put the gloves from image {image["gloves"]} on both hands, each finger in its own glove finger; '
+                 'the hands keep exactly their position and pose. ')
+    if 'bag' in slots:
+        how = {'Рюкзак': 'worn on the back, its two straps over the shoulders, only the straps visible from the front',
+               'Клатч': 'held in one hand, the hand staying where it is in image 1'}.get(
+            bag_category, 'carried on one shoulder by its strap, hanging at the hip; a bag with only short handles hangs from one hand '
+                          'or the forearm instead, the arm staying where it is in image 1')
+        text += (f'The person carries the bag from image {image["bag"]}: {how}. '
+                 f'It keeps the exact size, shape, colour and hardware of image {image["bag"]}, in proportion to the body. ')
+    return text
+
+
 def legwear_instruction(image, shoes):
     """Tights go on the bare legs: under the skirt or dress, into the shoes.
 
@@ -442,6 +465,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += TROUSERS
     if 'legwear' in slots:
         text += legwear_instruction(image['legwear'], 'shoes' in slots)
+    text += accessory_instruction(slots, image, categories.get('bag', ''))
     # A sweater or a hoodie over other tops goes on over the head: the layers
     # under it are closed and show only at its neckline, the ones over it are
     # open over it. Looks without one read exactly as before.

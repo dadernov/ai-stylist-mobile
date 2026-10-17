@@ -9,6 +9,7 @@ import { loadValidated, saveJson } from './storage';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
 import { effectiveOptions, GarmentOptions } from '../domain/garmentOptions';
 import { isLegwear } from '../domain/legwear';
+import { AccessorySlot, accessorySlot } from '../domain/accessories';
 
 export type TryOnJob = { id: string; context: string; itemIds: string[]; garments?: { id: string; name: string }[]; name: string; createdAt: number; tuckMode: TuckMode;
   // A draft ('fast') or the final ('quality'). Jobs saved before drafts existed have none and were finals.
@@ -179,6 +180,8 @@ export class TryOnJobStore {
       // Tights go under the skirt or dress, not in its place.
       const bottom = layers('Низ').find(item => !isLegwear(item));
       const legwear = layers('Низ').find(isLegwear);
+      const accessory = (slot: AccessorySlot) => input.items.find(item => item.imageUri && accessorySlot(item) === slot);
+      const bag = accessory('bag');
       // The server takes each garment's choices by its upload slot.
       const chosen = effectiveOptions(input.items, input.options);
       const slotOptions = Object.fromEntries(([['top', top], ['top2', top2], ['top3', top3], ['top4', top4], ['outer', outer], ['outer2', outer2]] as const)
@@ -187,7 +190,8 @@ export class TryOnJobStore {
         qualityOf(job), uriOf(outer), top?.category, outer?.category, job.id, this.session, Boolean(input.fresh),
         { top2Uri: uriOf(top2), top2Category: top2?.category, outer2Uri: uriOf(outer2), outer2Category: outer2?.category,
           top3Uri: uriOf(top3), top3Category: top3?.category, top4Uri: uriOf(top4), top4Category: top4?.category,
-          legwearUri: uriOf(legwear) }, slotOptions),
+          legwearUri: uriOf(legwear), hatUri: uriOf(accessory('hat')), scarfUri: uriOf(accessory('scarf')),
+          glovesUri: uriOf(accessory('gloves')), bagUri: uriOf(bag), bagCategory: bag?.category }, slotOptions),
         SUBMIT_TIMEOUT_MS, SUBMIT_TIMEOUT_ERROR);
       if (await this.complete(job, response)) return;
     } catch (error: any) {

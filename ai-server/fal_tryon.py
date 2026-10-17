@@ -32,7 +32,7 @@ QUEUE_URL = 'https://queue.fal.run'
 # Further tops or outer layers (`top2`..`top4`, `outer2`) are worn over the first one.
 # Upper layers follow the bottom from the inside out: an editor ignored a
 # "second top" placed right after the first, but layers outerwear reliably.
-LOOK_ORDER = ('top', 'bottom', 'top2', 'top3', 'top4', 'outer', 'outer2', 'legwear', 'shoes')
+LOOK_ORDER = ('top', 'bottom', 'top2', 'top3', 'top4', 'outer', 'outer2', 'legwear', 'shoes', 'hat', 'scarf', 'gloves', 'bag')
 BALANCE_ERROR = 'Примерочная временно недоступна: закончился баланс генерации. Попробуй позже.'
 BLOCKED_ERROR = 'Генератор отклонил фото. Попробуй другое фото или другие вещи.'
 TIMEOUT_ERROR = 'Генерация заняла слишком много времени. Попробуй ещё раз.'

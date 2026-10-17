@@ -217,7 +217,8 @@ async function run() {
     assert.equal(sent[7], 'data:image/png;base64,coat');
     assert.deepEqual(sent.at(-2), { top2Uri: 'data:image/png;base64,longsleeve', top2Category: 'Лонгслив',
       outer2Uri: 'data:image/png;base64,vest', outer2Category: 'Жилет',
-      top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined, legwearUri: undefined });
+      top3Uri: undefined, top3Category: undefined, top4Uri: undefined, top4Category: undefined, legwearUri: undefined,
+      hatUri: undefined, scarfUri: undefined, glovesUri: undefined, bagUri: undefined, bagCategory: undefined });
     await store.start({ modelUri: 'person', context: 'four tops', tuckMode: 'auto', items: [
       garment('hoodie', 'Верх', 'Худи'), garment('tee', 'Верх', 'Футболка'), garment('shirt', 'Верх', 'Рубашка'),
       garment('sweater', 'Верх', 'Свитер')] });

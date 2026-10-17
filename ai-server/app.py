@@ -332,14 +332,14 @@ def _source_framed(prepared, generated_image: Image.Image, ratio=tryon_frame.PRO
     return tryon_frame.to_source_frame(generated_image, original.size, padded.size, box)
 
 
-def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_frame.PROVIDER_RATIO, fit_allowance=None):
+def _face_only_output_url(generated_image: Image.Image, prepared, ratio=tryon_frame.PROVIDER_RATIO, fit_allowance=None, keep_labels=()):
     """The editor's whole frame with the photo's own face, or None to fall back to the full lock."""
     try:
         framed = _source_framed(prepared, generated_image, ratio)
     except Exception as exc:
         print(f'Try-on face restore failed: {type(exc).__name__}', flush=True)
         return None
-    return _face_restored_output_url(framed, prepared, fit_allowance)
+    return _face_restored_output_url(framed, prepared, fit_allowance, keep_labels)
 
 
 def _fit_body(framed, labels, generated_labels, allowed, face=None):
@@ -361,7 +361,7 @@ def _fit_body(framed, labels, generated_labels, allowed, face=None):
         return framed, generated_labels, None
 
 
-def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
+def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None, keep_labels=()):
     """After a rejected lock: the generator's frame with the photo's own face, or None.
 
     The lock needs the whole scene in place; a general editor often returns the
@@ -385,14 +385,14 @@ def _face_restored_output_url(frame: Image.Image, prepared, fit_allowance=None):
             except Exception as exc:
                 print(f'Try-on hands restore failed: {type(exc).__name__}', flush=True)
         try:
-            restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels)
+            restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels, keep=keep_labels)
         except face_guard.AlignmentError as exc:
             if 'mismatch' not in str(exc):
                 raise
             # A face a little off the photo's still beats the full lock, which
             # relights the whole frame; only a clearly turned head goes there.
             print(f'Try-on face restore relaxed: {exc}', flush=True)
-            restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels, relaxed=True)
+            restored = face_guard.transplant_face(original, framed, faces[0], labels, generated_labels, relaxed=True, keep=keep_labels)
     except face_guard.AlignmentError as exc:
         print(f'Try-on face restore rejected: {exc}', flush=True)
         return None
@@ -1501,6 +1501,12 @@ async def tryon_generate_look(
     top4_file: UploadFile | None = File(None),
     # Tights, worn under the skirt or dress and inside the shoes.
     legwear_file: UploadFile | None = File(None),
+    # Accessories, one of each: a hat, a scarf, gloves, a bag (or backpack).
+    hat_file: UploadFile | None = File(None),
+    scarf_file: UploadFile | None = File(None),
+    gloves_file: UploadFile | None = File(None),
+    bag_file: UploadFile | None = File(None),
+    bag_category: str = Form(""),
     tuck_mode: str = Form("auto"),
     compare_mode: str = Form("false"),
     quality_mode: str = Form("quality"),
@@ -1552,6 +1558,12 @@ async def tryon_generate_look(
         top3_content, top3_mime = await read_upload(top3_file if isinstance(top3_file, StarletteUploadFile) else None, "top3_file")
         top4_content, top4_mime = await read_upload(top4_file if isinstance(top4_file, StarletteUploadFile) else None, "top4_file")
         legwear_content, legwear_mime = await read_upload(legwear_file if isinstance(legwear_file, StarletteUploadFile) else None, "legwear_file")
+        accessories = {}
+        for slot, upload in (('hat', hat_file), ('scarf', scarf_file), ('gloves', gloves_file), ('bag', bag_file)):
+            content, mime = await read_upload(upload if isinstance(upload, StarletteUploadFile) else None, f"{slot}_file")
+            if content:
+                accessories[slot] = (content, mime)
+        bag_category = bag_category if isinstance(bag_category, str) else ''
         top2_category = top2_category if isinstance(top2_category, str) else ''
         outer2_category = outer2_category if isinstance(outer2_category, str) else ''
         top3_category = top3_category if isinstance(top3_category, str) else ''
@@ -1597,7 +1609,9 @@ async def tryon_generate_look(
         upper_count = sum(1 for content in (top_content, top2_content, top3_content, top4_content, outer_content, outer2_content) if content)
         layered = bool(top2_content or outer2_content or top3_content or top4_content)
 
-        if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content, top3_content, top4_content, legwear_content)):
+        if accessories and not use_fal:
+            return {"error": "Аксессуары доступны только в новой примерке."}
+        if not any((top_content, bottom_content, shoes_content, outer_content, top2_content, outer2_content, top3_content, top4_content, legwear_content)) and not accessories:
             return {"error": "Выбери хотя бы одну вещь для примерки."}
         if upper_count > tryon_policy.MAX_UPPER_LAYERS:
             return {"error": f"Можно надеть не больше {tryon_policy.MAX_UPPER_LAYERS} слоёв верха."}
@@ -1607,7 +1621,7 @@ async def tryon_generate_look(
             return {"error": "Многослойные образы доступны только в новой примерке."}
         fal_model = fal_tryon.model_for(profile.name, sum(1 for content in (top_content, bottom_content, shoes_content, outer_content,
                                                                             top2_content, outer2_content, top3_content, top4_content, legwear_content)
-                                                         if content)) if use_fal else None
+                                                         if content) + len(accessories)) if use_fal else None
         if fal_model:
             look_model_name = f'fal:{fal_model.key}'
 
@@ -1632,6 +1646,8 @@ async def tryon_generate_look(
                if top3_content or top4_content else '')
             + (f"|{json.dumps(slot_options, sort_keys=True)}" if slot_options else '')
             + (f"|legwear|{hashlib.sha256(legwear_content).hexdigest()}" if legwear_content else '')
+            + ''.join(f"|{slot}|{hashlib.sha256(content).hexdigest()}" for slot, (content, _) in sorted(accessories.items()))
+            + (f"|bag:{bag_category.strip()}" if 'bag' in accessories else '')
         )
         request_id = request_id if isinstance(request_id, str) else ''
         if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
@@ -1645,9 +1661,12 @@ async def tryon_generate_look(
             ('top2', top2_content, top2_mime), ('outer2', outer2_content, outer2_mime),
             ('top3', top3_content, top3_mime), ('top4', top4_content, top4_mime), ('legwear', legwear_content, legwear_mime)
         ] if content}
+        garments.update(accessories)
         slot_categories = {'top': top_category.strip(), 'outer': outer_category.strip(),
                            'top2': top2_category.strip(), 'outer2': outer2_category.strip(),
-                           'top3': top3_category.strip(), 'top4': top4_category.strip()}
+                           'top3': top3_category.strip(), 'top4': top4_category.strip(), 'bag': bag_category.strip()}
+        # A hat the editor put on is the look's own: the photo's hair must not come back over it.
+        keep_labels = (1,) if 'hat' in garments else ()
         stage_total = 1 if fal_model or _look_strategy() == 'collage' else len(garments)
         # Layers shared with an earlier look of this person are taken from the
         # layer cache instead of being paid for again. `fresh` is set by the app
@@ -1808,7 +1827,7 @@ async def tryon_generate_look(
                     # The editor's scene is kept whole; only the face is the photo's.
                     frame = last_frame or await _load_image_from_url_or_data_url(output_client, current_model)
                     restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT,
-                                                       fit_allowance) if frame is not None else None
+                                                       fit_allowance, keep_labels) if frame is not None else None
                     if restored:
                         locked_output_url, face_restored, locked = restored, True, False
                         print('Try-on composite: face-restored', flush=True)
@@ -1824,7 +1843,7 @@ async def tryon_generate_look(
                         locked = False
                         # The scene moved, but the face alone may still fit: the
                         # user then sees their own face on the generator's frame.
-                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity, fit_allowance)
+                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity, fit_allowance, keep_labels)
                         if restored:
                             locked_output_url, face_restored = restored, True
                             print('Try-on composite: face-restored', flush=True)

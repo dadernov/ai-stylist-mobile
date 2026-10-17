@@ -482,7 +482,7 @@ def _match_neck(frame, face, generated_labels, photo_labels, target: Face, photo
 
 
 def transplant_face(original: Image.Image, generated: Image.Image, source_face: Face, source_labels=None, generated_labels=None,
-                    relaxed=False):
+                    relaxed=False, keep=()):
     """Put the photo's own face into a frame whose head moved or resized a little.
 
     A general image editor redraws the whole picture: the head comes back ~10%
@@ -519,10 +519,10 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
     low, high, turn, spread = (.75, 1.33, 15, .09) if relaxed else (.8, 1.25, 10, .05)
     if not low <= scale <= high or angle > turn or residual > max(3., width * spread):
         raise AlignmentError(f'face-transplant-mismatch scale={scale:.2f} angle={angle:.1f} residual={residual / max(width, 1):.3f}')
-    return _compose(original, generated, source_face, faces[0], matrix, source_labels, generated_labels)
+    return _compose(original, generated, source_face, faces[0], matrix, source_labels, generated_labels, keep)
 
 
-def _compose(original, generated, source_face: Face, target: Face, matrix, source_labels=None, generated_labels=None):
+def _compose(original, generated, source_face: Face, target: Face, matrix, source_labels=None, generated_labels=None, keep=()):
     """The photo's head laid into the frame along a seam where the two agree.
 
     Every rule for where the photo ends and the frame begins (the photo's wall
@@ -575,6 +575,17 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     reach &= rows <= chin + HAIR_DEPTH * gh
     # The new clothes are the frame's, over the photo's hair too: where the editor drew a collar over it, it lies under.
     must_frame = (np.isin(frame_labels, CLOTHES_LABELS) | ~reach) & ~must_photo
+    if keep:
+        # A hat in the look: only the face itself is the photo's. The hat and the hair under it are the
+        # frame's; laid back from the photo, its hair cut the hat's crown off, and the editor's hat was
+        # painted out as a stray head.
+        must_photo = cv2.erode(oval.astype(np.uint8), kernel(width * .03)).astype(bool) | ((photo_labels == 3) & oval)
+        # Above the brows the hat's brim comes down over the forehead: the photo's forehead stops under it.
+        brows = float(np.asarray(target.landmarks)[:2, 1].mean()) - .12 * gh
+        hat = cv2.dilate(np.isin(frame_labels, keep).astype(np.uint8), kernel(width * .03)).astype(bool) | (rows < brows)
+        must_photo &= ~hat
+        must_frame = (~cv2.dilate(oval.astype(np.uint8), kernel(width * .12)).astype(bool) | np.isin(frame_labels, CLOTHES_LABELS)
+                      | np.isin(frame_labels, keep)) & ~must_photo
     if not must_photo.any():
         raise AlignmentError('face-transplant-mismatch')
     # The generator relights the scene slightly: the head and the wall around it take the frame's mean light first.
@@ -601,7 +612,7 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         busy = np.sqrt(np.maximum(cv2.GaussianBlur(gray ** 2, (0, 0), 6.) - cv2.GaussianBlur(gray, (0, 0), 6.) ** 2, 0))
         plain = cv2.erode((busy < PLAIN_WALL).astype(np.uint8), kernel(width * .05)).astype(bool) | (frame_labels != 0)
         ghost &= cv2.erode(plain.astype(np.uint8), kernel(width * .02)).astype(bool)
-        if ghost.sum() > 30:
+        if ghost.sum() > 30 and not keep:
             frame = _wall_in(frame, ghost, frame_labels, max(3, round(width * .05)))
     over = _lean(rows, chin, gh)
     lean = SEAM_LEAN * (2 * over - 1) * np.ones((1, cols_count), np.float32)

@@ -306,7 +306,9 @@ export async function analyzeTryOnGenerateLook(
   layers: { top2Uri?: string; top2Category?: string; outer2Uri?: string; outer2Category?: string;
     top3Uri?: string; top3Category?: string; top4Uri?: string; top4Category?: string;
     // Tights, worn under the skirt or dress.
-    legwearUri?: string } = {},
+    legwearUri?: string;
+    // One hat, scarf, pair of gloves and bag; a bag's category tells a backpack or a clutch from a shoulder bag.
+    hatUri?: string; scarfUri?: string; glovesUri?: string; bagUri?: string; bagCategory?: string } = {},
   // How each garment is worn, by upload slot: { top: { tuck: 'tucked' }, outer: { fasten: 'closed' } }.
   garmentOptions: Record<string, { tuck?: string; fasten?: string }> = {}
 ): Promise<TryOnGenerateResult> {
@@ -315,12 +317,14 @@ export async function analyzeTryOnGenerateLook(
   // reads each part by its name, so their order in the form does not matter.
   const garments: [string, string | undefined][] = [['top_file', topUri], ['top2_file', layers.top2Uri], ['top3_file', layers.top3Uri],
     ['top4_file', layers.top4Uri], ['bottom_file', bottomUri], ['legwear_file', layers.legwearUri], ['shoes_file', shoesUri],
-    ['outer_file', outerUri], ['outer2_file', layers.outer2Uri]];
+    ['outer_file', outerUri], ['outer2_file', layers.outer2Uri], ['hat_file', layers.hatUri], ['scarf_file', layers.scarfUri],
+    ['gloves_file', layers.glovesUri], ['bag_file', layers.bagUri]];
   await Promise.all([appendPhoto(form, 'person_file', personUri, true),
     ...garments.filter(([, uri]) => uri).map(([field, uri]) => appendPhoto(form, field, uri!, GARMENT_UPLOAD_MAX_SIDE))]);
   if (topCategory) form.append('top_category', topCategory);
   if (outerCategory) form.append('outer_category', outerCategory);
   if (layers.top2Category) form.append('top2_category', layers.top2Category);
+  if (layers.bagUri && layers.bagCategory) form.append('bag_category', layers.bagCategory);
   if (layers.outer2Category) form.append('outer2_category', layers.outer2Category);
   if (layers.top3Category) form.append('top3_category', layers.top3Category);
   if (layers.top4Category) form.append('top4_category', layers.top4Category);

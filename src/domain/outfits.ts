@@ -82,8 +82,15 @@ const garments: Record<string, Garment> = {
   Балетки: { section: 'Обувь', formality: 3, warmth: 1, volume: 1 },
   Сумка: { section: 'Сумки', formality: 3, warmth: 0, volume: 2 },
   Рюкзак: { section: 'Сумки', formality: 2, warmth: 0, volume: 2, sporty: true },
-  Клатч: { section: 'Сумки', formality: 5, warmth: 0, volume: 1 }
+  Клатч: { section: 'Сумки', formality: 5, warmth: 0, volume: 1 },
+  // Accessories are tried on, not picked by the ideas yet: they never count as a garment of a look.
+  Шапка: { section: 'Аксессуары', formality: 2, warmth: 4, volume: 1 },
+  Кепка: { section: 'Аксессуары', formality: 1, warmth: 0, volume: 1, sporty: true },
+  Шляпа: { section: 'Аксессуары', formality: 4, warmth: 1, volume: 1 },
+  Шарф: { section: 'Аксессуары', formality: 3, warmth: 4, volume: 1 },
+  Перчатки: { section: 'Аксессуары', formality: 3, warmth: 4, volume: 1 }
 };
+const EXTRAS = new Set(['Сумки', 'Аксессуары']);
 
 const fallbackGarment: Garment = { section: 'Верх', formality: 3, warmth: 2, volume: 2 };
 const describe = (item: WardrobeItem): Garment => garments[item.category] || fallbackGarment;
@@ -307,7 +314,7 @@ function colorAdvice(items: WardrobeItem[], tips: Tip[], warnings: string[], rea
 }
 
 function formalityAdvice(items: WardrobeItem[], context: OutfitContext, tips: Tip[], warnings: string[], reasons: string[], t: Translator) {
-  const wearables = items.filter(item => describe(item).section !== 'Сумки');
+  const wearables = items.filter(item => !EXTRAS.has(describe(item).section));
   if (wearables.length < 2) return;
   const ranked = [...wearables].sort((a, b) => describe(a).formality - describe(b).formality);
   const lowest = ranked[0], highest = ranked[ranked.length - 1];
@@ -345,7 +352,7 @@ function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, t
   // только о том, что действительно мёрзнет: обувь, открытые ноги, верх без куртки.
   const tooLight = items.filter(item => {
     const section = describe(item).section;
-    if (section === 'Сумки' || warmthOf(item) > Math.max(0, comfort - 3)) return false;
+    if (EXTRAS.has(section) || warmthOf(item) > Math.max(0, comfort - 3)) return false;
     if (section === 'Верх' && warmOuter) return false;
     if (section === 'Низ' && temperature > -12 && !['Шорты', 'Юбка'].includes(item.category)) return false;
     // Tights under the skirt keep the legs warm down to a light frost.
@@ -419,7 +426,7 @@ export function getOutfitAdvice(items: WardrobeItem[], context: OutfitContext, t
   }
 
   if (context.event === 'Спортзал') {
-    const casual = items.filter(item => !describe(item).sporty && describe(item).section !== 'Сумки');
+    const casual = items.filter(item => !describe(item).sporty && !EXTRAS.has(describe(item).section));
     if (casual.length) warnings.push(t('Для тренировки {items} не подойдёт: нужен спортивный комплект.', { items: list(casual, t) }));
   }
   if (context.event === 'Прогулка' && shoes) push(tips, 7, t('Для прогулки проверь удобство {item} и запас места в носке.', { item: named(shoes, t) }));
@@ -447,7 +454,7 @@ const statusOf = (value: number): CriterionStatus => value >= 0.8 ? 'good' : val
  * «почему подходит» и порядок образов не могут разойтись.
  */
 export function evaluateLook(items: WardrobeItem[], context: OutfitContext, t: Translator = originalText) {
-  const wearables = items.filter(item => describe(item).section !== 'Сумки');
+  const wearables = items.filter(item => !EXTRAS.has(describe(item).section));
   const top = items.find(item => item.section === 'Верх');
   const bottom = items.find(isBottom);
   const shoes = items.find(item => item.section === 'Обувь');
@@ -668,7 +675,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       } else if (temperature !== null && temperature < 8) score -= 10;
       else if (context.precipitation === 'rain' && event !== 'Спортзал') score -= 8;
       if (event === 'Спортзал' && layer) score -= 25;
-      const formalities = selection.filter(item => describe(item).section !== 'Сумки').map(item => describe(item).formality);
+      const formalities = selection.filter(item => !EXTRAS.has(describe(item).section)).map(item => describe(item).formality);
       // Разнобой по строгости портит образ сильнее, чем неидеальный отдельный
       // предмет, поэтому штраф берётся от разброса, а не от суммы.
       score -= Math.max(0, Math.max(...formalities) - Math.min(...formalities) - 1) * 6;

@@ -113,7 +113,7 @@ class Restore(unittest.TestCase):
         prepared = (Image.new('RGB', (W, H)), None, [face_guard.Face((120, 40, 40, 40), np.zeros((5, 2)))], labels)
         seen = []
 
-        def transplant(original, framed, face, source_labels, generated_labels, relaxed=False):
+        def transplant(original, framed, face, source_labels, generated_labels, relaxed=False, keep=()):
             seen.append((generated_labels[150] > 0).sum())
             return framed
         with patch.object(app.footwear_guard, 'parse', return_value=person(66)), \

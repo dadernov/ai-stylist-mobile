@@ -58,6 +58,11 @@ CATEGORIES = [
     ("Сандалии", "Обувь", "open-toe sandals"),
     ("Сапоги", "Обувь", "tall knee-high boots"),
     ("Балетки", "Обувь", "ballet flat shoes"),
+    ("Шапка", "Аксессуары", "a knitted beanie or winter hat"),
+    ("Кепка", "Аксессуары", "a baseball cap with a visor"),
+    ("Шляпа", "Аксессуары", "a brimmed hat such as a fedora, panama or sun hat"),
+    ("Шарф", "Аксессуары", "a scarf or shawl"),
+    ("Перчатки", "Аксессуары", "a pair of gloves or mittens"),
     ("Сумка", "Сумки", "a handbag or shoulder bag"),
     ("Рюкзак", "Сумки", "a backpack"),
     ("Клатч", "Сумки", "a small clutch purse")
@@ -74,7 +79,8 @@ SHORT_NAMES = ["a t-shirt", "a polo shirt", "a long-sleeve t-shirt", "a button-u
                "a turtleneck", "a sweater", "a hoodie", "a sweatshirt", "a cardigan", "a vest", "a blazer", "a bomber jacket",
                "a jacket", "an overcoat", "a trench coat", "a raincoat", "a puffer jacket", "a parka", "a dress", "a sundress",
                "a jumpsuit", "a skirt", "jeans", "trousers", "shorts", "leggings", "tights", "sweatpants", "sneakers", "canvas shoes",
-               "loafers", "dress shoes", "ankle boots", "sandals", "knee-high boots", "ballet flats", "a handbag", "a backpack", "a clutch bag"]
+               "loafers", "dress shoes", "ankle boots", "sandals", "knee-high boots", "ballet flats",
+               "a beanie", "a baseball cap", "a hat", "a scarf", "gloves", "a handbag", "a backpack", "a clutch bag"]
 
 SCENES = ['a person wearing clothes', 'a clothing product alone without a person']
 
@@ -269,6 +275,8 @@ def _season_for(category, section):
         return "Зима"
     if section == "Верхняя одежда" or category in {"Ботинки", "Сапоги", "Свитер", "Водолазка", "Колготки"}:
         return "Демисезон"
+    if category in {"Шапка", "Шарф", "Перчатки"}:
+        return "Зима"
     if category in {"Шорты", "Сарафан", "Сандалии", "Топ", "Майка"}:
         return "Лето"
     return "Круглый год"

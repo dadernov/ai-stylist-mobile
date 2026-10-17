@@ -52,7 +52,7 @@ type WardrobeScreenProps = {
   initialDetailId?: string;
 };
 
-const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Верхняя одежда'];
+const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Аксессуары', 'Верхняя одежда'];
 const categoryFilters = ['Все', ...sectionOptions];
 
 // Эмодзи-иконки фильтров (не переводятся).
@@ -62,6 +62,7 @@ const filterIcons: Record<string, string> = {
   Низ: '👖',
   Обувь: '👟',
   Сумки: '👜',
+  Аксессуары: '🧣',
   'Верхняя одежда': '🧥'
 };
 
@@ -111,7 +112,12 @@ const categoryOptions = [
   'Балетки',
   'Сумка',
   'Рюкзак',
-  'Клатч'
+  'Клатч',
+  'Шапка',
+  'Кепка',
+  'Шляпа',
+  'Шарф',
+  'Перчатки'
 ];
 const seasonOptions = ['Лето', 'Зима', 'Демисезон', 'Круглый год'];
 const patternOptions = ['Клетка', 'Полоска', 'Горох', 'Цветочный', 'Однотонный', 'Принт'];
@@ -164,7 +170,12 @@ const sectionByCategory: Record<string, string> = {
   Балетки: 'Обувь',
   Сумка: 'Сумки',
   Рюкзак: 'Сумки',
-  Клатч: 'Сумки'
+  Клатч: 'Сумки',
+  Шапка: 'Аксессуары',
+  Кепка: 'Аксессуары',
+  Шляпа: 'Аксессуары',
+  Шарф: 'Аксессуары',
+  Перчатки: 'Аксессуары'
 };
 
 const getSectionByCategory = (category: string) => sectionByCategory[category] || 'Верх';

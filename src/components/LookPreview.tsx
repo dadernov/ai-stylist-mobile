@@ -15,7 +15,7 @@ type LookPreviewProps = {
   swappingId?: string | null;
 };
 
-const sectionOrder = ['Верхняя одежда', 'Верх', 'Низ', 'Обувь', 'Сумки'];
+const sectionOrder = ['Аксессуары', 'Верхняя одежда', 'Верх', 'Низ', 'Обувь', 'Сумки'];
 
 const sortBySection = (items: WardrobeItem[]) => {
   const order = new Map(sectionOrder.map((value, index) => [value, index]));

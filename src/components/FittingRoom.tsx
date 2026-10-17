@@ -17,6 +17,7 @@ import { Chip } from './Chip';
 import { RecentTryOns } from './RecentTryOns';
 import { PhotoAdvice } from './PhotoAdvice';
 import { isLegwear } from '../domain/legwear';
+import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 
 type Props = {
   items: WardrobeItem[];
@@ -32,7 +33,7 @@ type Props = {
   onSelectionCta?: (cta: { count: number; open: () => void } | null) => void;
 };
 
-const supportedSections = ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'];
+const supportedSections = TRYON_SECTIONS;
 const onePiece = new Set(['Платье', 'Сарафан', 'Комбинезон']);
 
 // How many garments of a section one look can layer, and how many the upper
@@ -74,7 +75,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       // One more of a full section, or of a full upper body, replaces the oldest of it.
       const sectionOf = (id: string) => items.find(candidate => candidate.id === id)?.section || '';
       // Tights pair with a skirt or a dress instead of replacing them.
-      const groupOf = (candidate?: WardrobeItem) => candidate ? isLegwear(candidate) ? 'legwear' : candidate.section : '';
+      // One of each accessory: a second hat replaces the first, a scarf goes with it.
+      const groupOf = (candidate?: WardrobeItem) => candidate ? isLegwear(candidate) ? 'legwear' : accessorySlot(candidate) || candidate.section : '';
       const layers = LAYERS[item.section] || 1;
       const sameSection = previous.filter(id => groupOf(items.find(candidate => candidate.id === id)) === groupOf(item));
       const dropped = new Set(sameSection.slice(0, Math.max(0, sameSection.length - layers + 1)));

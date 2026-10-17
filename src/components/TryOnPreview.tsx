@@ -16,7 +16,7 @@ type TryOnPreviewProps = {
 type PixelBox = { x: number; y: number; width: number; height: number };
 type LayerBox = PixelBox & { rotateDeg: number; zIndex: number };
 
-const sectionOrder = ['Верхняя одежда', 'Верх', 'Низ', 'Обувь', 'Сумки'];
+const sectionOrder = ['Аксессуары', 'Верхняя одежда', 'Верх', 'Низ', 'Обувь', 'Сумки'];
 
 const sortBySection = (items: WardrobeItem[]) => {
   const order = new Map(sectionOrder.map((value, index) => [value, index]));

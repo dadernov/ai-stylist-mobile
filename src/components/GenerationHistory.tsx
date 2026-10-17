@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { TRYON_SECTIONS } from '../domain/accessories';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, StyleSheet, Text, View } from 'react-native';
 import { ArrowUpRight, Check, ChevronRight, Clock3, History, RefreshCw, Save, Shirt, X } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -55,7 +56,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
   const saved = !!selected?.result && savedLooks.some(look => look.id === `job-${selected.id}` || look.tryOnImageUri === selected.result?.imageUri);
   const canRepeat = !!selected?.itemIds.length && selected.itemIds.every(id => {
     const item = byId.get(id);
-    return item?.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(item.section);
+    return item?.imageUri && TRYON_SECTIONS.includes(item.section);
   });
   const close = () => { setExpanded(false); setSelectedId(undefined); };
   return <>

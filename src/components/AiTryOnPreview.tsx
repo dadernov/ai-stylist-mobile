@@ -14,6 +14,7 @@ import { useAiConsent } from './AiConsentContext';
 import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { TryOnOptions } from './TryOnOptions';
+import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 import { FormScrollView } from './ui/FormScrollView';
 import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
@@ -139,7 +140,8 @@ export function AiTryOnPreview({
   const outerGarment = useMemo(() => pickOuterGarment(items), [items]);
   const bottomGarment = useMemo(() => pickBottomGarment(items), [items]);
   const shoesGarment = useMemo(() => pickShoesGarment(items), [items]);
-  const canGenerate = Boolean(modelUri && context && jobsReady && !readOnly && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri));
+  const accessory = items.find(item => item.imageUri && accessorySlot(item));
+  const canGenerate = Boolean(modelUri && context && jobsReady && !readOnly && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri || accessory));
   const isBusy = isLoading || Boolean(pendingJob);
   const progress = pendingJob?.progress;
   const stageLabel = (stage: string) => {
@@ -158,9 +160,9 @@ export function AiTryOnPreview({
       : t('Все вещи надеты. Восстанавливаем лицо и фон…');
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
-    !topGarment && !outerGarment && !bottomGarment && !shoesGarment ? t('Выбери вещь с фото для примерки.') : null,
+    !topGarment && !outerGarment && !bottomGarment && !shoesGarment && !accessory ? t('Выбери вещь с фото для примерки.') : null,
     items.some(item => !item.imageUri) ? t('Вещи без фото не участвуют в примерке.') : null,
-    items.some(item => !['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(item.section)) ? t('Примерка сумок и аксессуаров пока недоступна.') : null
+    items.some(item => !TRYON_SECTIONS.includes(item.section) || (item.section === 'Аксессуары' && !accessorySlot(item))) ? t('Эту вещь пока нельзя примерить.') : null
   ].filter(Boolean) as string[];
 
   useEffect(() => {

@@ -684,6 +684,18 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
                                          outer_file=photo('navy'), outer_category='Плащ')
         self.assertIn('a t-shirt, with short sleeves ending above the elbow, hidden under the raincoat', prompt)
 
+    def test_hat_scarf_gloves_and_bag_are_worn(self):
+        slots = ['top', 'bottom', 'shoes', 'hat', 'scarf', 'gloves', 'bag']
+        prompt = tryon_policy.look_prompt(slots, 'Футболка', '', 'auto', app._CATEGORY_NOUNS, {'bag': 'Рюкзак'}, {})
+        for words in ('Put the hat from image 5 on the person', 'Wear the scarf from image 6 around the neck',
+                      'Put the gloves from image 7 on both hands', 'carries the bag from image 8: worn on the back'):
+            self.assertIn(words, prompt)
+        self.assertNotIn('hat', tryon_policy.accessory_instruction(['top'], {'top': 2}))
+
+    async def test_an_accessory_alone_is_a_look(self):
+        prompt = await self.options_look('request_000000000097', {}, bottom=False, hat_file=photo('red'))
+        self.assertIn('Put the hat from image 2', prompt)
+
     def test_a_hood_lies_down_behind_the_neck(self):
         prompt = tryon_policy.look_prompt(['top', 'bottom'], 'Худи', '', 'auto', app._CATEGORY_NOUNS, {}, {})
         self.assertIn('its hood down, lying flat behind the neck', prompt)
@@ -794,7 +806,7 @@ class FaceRestore(unittest.TestCase):
         prepared = (Image.new('RGB', (64, 128)), None, [face_guard.Face((20, 10, 20, 24), np.zeros((5, 2)))], labels)
         calls = []
 
-        def transplant(*args, relaxed=False):
+        def transplant(*args, relaxed=False, keep=()):
             calls.append(relaxed)
             if not relaxed:
                 raise face_guard.AlignmentError('face-transplant-mismatch scale=0.93 angle=2.1 residual=0.053')
