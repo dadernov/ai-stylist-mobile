@@ -575,6 +575,16 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     reach &= rows <= chin + HAIR_DEPTH * gh
     # The new clothes are the frame's, over the photo's hair too: where the editor drew a collar over it, it lies under.
     must_frame = (np.isin(frame_labels, CLOTHES_LABELS) | ~reach) & ~must_photo
+    # Where the editor drew neck and the photo has wall, below the mouth: the editor's neck. The photo's wall there
+    # came out as a light strip down the side of the neck, in steps.
+    mouth_row = float(np.asarray(target.landmarks)[3:, 1].mean())
+    side_neck = (frame_labels == 11) & (photo_labels == 0) & (rows > chin) & ~oval
+    must_frame |= cv2.dilate(side_neck.astype(np.uint8), kernel(width * .01)).astype(bool) & ~must_photo
+    # Between the mouth and the chin too, in columns where the editor's neck goes on below: there it is neck
+    # beside the photo's narrower jaw, not a second jaw sticking out.
+    neck_below = ((frame_labels == 11) & (rows > chin) & (rows < chin + .3 * gh)).any(axis=0)
+    jaw_side = (frame_labels == 11) & (photo_labels == 0) & (rows > mouth_row) & (rows <= chin) & ~oval & neck_below[None, :]
+    must_frame |= jaw_side & ~must_photo
     hat_zone = np.zeros(reach.shape, bool)
     if keep:
         # A hat in the look: the hat and everything above its brim are the frame's; below the brim the head is
@@ -584,7 +594,12 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         brows = float(np.asarray(target.landmarks)[:2, 1].mean()) - .12 * gh
         brim = float(np.percentile(np.where(hat)[0], 92)) if hat.sum() > 50 else brows
         brim = min(brim, brows)
-        hat_zone = cv2.dilate(hat.astype(np.uint8), kernel(width * .02)).astype(bool) | ((rows < brim) & reach)
+        # Above the hat's own lower edge, column by column: one straight line at the brows cut across the glasses.
+        hat_cols = np.where(hat.any(axis=0))[0]
+        edge = np.full(cols_count, -1., np.float32)
+        if len(hat_cols):
+            edge[hat_cols] = rows_count - 1 - np.argmax(hat[::-1, hat_cols], axis=0)
+        hat_zone = cv2.dilate(hat.astype(np.uint8), kernel(width * .02)).astype(bool) | ((rows <= edge[None, :]) & reach)
         # Hair pressed under the hat: between the brim and the eyes the photo's hair beyond the editor's head stays out,
         # or it stuck out wider than the cap on both sides.
         eyes = float(np.asarray(target.landmarks)[:2, 1].mean())
@@ -614,6 +629,9 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         # laid over them, the photo's wall (another door frame, other leaves) showed as a halo round the head.
         # Above the mouth only: lower down a beard or the shade inside a hood beside the jaw came out as a white wedge.
         ghost = (frame_head | frame_hair) & (photo_labels == 0) & ~oval & reach & (rows <= float(np.asarray(target.landmarks)[3:, 1].mean()))
+        # The editor's skin only where it is ear, beside its own face box: its cheek and jaw, a little wider than the
+        # photo's, painted out down to the mouth left a step where its neck goes on below; cut at the nose, half an ear stayed.
+        ghost &= (frame_labels != 11) | (xx < gx + .02 * gw) | (xx > gx + .98 * gw)
         # Only over a plain wall: leaves or a room cannot be painted in smooth, and a blur there showed worse
         # than the editor's own hair kept round the photo's.
         gray = cv2.cvtColor(frame.clip(0, 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32)
