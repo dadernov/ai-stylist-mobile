@@ -1302,7 +1302,7 @@ async def garment_flat(file: UploadFile = File(...), device: str = Depends(acces
     """A smoothed, laid-flat picture of a garment for its card in the wardrobe.
 
     Only for the card: the try-on keeps the item's own photo, so whatever the
-    editor invents here never reaches a look. Seedream 5.0 Flash, about 25 s.
+    editor invents here never reaches a look. Seedream 5.0 Flash at 1K, about 15 s.
     """
     access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
     if not fal_tryon.enabled():
@@ -1316,7 +1316,8 @@ async def garment_flat(file: UploadFile = File(...), device: str = Depends(acces
         raise HTTPException(422, "Не удалось открыть фото.")
     model = fal_tryon.MODELS['seedream-5-flash']
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
-        result = await fal_tryon._generate_one(client, model, source, [], FLAT_PROMPT, 1)
+        # 1K: enough for a card, and 11-16 s instead of 18-25 s at the same price.
+        result = await fal_tryon._generate_one(client, model, source, [], FLAT_PROMPT, 1, image_size={'width': 1024, 'height': 1024})
         if result.get('error') or not result.get('outputUrl'):
             print(f"Garment flat failed: {result.get('error')}", flush=True)
             raise HTTPException(502, fal_tryon.user_error(result))

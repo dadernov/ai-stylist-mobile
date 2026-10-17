@@ -292,7 +292,7 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
 
 
 async def _generate_one(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0,
-                        frame_size=None):
+                        frame_size=None, image_size=None):
     """Submit one look to the fal queue and wait for its image URL.
 
     Returns {'status': 'succeeded', 'outputUrl', 'costUsd', 'model'} or
@@ -303,6 +303,8 @@ async def _generate_one(client, model, person_url, garment_urls, prompt, seed, m
     max_queue_seconds = max(max_wait_seconds, int(os.getenv('TRYON_FAL_MAX_QUEUE_SECONDS', '600')))
     headers = {'Authorization': f'Key {api_key()}', 'Content-Type': 'application/json'}
     body = payload(model, person_url, garment_urls, prompt, seed, frame_size)
+    if image_size:
+        body['image_size'] = image_size
     try:
         submitted = await client.post(f'{QUEUE_URL}/{model.endpoint}', headers={**headers, **privacy_headers()}, json=body)
     except httpx.HTTPError as exc:
