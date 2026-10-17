@@ -290,6 +290,9 @@ HAIR_DEPTH, HAIR_SIDE = 1.2, 3.0
 SEAM_FLOOR, SEAM_EDGE, SEAM_LEAN = 4., 40., 8.
 # Local spread of grey below which a wall counts as plain and can be painted in.
 PLAIN_WALL = 9.
+# How far above the eyes the brows are, in face heights: above them, under a hat, it is the hat's.
+HAT_BROWS = .14
+HAT_FADE = .07
 # The editor's face narrowed to the photo's: on, by at most this share of a face width, down to this far below
 # the chin, fading out over this margin beside the face.
 HEAD_FIT, HEAD_FIT_MAX, HEAD_FIT_BELOW, HEAD_FIT_MARGIN = True, .15, .45, .35
@@ -648,6 +651,7 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     jaw_side = (frame_labels == 11) & (photo_labels == 0) & (rows > mouth_row) & (rows <= chin) & neck_below[None, :]
     must_frame |= jaw_side & ~must_photo
     hat_zone = np.zeros(reach.shape, bool)
+    brow_fade = np.ones(reach.shape, np.float32)
     if keep:
         # A hat in the look: the hat and everything above its brim are the frame's; below the brim the head is
         # restored as in any look, ears and side hair the photo's. Only the face from the photo left the editor's
@@ -662,6 +666,23 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         if len(hat_cols):
             edge[hat_cols] = rows_count - 1 - np.argmax(hat[::-1, hat_cols], axis=0)
         hat_zone = cv2.dilate(hat.astype(np.uint8), kernel(width * .02)).astype(bool) | ((rows <= edge[None, :]) & reach)
+        # The brim's underside over the forehead is often read as face: above where the editor's own forehead skin
+        # begins in each column, it is the hat's. Laid over it, the photo's forehead came through the brim.
+        face_cols = (xx >= gx) & (xx <= gx + gw)
+        skin = (frame_labels == 11) & face_cols & (rows < gy + .6 * gh)
+        skin_cols = np.where(skin.any(axis=0))[0]
+        if len(skin_cols):
+            forehead = np.full(cols_count, -1., np.float32)
+            forehead[skin_cols] = np.argmax(skin[:, skin_cols], axis=0)
+            # Under the brim the editor's forehead starts lower than the photo's: a little of it is left to blend.
+            hat_zone |= (rows < forehead[None, :] + .02 * gh) & face_cols & reach
+        # And above the editor's own brows, in columns the hat covers: the brim's dark underside is read as skin.
+        editor_brows = float(np.asarray(target.landmarks)[:2, 1].mean()) - HAT_BROWS * gh
+        under_hat = np.zeros(cols_count, bool)
+        under_hat[np.where(hat.any(axis=0))[0]] = True
+        hat_zone |= (rows < editor_brows - HAT_FADE * gh) & under_hat[None, :] & reach
+        # Down to the brows the frame takes over gradually: a hard line there cut across glasses.
+        brow_fade = np.where(under_hat[None, :], np.clip((rows - (editor_brows - HAT_FADE * gh)) / (HAT_FADE * gh), 0, 1), 1.)
         # Hair pressed under the hat: between the brim and the eyes the photo's hair beyond the editor's head stays out,
         # or it stuck out wider than the cap on both sides.
         eyes = float(np.asarray(target.landmarks)[:2, 1].mean())
@@ -771,6 +792,7 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     if keep:
         # The soft edge never reaches into the hat: blurred across it, the photo's hair cut its band.
         alpha *= 1 - cv2.GaussianBlur(hat_zone.astype(np.float32), (0, 0), max(1., width * .006))
+        alpha *= cv2.GaussianBlur(brow_fade.astype(np.float32), (0, 0), max(1., width * .01))
     blended = frame * (1 - alpha[..., None]) + photo * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
 
