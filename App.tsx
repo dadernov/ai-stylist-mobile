@@ -55,7 +55,7 @@ const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
 
 // Геометрия плавающего таб-бара.
 const TAB_BAR_RADIUS = 32;
-const TAB_BAR_HEIGHT = 64;
+const TAB_BAR_HEIGHT = 56;
 const TAB_INNER_PAD = 8;
 
 const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?: boolean } };
@@ -646,8 +646,9 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     </SafeAreaView>;
   }
 
-  const tabBarBottom = Math.max(insets.bottom, 12);
-  const tabBarSpace = TAB_BAR_HEIGHT + tabBarBottom + 10;
+  // The tab bar is docked to the bottom edge; the home indicator area is part of it.
+  const tabBarBottom = 0;
+  const tabBarSpace = TAB_BAR_HEIGHT + insets.bottom;
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
@@ -656,7 +657,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 
-      <View style={[styles.tabBarWrap, { bottom: tabBarBottom }]} pointerEvents="box-none">
+      <View style={[styles.tabBarWrap, { bottom: 0, paddingBottom: insets.bottom }]} pointerEvents="box-none">
         <View style={styles.tabBarClip}>
           <View
             style={styles.tabRow}
@@ -681,7 +682,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
                   accessibilityState={{ selected: isActive }}
                   onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(undefined); setWardrobeDetailId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
-                  <TabIcon size={21} strokeWidth={isActive ? 2 : 1.5} color={isActive ? colors.buttonPrimaryText : colors.muted} />
+                  <TabIcon size={22} strokeWidth={isActive ? 1.9 : 1.4} color={isActive ? colors.text : colors.muted} />
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
                 </AppPressable>
               );
@@ -705,7 +706,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
                   })
                 }
               ],
-              bottom: tabBarBottom + TAB_BAR_HEIGHT + 14
+              bottom: tabBarSpace + 12
             }
           ]}
         >
@@ -815,7 +816,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   stepBadge: {
     width: 32,
     height: 32,
-    borderRadius: 20,
+    borderRadius: 4,
     backgroundColor: c.accentGoldSoft,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.goldHairline,
@@ -849,7 +850,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tipEmojiCircle: {
     width: 28,
     height: 28,
-    borderRadius: 18,
+    borderRadius: 4,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center'
@@ -869,20 +870,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginTop: 6
   },
   // --- Плавающий таб-бар ---
+  // Docked, flat, a hairline above: the storefront kind of tab bar.
   tabBarWrap: {
     position: 'absolute',
-    width: '92%',
-    maxWidth: 600,
-    alignSelf: 'center',
-    borderRadius: TAB_BAR_RADIUS,
-    ...SHADOWS.floating,
-    backgroundColor: c.card
+    left: 0,
+    right: 0,
+    backgroundColor: c.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border
   },
   tabBarClip: {
-    borderRadius: TAB_BAR_RADIUS,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
     backgroundColor: c.card
   },
   tabRow: {
@@ -891,13 +891,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: TAB_INNER_PAD,
     alignItems: 'center'
   },
+  // No moving pill behind the active tab: its icon and label turn black instead.
   tabIndicator: {
-    position: 'absolute',
-    left: 0,
-    top: TAB_INNER_PAD,
-    bottom: TAB_INNER_PAD,
-    borderRadius: 999,
-    backgroundColor: c.buttonPrimaryBg
+    display: 'none'
   },
   tabItem: {
     flex: 1,
@@ -905,7 +901,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    borderRadius: 999,
+    borderRadius: 4,
     overflow: Platform.OS === 'android' ? 'hidden' : 'visible'
   },
   tabIcon: {
@@ -922,8 +918,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     letterSpacing: 0.2
   },
   tabLabelActive: {
-    color: c.buttonPrimaryText,
-    fontWeight: '700'
+    color: c.text,
+    fontWeight: '600'
   },
   // --- Тост ---
   toast: {
@@ -943,7 +939,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   toastIconCircle: {
     width: 20,
     height: 20,
-    borderRadius: 16,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: c.goldHairline,
     alignItems: 'center',

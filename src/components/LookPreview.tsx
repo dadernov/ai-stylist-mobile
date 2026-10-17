@@ -75,12 +75,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     width: '100%',
     height: 160,
     backgroundColor: c.stage,
-    borderRadius: 18
+    borderRadius: 4
   },
   previewPlaceholder: {
     width: '100%',
     height: 160,
-    borderRadius: 18,
+    borderRadius: 4,
     backgroundColor: c.stage
   },
   caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 },

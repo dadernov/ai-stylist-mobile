@@ -23,12 +23,12 @@ export function ScreenHeader({ eyebrow, title, subtitle }: ScreenHeaderProps) {
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrap: {
-    marginBottom: 18,
-    gap: 6
+    marginBottom: 14,
+    gap: 4
   },
   eyebrow: {
     ...TYPE.eyebrow,
-    color: c.accentGold
+    color: c.muted
   },
   title: {
     ...TYPE.display,

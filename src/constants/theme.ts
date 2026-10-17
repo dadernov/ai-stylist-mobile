@@ -87,20 +87,21 @@ export const SERIF_BOLD = 'Onest_800ExtraBold';
 // Самое жирное начертание — для заголовков экранов: их видно сразу.
 export const DISPLAY = 'Onest_900Black';
 
-// Скругления: sm — мелкие элементы, md — поля/плашки, lg — карточки, xl — листы; кнопки и чипы — «таблетки».
-export const RADII = { sm: 10, md: 14, lg: 20, xl: 26, pill: 999 } as const;
+// Почти прямые углы, как у fashion-витрин: фото и кнопки — 4 px, только листы снизу скруглены сильнее.
+export const RADII = { sm: 4, md: 4, lg: 4, xl: 16, pill: 999 } as const;
 
 // Базовая шкала отступов.
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 // Тени мягкие: карточкам едва заметная, кнопкам и плавающей панели — объём, чтобы они выделялись.
 export const SHADOWS: Record<'card' | 'floating' | 'button', ViewStyle> = {
+  // Витрина плоская: карточки и кнопки без теней, объём остаётся только у плавающих окон.
   card: {
     shadowColor: '#000000',
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0
   },
   floating: {
     shadowColor: '#000000',
@@ -111,10 +112,10 @@ export const SHADOWS: Record<'card' | 'floating' | 'button', ViewStyle> = {
   },
   button: {
     shadowColor: '#000000',
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0
   }
 };
 
@@ -122,10 +123,10 @@ export const SHADOWS: Record<'card' | 'floating' | 'button', ViewStyle> = {
 export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', TextStyle> = {
   // Заголовок экрана: самый жирный гротеск, крупно.
   display: {
-    fontFamily: DISPLAY,
-    fontSize: 34,
-    letterSpacing: -0.8,
-    lineHeight: 38
+    fontFamily: SERIF_BOLD,
+    fontSize: 26,
+    letterSpacing: -0.4,
+    lineHeight: 31
   },
   // Заголовок карточки/секции.
   title: {
@@ -135,10 +136,9 @@ export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', 
   },
   // Надзаголовок: мелкий капс с разрядкой.
   eyebrow: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    letterSpacing: 1.6,
-    textTransform: 'uppercase'
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0
   },
   body: {
     fontSize: 15,

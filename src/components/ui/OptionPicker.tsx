@@ -41,7 +41,7 @@ export function OptionPicker({ options, value, onChange, label = 'Выбрать
   </>;
 }
 const styles = StyleSheet.create({
-  trigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderWidth: 1, borderRadius: 18 },
+  trigger: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderWidth: 1, borderRadius: 4 },
   row: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { maxHeight: '82%', minHeight: 280, width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, gap: 16 },

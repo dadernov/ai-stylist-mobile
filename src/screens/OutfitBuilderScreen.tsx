@@ -867,7 +867,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   segment: {
     flexDirection: 'row',
     backgroundColor: c.surface,
-    borderRadius: 999,
+    borderRadius: 4,
     padding: 4,
     marginBottom: SPACING.lg
   },
@@ -876,7 +876,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: 4,
     bottom: 4,
     left: 4,
-    borderRadius: 999,
+    borderRadius: 4,
     backgroundColor: c.buttonPrimaryBg
   },
   segmentTab: {
@@ -893,8 +893,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: c.muted,
-    letterSpacing: 1,
-    textTransform: 'uppercase'
+    letterSpacing: 0
   },
   segmentTextActive: {
     color: c.buttonPrimaryText,
@@ -1181,7 +1180,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 3
   },
@@ -1213,7 +1212,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.accentGoldSoft,
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1226,7 +1225,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: c.goldHairline,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 12,
     paddingVertical: 6
   },
@@ -1240,7 +1239,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   actionDanger: {
     backgroundColor: c.dangerSoft,
-    borderRadius: 999,
+    borderRadius: 4,
     paddingHorizontal: 12,
     paddingVertical: 6
   },

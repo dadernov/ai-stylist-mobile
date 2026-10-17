@@ -266,8 +266,8 @@ export function ProfileScreen({
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  languageSheet: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 10 },
-  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14 },
+  languageSheet: { borderRadius: 4, borderWidth: 1, padding: 18, gap: 10 },
+  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 4, paddingHorizontal: 16, paddingVertical: 14 },
   container: {
     flex: 1
   },
@@ -478,7 +478,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
     marginTop: 12,
     backgroundColor: c.chip,
-    borderRadius: 22,
+    borderRadius: 4,
     paddingHorizontal: 20,
     paddingVertical: 11
   },

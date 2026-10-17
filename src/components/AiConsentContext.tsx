@@ -68,7 +68,7 @@ export function useAiConsent() {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'center', padding: 20 },
-  card: { borderRadius: 20, borderWidth: 1, padding: 20, maxHeight: '88%' },
+  card: { borderRadius: 4, borderWidth: 1, padding: 20, maxHeight: '88%' },
   title: { fontSize: 20, fontWeight: '700' },
   point: { fontSize: 14, lineHeight: 21 },
   link: { fontSize: 14, fontWeight: '600', paddingVertical: 4 },

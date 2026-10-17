@@ -54,8 +54,8 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
 
 const styles = StyleSheet.create({
   place: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
-  shadow: { width: '100%', maxWidth: 480, borderRadius: 22 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 22, paddingVertical: 10, paddingLeft: 10, paddingRight: 14,
+  shadow: { width: '100%', maxWidth: 480, borderRadius: 4 },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 4, paddingVertical: 10, paddingLeft: 10, paddingRight: 14,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   thumb: { width: 38, height: 50, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' },
   texts: { flex: 1, minWidth: 0, gap: 2 },
