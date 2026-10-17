@@ -293,6 +293,8 @@ PLAIN_WALL = 9.
 # How far above the eyes the brows are, in face heights: above them, under a hat, it is the hat's.
 HAT_BROWS = .14
 HAT_FADE = .07
+# Soften the frame round a face from a softer photo.
+SOFTNESS_MATCH = True
 # The editor's face narrowed to the photo's: on, by at most this share of a face width, down to this far below
 # the chin, fading out over this margin beside the face.
 HEAD_FIT, HEAD_FIT_MAX, HEAD_FIT_BELOW, HEAD_FIT_MARGIN = True, .15, .45, .35
@@ -793,6 +795,21 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         # The soft edge never reaches into the hat: blurred across it, the photo's hair cut its band.
         alpha *= 1 - cv2.GaussianBlur(hat_zone.astype(np.float32), (0, 0), max(1., width * .006))
         alpha *= cv2.GaussianBlur(brow_fade.astype(np.float32), (0, 0), max(1., width * .01))
+    if SOFTNESS_MATCH and labelled:
+        # A small or soft photo gives a soft face in a sharp frame: the sharp hair, cheeks and hat round it framed
+        # the face as a box. Round the face the frame is softened to the photo's own sharpness, fading out.
+        face_box = (gx, gy, gw, gh)
+        mine, theirs = _sharpness(photo, face_box), _sharpness(frame, face_box)
+        if 0 < mine < .6 * theirs:
+            sigma = 0.
+            for candidate in (.6, 1., 1.5, 2., 2.5, 3., 4.):
+                sigma = candidate
+                if _sharpness(cv2.GaussianBlur(frame, (0, 0), candidate), face_box) <= mine * 1.15:
+                    break
+            near = cv2.dilate((alpha > .05).astype(np.uint8), kernel(width * .12)).astype(np.float32)
+            weight = cv2.GaussianBlur(near, (0, 0), max(2., width * .1))[..., None]
+            frame = frame * (1 - weight) + cv2.GaussianBlur(frame, (0, 0), sigma) * weight
+
     blended = frame * (1 - alpha[..., None]) + photo * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
 
