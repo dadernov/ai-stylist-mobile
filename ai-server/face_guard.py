@@ -575,15 +575,23 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     reach &= rows <= chin + HAIR_DEPTH * gh
     # The new clothes are the frame's, over the photo's hair too: where the editor drew a collar over it, it lies under.
     must_frame = (np.isin(frame_labels, CLOTHES_LABELS) | ~reach) & ~must_photo
+    hat_zone = np.zeros(reach.shape, bool)
     if keep:
-        # A hat in the look: only the face itself is the photo's. The hat and the hair under it are the
-        # frame's; laid back from the photo, its hair cut the hat's crown off, and the editor's hat was
-        # painted out as a stray head.
-        must_photo = cv2.erode(oval.astype(np.uint8), kernel(width * .03)).astype(bool) | ((photo_labels == 3) & oval)
-        # Above the brows the hat's brim comes down over the forehead: the photo's forehead stops under it.
+        # A hat in the look: the hat and everything above its brim are the frame's; below the brim the head is
+        # restored as in any look, ears and side hair the photo's. Only the face from the photo left the editor's
+        # ears and hair round it, and they came out twice and broken up.
+        hat = np.isin(frame_labels, keep) & in_head
         brows = float(np.asarray(target.landmarks)[:2, 1].mean()) - .12 * gh
-        hat = cv2.dilate(np.isin(frame_labels, keep).astype(np.uint8), kernel(width * .03)).astype(bool) | (rows < brows)
-        must_photo &= ~hat
+        brim = float(np.percentile(np.where(hat)[0], 92)) if hat.sum() > 50 else brows
+        brim = min(brim, brows)
+        hat_zone = cv2.dilate(hat.astype(np.uint8), kernel(width * .02)).astype(bool) | ((rows < brim) & reach)
+        # Hair pressed under the hat: between the brim and the eyes the photo's hair beyond the editor's head stays out,
+        # or it stuck out wider than the cap on both sides.
+        eyes = float(np.asarray(target.landmarks)[:2, 1].mean())
+        inside = cv2.dilate((frame_head | hat).astype(np.uint8), kernel(width * .03)).astype(bool)
+        hat_zone |= (rows >= brim) & (rows <= eyes + .1 * gh) & (photo_labels == 2) & ~inside & reach
+        must_photo &= ~hat_zone
+        must_frame |= hat_zone & ~must_photo
         must_frame = (~cv2.dilate(oval.astype(np.uint8), kernel(width * .12)).astype(bool) | np.isin(frame_labels, CLOTHES_LABELS)
                       | np.isin(frame_labels, keep)) & ~must_photo
     if not must_photo.any():
@@ -612,7 +620,8 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         busy = np.sqrt(np.maximum(cv2.GaussianBlur(gray ** 2, (0, 0), 6.) - cv2.GaussianBlur(gray, (0, 0), 6.) ** 2, 0))
         plain = cv2.erode((busy < PLAIN_WALL).astype(np.uint8), kernel(width * .05)).astype(bool) | (frame_labels != 0)
         ghost &= cv2.erode(plain.astype(np.uint8), kernel(width * .02)).astype(bool)
-        if ghost.sum() > 30 and not keep:
+        ghost &= ~hat_zone
+        if ghost.sum() > 30:
             frame = _wall_in(frame, ghost, frame_labels, max(3, round(width * .05)))
     over = _lean(rows, chin, gh)
     lean = SEAM_LEAN * (2 * over - 1) * np.ones((1, cols_count), np.float32)
@@ -677,6 +686,9 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
         clear = 1 - cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(gh * .15)).astype(np.float32)
         both = np.maximum(both, shared((photo_labels == 2) | (frame_labels == 2)) * band * clear)
         alpha = both * cv2.GaussianBlur(taken.astype(np.float32), (0, 0), max(2., gh * .07)) + (1 - both) * alpha
+    if keep:
+        # The soft edge never reaches into the hat: blurred across it, the photo's hair cut its band.
+        alpha *= 1 - cv2.GaussianBlur(hat_zone.astype(np.float32), (0, 0), max(1., width * .006))
     blended = frame * (1 - alpha[..., None]) + photo * alpha[..., None]
     return Image.fromarray(blended.clip(0, 255).round().astype(np.uint8))
 
