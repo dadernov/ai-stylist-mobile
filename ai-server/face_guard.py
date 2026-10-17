@@ -574,16 +574,20 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     reach = cv2.dilate((photo_face | photo_hair | frame_head | frame_hair | oval).astype(np.uint8), kernel(width * .25)).astype(bool)
     reach &= rows <= chin + HAIR_DEPTH * gh
     # The new clothes are the frame's, over the photo's hair too: where the editor drew a collar over it, it lies under.
+    # The face ellipse is wider than the jaw near the chin: there it held the photo's wall, laid over the editor's
+    # cheek as a light wedge down to the neck. Where the photo has wall, nothing is the photo's by force.
+    if labelled:
+        must_photo &= photo_labels != 0
     must_frame = (np.isin(frame_labels, CLOTHES_LABELS) | ~reach) & ~must_photo
     # Where the editor drew neck and the photo has wall, below the mouth: the editor's neck. The photo's wall there
     # came out as a light strip down the side of the neck, in steps.
     mouth_row = float(np.asarray(target.landmarks)[3:, 1].mean())
-    side_neck = (frame_labels == 11) & (photo_labels == 0) & (rows > chin) & ~oval
+    side_neck = (frame_labels == 11) & (photo_labels == 0) & (rows > chin)
     must_frame |= cv2.dilate(side_neck.astype(np.uint8), kernel(width * .01)).astype(bool) & ~must_photo
     # Between the mouth and the chin too, in columns where the editor's neck goes on below: there it is neck
     # beside the photo's narrower jaw, not a second jaw sticking out.
     neck_below = ((frame_labels == 11) & (rows > chin) & (rows < chin + .3 * gh)).any(axis=0)
-    jaw_side = (frame_labels == 11) & (photo_labels == 0) & (rows > mouth_row) & (rows <= chin) & ~oval & neck_below[None, :]
+    jaw_side = (frame_labels == 11) & (photo_labels == 0) & (rows > mouth_row) & (rows <= chin) & neck_below[None, :]
     must_frame |= jaw_side & ~must_photo
     hat_zone = np.zeros(reach.shape, bool)
     if keep:
@@ -670,7 +674,9 @@ def _compose(original, generated, source_face: Face, target: Face, matrix, sourc
     hugging = cv2.dilate(frame_head.astype(np.uint8), kernel(width * .08)).astype(bool) & (rows <= chin)
     # Below the mouth the photo's wall never wins over the new clothes' shade: a white wedge showed in hoods.
     hugging |= (rows > float(np.asarray(target.landmarks)[3:, 1].mean())) & cv2.dilate(np.isin(frame_labels, CLOTHES_LABELS).astype(np.uint8), kernel(width * .3)).astype(bool)
-    photo_wall = (photo_labels == 0) & ~oval & ~hugging
+    # Not on the editor's own cheek inside its face box: there the photo's wall beside a narrower jaw is no ear to cover.
+    hugging &= ~((frame_labels == 11) & (xx >= gx + .02 * gw) & (xx <= gx + .98 * gw))
+    photo_wall = (photo_labels == 0) & ~hugging
     lean = np.where(photo_wall, np.minimum(lean, SEAM_LEAN) - 3 * SEAM_LEAN * differ, lean)
     # The parser's outlines come in blocks: the hard constraints are rounded off, or the seam ran down them in steps.
     smooth = lambda mask: cv2.GaussianBlur(mask.astype(np.float32), (0, 0), max(2., width * .015)) > .5
