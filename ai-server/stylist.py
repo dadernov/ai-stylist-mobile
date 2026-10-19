@@ -20,9 +20,11 @@ import os
 import re
 
 import httpx
+import numpy as np
 from PIL import Image, ImageOps
 
 import fal_tryon
+import style_space
 
 VISION_URL = 'https://fal.run/fal-ai/any-llm/vision'
 TEXT_URL = 'https://fal.run/fal-ai/any-llm'
@@ -240,9 +242,9 @@ def compose(items, context, count=4):
         event=context.get('event') or 'everyday', style=context.get('style') or 'any', weather=weather,
         anchor=f"Every outfit must include {anchor['id']} ({anchor.get('name', '')}).\n" if anchor else '',
         avoid=('Do not repeat these top-and-bottom pairs, the client put them aside: ' + '; '.join(avoid[:20]) + '\n') if avoid else '',
-        wardrobe='\n'.join(_line(item) for item in usable[:220]), count=count + 2,
+        wardrobe='\n'.join(_line(item) for item in usable[:220]), count=count + 4,
         language={'en': 'English', 'zh': 'Simplified Chinese'}.get(context.get('language'), 'Russian'))
-    payload = {'model': model(), 'system_prompt': COMPOSE_SYSTEM, 'prompt': prompt, 'max_tokens': 3000, 'temperature': .7}
+    payload = {'model': model(), 'system_prompt': COMPOSE_SYSTEM, 'prompt': prompt, 'max_tokens': 4000, 'temperature': .7}
     try:
         answer = _looks(_call(TEXT_URL, payload, timeout=60.))
     except (RuntimeError, ValueError, httpx.HTTPError):
@@ -260,6 +262,22 @@ def compose(items, context, count=4):
         seen.add(core)
         looks.append({'itemIds': ids, 'title': str(raw.get('title') or '')[:60], 'why': str(raw.get('why') or '')[:400],
                       'tips': [str(tip)[:200] for tip in (raw.get('tips') or [])][:3]})
-        if len(looks) >= count:
-            break
-    return looks
+    return rank(looks, {item['id']: item for item in usable})[:count]
+
+
+# How much the stylist's own order counts against how well the pieces go together on their photos:
+# a real outfit scores about 0.23 above a shuffled one, so one place in the stylist's list is worth
+# a seventh of that difference.
+RANK_WEIGHT = .03
+
+
+def rank(looks, by_id):
+    """The stylist's looks, reordered by how well their pieces go together on their photos (style_space)."""
+    scored = []
+    for place, look in enumerate(looks):
+        value = style_space.harmony([(by_id[i].get('styleVec') or '') for i in look['itemIds']])
+        scored.append((place, look, value))
+    known = [value for _, _, value in scored if value is not None]
+    middle = float(np.median(known)) if known else 0.
+    scored.sort(key=lambda entry: -((middle if entry[2] is None else entry[2]) - RANK_WEIGHT * entry[0]))
+    return [look for _, look, _ in scored]

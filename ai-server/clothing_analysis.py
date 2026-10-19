@@ -282,6 +282,25 @@ def _season_for(category, section):
     return "Круглый год"
 
 
+# The category head: a correction to the description scores learned from labelled garment photos
+# (tools/training). It is tied to the descriptions it was trained over: a head from
+# other prompts or categories would quietly mislead, so it is checked and left out instead.
+CATEGORY_HEAD = Path(__file__).parent / "category_head.npz"
+
+
+def load_category_head(dimension, path=None):
+    path = Path(path or os.getenv("AI_CATEGORY_HEAD", CATEGORY_HEAD))
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=False) as data:
+        weights, bias = data["W"].astype(np.float32), data["b"].astype(np.float32)
+        signature = str(data["signature"])
+    if signature != prompt_signature() or weights.shape != (dimension, len(CATEGORIES)) or bias.shape != (len(CATEGORIES),):
+        print(f"Category head {path.name} does not match the categories; using the descriptions alone", flush=True)
+        return None
+    return weights, bias
+
+
 class ClothingClassifier:
     def __init__(self, directory=None):
         directory = Path(directory or os.getenv("AI_ANALYSIS_MODEL_DIR", Path(__file__).parent / "models" / "clip"))
@@ -306,6 +325,7 @@ class ClothingClassifier:
         signature = json.loads(stamp.read_text()).get("signature") if stamp.exists() else None
         if len(self.features) != len(_subjects()) or signature != prompt_signature():
             raise ValueError('Rebuild text features with download_analysis_model.py')
+        self.head = load_category_head(len(self.features[0]))
 
     def _embed(self, images):
         arrays = [(np.asarray(image, dtype=np.float32) / 255 - self.mean) / self.std for image in images]
@@ -321,10 +341,16 @@ class ClothingClassifier:
         bbox = foreground.getchannel("A").getbbox()
         subject = self._fit(white.crop(bbox) if bbox else white)
         full = self._fit(ImageOps.fit(original.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
-        subject_scores, full_scores = [vector @ self.features.T * 100 for vector in self._embed([subject, full])]
+        vectors = self._embed([subject, full])
+        subject_scores, full_scores = [vector @ self.features.T * 100 for vector in vectors]
         # The cutout shows the garment, the frame shows the context; each alone
         # misreads a class of photos, and an even blend measured best.
         similarities = 0.5 * subject_scores + 0.5 * full_scores
+        if self.head is not None:
+            # The learned correction over the descriptions (category_head.npz): trained on labelled photos.
+            weights, bias = self.head
+            similarities = similarities.copy()
+            similarities[:len(CATEGORIES)] += normalise(vectors.mean(axis=0)) @ weights + bias
 
         indices = [index for index, entry in enumerate(CATEGORIES) if not section_hint or entry[1] == section_hint]
         choices = ranked(similarities[indices])
@@ -353,7 +379,8 @@ class ClothingClassifier:
         traits = self.traits(original, top["category"]) if top["section"] in TRAIT_SECTIONS else {}
         return {"category": top["category"], "section": top["section"], "categoryCandidates": candidates, "traits": traits,
                 "needsReview": uncertain, "pattern": pattern, "season": _season_for(top["category"], top["section"]),
-                "seasonSource": "category", "warnings": warnings, "analysisSource": "fashion-siglip-onnx",
+                "seasonSource": "category", "warnings": warnings,
+                "analysisSource": "fashion-siglip-onnx+head" if self.head is not None else "fashion-siglip-onnx",
                 "wornByPerson": worn}
 
 

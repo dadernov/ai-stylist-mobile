@@ -17,6 +17,9 @@ export function decodeTraits(value: unknown): GarmentTraits | undefined {
 const text = (value: unknown, limit: number) => typeof value === 'string' ? value.slice(0, limit) : undefined;
 const words = (value: unknown, count: number) => Array.isArray(value) ? value.filter(word => typeof word === 'string').slice(0, count).map(word => word.slice(0, 40)) : [];
 const scale = (value: unknown) => typeof value === 'number' && value >= 1 && value <= 5 ? Math.round(value) : null;
+/** A style vector as the server gives it; anything else is dropped and read again. */
+export const decodeStyleVec = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9+/]{80,120}={0,2}$/.test(value) ? value : undefined;
+
 /** A stored or received garment profile, kept to its known fields and sizes. */
 export function decodeGarmentProfile(value: unknown): GarmentProfile | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;

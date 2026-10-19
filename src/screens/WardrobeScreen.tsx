@@ -339,7 +339,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const forgetFlat = (id: string) => { for (const [request, target] of flatTargets.current) if (target === id) flatTargets.current.delete(request); };
   const putFlat = (id: string, flat: string) => {
     const current = itemsRef.current;
-    if (current.some(item => item.id === id)) onItemsChange(current.map(item => item.id === id ? { ...item, imageUri: flat } : item));
+    // A new card picture is read for its style vector again.
+    if (current.some(item => item.id === id)) onItemsChange(current.map(item => item.id === id ? { ...item, imageUri: flat, styleVec: undefined } : item));
   };
   // Smoothing an item already in the wardrobe, from its card: the one in progress, and the picture
   // it replaced, which the card offers back until it is closed.
@@ -433,6 +434,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       : existing && existing.sourceImageUri === (sourcePhoto || draftPhoto) ? existing.traits : undefined;
     // The stylist's profile stays while the photo and the category do; otherwise it is read anew.
     const profile = existing && existing.sourceImageUri === (sourcePhoto || draftPhoto) && existing.category === draftCategory ? existing.profile : undefined;
+    const styleVec = existing && existing.imageUri === draftPhoto && existing.category === draftCategory ? existing.styleVec : undefined;
     const newItem: WardrobeItem = {
       id: draftExistingId || Date.now().toString(),
       name: draftName.trim() || suggestItemName({ category: draftCategory, color: draftColor, pattern: draftPattern }) || t(draftCategory),
@@ -448,7 +450,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       store: draftStore,
       material: draftMaterial,
       traits,
-      profile
+      profile,
+      styleVec
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
     forgetFlat(newItem.id);

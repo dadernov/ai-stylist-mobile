@@ -61,3 +61,22 @@ class ComposeTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RankTest(unittest.TestCase):
+    def test_pieces_that_go_together_rise(self):
+        import base64
+        import numpy as np
+        import style_space
+        dims = style_space._load()[0].shape[1]
+        rng = np.random.default_rng(0)
+        code = lambda v: base64.b64encode(np.clip(np.round(v / np.linalg.norm(v) * 127), -127, 127).astype(np.int8).tobytes()).decode()
+        base = rng.standard_normal(dims)
+        close = {name: code(base + .2 * rng.standard_normal(dims)) for name in ('tee', 'jeans', 'sneakers')}
+        far = {name: code(rng.standard_normal(dims)) for name in ('dress', 'heels')}
+        by_id = {item['id']: {**item, 'styleVec': close.get(item['id']) or far.get(item['id'])} for item in WARDROBE}
+        looks = [{'itemIds': ['dress', 'heels']}, {'itemIds': ['tee', 'jeans', 'sneakers']}]
+        self.assertEqual(stylist.rank(looks, by_id)[0]['itemIds'], ['tee', 'jeans', 'sneakers'])
+        self.assertGreater(style_space.harmony(list(close.values())), .8)
+        # Without vectors the stylist's own order stands.
+        self.assertEqual(stylist.rank(looks, {item['id']: item for item in WARDROBE}), looks)

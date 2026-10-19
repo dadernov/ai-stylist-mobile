@@ -22,7 +22,7 @@ import { WardrobeItem } from './src/data/mock';
 import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
 import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
-import { readGarmentProfile, readGarmentTraits } from './src/services/ai';
+import { readGarmentProfile, readGarmentStyle, readGarmentTraits } from './src/services/ai';
 import { decodeGarmentProfile } from './src/domain/garmentTraits';
 import { hasAiConsent } from './src/services/aiConsent';
 import { GeneratedLook, SavedLook } from './src/types/looks';
@@ -458,12 +458,15 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   // next launch.
   const traitsAsked = useRef(new Set<string>());
   const profileAsked = useRef(new Set<string>());
+  const styleAsked = useRef(new Set<string>());
   useEffect(() => {
     if (!isReady) return;
     const photo = (item: WardrobeItem) => item.sourceImageUri || item.imageUri;
     const needsTraits = (item: WardrobeItem) => !item.traits && ['Верх', 'Верхняя одежда'].includes(item.section) && !traitsAsked.current.has(item.id);
     const needsProfile = (item: WardrobeItem) => !item.profile && PROFILED_SECTIONS.has(item.section) && !profileAsked.current.has(item.id);
-    const pending = items.filter(item => photo(item) && (needsTraits(item) || needsProfile(item)));
+    // The style vector reads the card picture (cut out or smoothed), close to the product photos it learned from.
+    const needsStyle = (item: WardrobeItem) => !item.styleVec && item.imageUri && PROFILED_SECTIONS.has(item.section) && !styleAsked.current.has(`${item.id}:${item.imageUri.length}`);
+    const pending = items.filter(item => photo(item) && (needsTraits(item) || needsProfile(item) || needsStyle(item)));
     if (!pending.length) return;
     let cancelled = false;
     void (async () => {
@@ -487,6 +490,16 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
               setItems(current => current.map(candidate => candidate.id === item.id && !candidate.profile ? { ...candidate, profile } : candidate));
             }
           } catch { /* the same: again on the next launch */ }
+        }
+        if (needsStyle(item) && item.imageUri) {
+          const card = item.imageUri;
+          styleAsked.current.add(`${item.id}:${card.length}`);
+          try {
+            const styleVec = await readGarmentStyle(card, item.category, item.section);
+            if (styleVec && alive.current) {
+              setItems(current => current.map(candidate => candidate.id === item.id && candidate.imageUri === card ? { ...candidate, styleVec } : candidate));
+            }
+          } catch { /* the same */ }
         }
         await new Promise(resolve => setTimeout(resolve, 1500));
       }

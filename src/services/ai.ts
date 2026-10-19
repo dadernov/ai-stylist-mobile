@@ -6,7 +6,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { readStoredSession, Session } from './auth';
 import { GarmentProfile, GarmentTraits, WardrobeItem } from '../data/mock';
 import { fetchJson } from './http';
-import { decodeGarmentProfile } from '../domain/garmentTraits';
+import { decodeGarmentProfile, decodeStyleVec } from '../domain/garmentTraits';
 import { translate } from '../constants/i18n';
 
 export type AiResult = {
@@ -232,13 +232,23 @@ export async function readGarmentProfile(uri: string, category: string): Promise
   return decodeGarmentProfile(result?.profile);
 }
 
+/** How a garment goes with others, read from its card picture on the server (free, local). */
+export async function readGarmentStyle(uri: string, category: string, section: string): Promise<string | undefined> {
+  const form = new FormData();
+  await appendPhoto(form, 'file', uri);
+  form.append('category', category);
+  form.append('section', section);
+  const result = await fetchJson(AI_BASE_URL + '/garment-style', { method: 'POST', headers: await authHeaders(), body: form }, 30000);
+  return decodeStyleVec(result?.styleVec);
+}
+
 export type StylistLook = { itemIds: string[]; title: string; why: string; tips: string[] };
 export type StylistRequest = { style: string; event: string; gender: string; temperature: number | null; precipitation: string | null;
   anchorId?: string; avoid: string[]; language: string; count: number };
 /** Outfit ideas put together by the stylist model from the wardrobe's descriptions (no photos are sent). */
 export async function requestStylistLooks(items: WardrobeItem[], request: StylistRequest): Promise<StylistLook[]> {
   const body = { ...request, items: items.slice(0, 400).map(item => ({ id: item.id, section: item.section, category: item.category,
-    name: item.name.slice(0, 120), color: item.color.slice(0, 40), profile: item.profile ?? null, traits: item.traits ?? null })) };
+    name: item.name.slice(0, 120), color: item.color.slice(0, 40), profile: item.profile ?? null, traits: item.traits ?? null, styleVec: item.styleVec ?? null })) };
   const result = await fetchJson(AI_BASE_URL + '/looks', { method: 'POST', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
     body: JSON.stringify(body) }, 40000);
   if (!Array.isArray(result?.looks)) return [];

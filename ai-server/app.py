@@ -36,6 +36,7 @@ import access
 import accounts
 import fal_tryon
 import stylist
+import style_space
 import fashn_credits
 import photo_check
 import closet
@@ -1370,6 +1371,25 @@ def garment_profile(file: UploadFile = File(...), category: str = Form(""), devi
         raise HTTPException(502, "Не удалось описать вещь.")
 
 
+@app.post("/garment-style")
+def garment_style(file: UploadFile = File(...), category: str = Form(""), section: str = Form(""), device: str = Depends(access.require_account)):
+    """A garment's style vector (style_space): how it goes with other pieces, read from its card picture here, at no cost.
+
+    The app keeps it with the item and sends it with the wardrobe; /looks orders looks by it.
+    """
+    access.throttle(device, 'garment-style', _env_int('AI_STYLE_PER_MINUTE', 60))
+    content = file.file.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    try:
+        value = style_space.vector(content, category[:40], section[:40])
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(422, "Не удалось открыть фото.")
+    if value is None:
+        raise HTTPException(503, "Оценка сочетаемости сейчас недоступна.")
+    return {"styleVec": value}
+
+
 class LookItem(BaseModel):
     id: str = Field(max_length=64)
     section: str = Field('', max_length=40)
@@ -1378,6 +1398,7 @@ class LookItem(BaseModel):
     color: str = Field('', max_length=40)
     profile: dict | None = None
     traits: dict | None = None
+    styleVec: str | None = Field(None, max_length=200)
 
 
 class LooksRequest(BaseModel):

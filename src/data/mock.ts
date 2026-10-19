@@ -41,6 +41,8 @@ export type WardrobeItem = ClothingItem & {
   material?: string;
   traits?: GarmentTraits;
   profile?: GarmentProfile;
+  /** How the piece goes with others, from its card picture (server style_space): 64 signed bytes in base64. */
+  styleVec?: string;
 };
 
 export const wardrobeItems: WardrobeItem[] = [];
