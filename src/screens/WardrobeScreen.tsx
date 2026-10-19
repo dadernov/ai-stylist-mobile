@@ -36,7 +36,7 @@ import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, flattenGarment } from '../services/ai';
 import { decodeTraits } from '../domain/garmentTraits';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
@@ -288,6 +288,9 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
   );
 }
 
+// Clothes crease; shoes, bags and accessories do not, and are not smoothed.
+const FLAT_SECTIONS = ['Верх', 'Низ', 'Верхняя одежда'];
+
 export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, onStyleWith, initialDetailId }: WardrobeScreenProps) {
   const Alert = useAppDialog();
   const aiConsent = useAiConsent();
@@ -327,6 +330,36 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const [analysisError, setAnalysisError] = useState('');
   const [draftExistingId, setDraftExistingId] = useState<string | null>(null);
   const [categoryConfirmed, setCategoryConfirmed] = useState(false);
+  // The latest wardrobe, for answers that arrive after the screen moved on (the flat card picture).
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  // A flat picture still on its way when its item was saved: analysis request -> the saved item's id.
+  // Editing or deleting that item before it arrives cancels it, so it never replaces a newer photo.
+  const flatTargets = useRef(new Map<number, string>());
+  const forgetFlat = (id: string) => { for (const [request, target] of flatTargets.current) if (target === id) flatTargets.current.delete(request); };
+  const putFlat = (id: string, flat: string) => {
+    const current = itemsRef.current;
+    if (current.some(item => item.id === id)) onItemsChange(current.map(item => item.id === id ? { ...item, imageUri: flat } : item));
+  };
+  // Smoothing an item already in the wardrobe, from its card: the one in progress, and the picture
+  // it replaced, which the card offers back until it is closed.
+  const [flatBusyId, setFlatBusyId] = useState<string | null>(null);
+  const [flatUndo, setFlatUndo] = useState<{ id: string; imageUri: string } | null>(null);
+  const flattenExisting = async (item: WardrobeItem) => {
+    const photo = item.sourceImageUri || item.imageUri;
+    if (!photo || flatBusyId || !(await aiConsent.ensure())) return;
+    setFlatBusyId(item.id);
+    try {
+      const flat = await flattenGarment(photo);
+      if (item.imageUri) setFlatUndo({ id: item.id, imageUri: item.imageUri });
+      forgetFlat(item.id);
+      putFlat(item.id, flat);
+    } catch (error: any) {
+      Alert.alert(t('Не удалось выровнять фото'), String(error?.message || t('Попробуй ещё раз.')));
+    } finally {
+      setFlatBusyId(null);
+    }
+  };
   const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); setDraftFlat({ flat: null, cutout: null, busy: false }); };
   const manual = (field: string, setter: (value: string) => void) => (value: string) => {
     manualFields.current.add(field); setter(value);
@@ -418,6 +451,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       profile
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
+    forgetFlat(newItem.id);
+    // Saved before the flat picture came: it goes onto the card when it does, unless the cutout was picked over it.
+    if (draftFlat.busy && draftPhoto === draftFlat.cutout) flatTargets.current.set(analysisRequestRef.current, newItem.id);
     closeDraft();
     // Гардероб обычно заполняют пачкой: сразу следующая вещь из того же источника.
     if (addAnother && !draftExistingId) setTimeout(() => { void handleAddItem(lastSource.current); }, 350);
@@ -470,10 +506,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       }
       // A smoothed, laid-flat picture for the card, in the background: wrinkles and a crooked shot look neat.
       // Only the card shows it; the try-on goes on using the original photo (sourceImageUri).
-      if (result.category && !['Обувь', 'Сумки', 'Аксессуары'].includes(getSectionByCategory(result.category))) {
+      if (result.category && FLAT_SECTIONS.includes(getSectionByCategory(result.category))) {
         const cutout = result.bgRemovedBase64 || photoUri;
         setDraftFlat({ flat: null, cutout, busy: true });
         flattenGarment(photoUri).then(flat => {
+          const saved = flatTargets.current.get(requestId);
+          if (saved) { flatTargets.current.delete(requestId); putFlat(saved, flat); return; }
           if (analysisRequestRef.current !== requestId) return;
           setDraftFlat({ flat, cutout, busy: false });
           setDraftPhoto(flat);
@@ -537,7 +575,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         {
           text: t('Удалить'),
           style: 'destructive',
-          onPress: () => { onItemsChange(items.filter((item) => item.id !== id)); setDetailId(null); }
+          onPress: () => { forgetFlat(id); onItemsChange(items.filter((item) => item.id !== id)); setDetailId(null); }
         }
       ]);
     },
@@ -688,12 +726,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
 
       {helpOpen && <ProductHelp onClose={() => setHelpOpen(false)} />}
 
-      <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => setDetailId(null)}>
+      <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => { setDetailId(null); setFlatUndo(null); }}>
         <View style={styles.modalBackdrop}>
           <View style={styles.detailSheet}>
             <View style={styles.detailToolbar}>
               <Text style={styles.collectionLabel}>{t('Детали вещи')}</Text>
-              <IconButton icon={X} label={t('Закрыть')} onPress={() => setDetailId(null)} />
+              <IconButton icon={X} label={t('Закрыть')} onPress={() => { setDetailId(null); setFlatUndo(null); }} />
             </View>
             {detail && <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 24 }}>
               {detail.imageUri && <Image source={{ uri: detail.imageUri }} style={styles.detailPhoto} resizeMode="contain" />}
@@ -717,6 +755,14 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                   </AppPressable>
                 ))}
               </View>
+              {flatUndo?.id === detail.id ? (
+                <PrimaryButton title={t('Вернуть прежнее фото')} icon={Undo2} variant="ghost"
+                  onPress={() => { putFlat(detail.id, flatUndo.imageUri); setFlatUndo(null); }} />
+              ) : (detail.sourceImageUri || detail.imageUri) && FLAT_SECTIONS.includes(detail.section) ? (
+                <PrimaryButton title={t(flatBusyId === detail.id ? 'Выравниваем фото…' : 'Выровнять фото')} icon={Wand2} variant="ghost"
+                  loading={flatBusyId === detail.id} disabled={Boolean(flatBusyId)} onPress={() => { void flattenExisting(detail); }} />
+              ) : null}
+              {flatBusyId === detail.id ? <Text style={styles.detailMeta}>{t('Около 15 секунд. Для примерки останется исходное фото.')}</Text> : null}
               {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
               {onStyleWith ? <PrimaryButton title={t('Подобрать образы с этой вещью')} icon={Sparkles} variant="ghost" onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
               <AppPressable accessibilityRole="button" accessibilityLabel={t('История вещи: {count}', { count: historyCount })}
