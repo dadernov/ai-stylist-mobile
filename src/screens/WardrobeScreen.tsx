@@ -34,7 +34,7 @@ import { RADII, SERIF, SHADOWS, ThemeColors, TYPE } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { analyzeImage, AiResult, flattenGarment } from '../services/ai';
+import { analyzeImage, AiResult, flattenGarment, sendCategoryFeedback } from '../services/ai';
 import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
@@ -455,6 +455,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     };
     onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
     forgetFlat(newItem.id);
+    // The category the photo was saved under, right or corrected, teaches the recognition (no photo is sent).
+    if (analysis?.analysisId && draftCategory) sendCategoryFeedback(analysis.analysisId, draftCategory);
     // Saved before the flat picture came: it goes onto the card when it does, unless the cutout was picked over it.
     if (draftFlat.busy && draftPhoto === draftFlat.cutout) flatTargets.current.set(analysisRequestRef.current, newItem.id);
     closeDraft();

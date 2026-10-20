@@ -36,6 +36,7 @@ import access
 import accounts
 import fal_tryon
 import stylist
+import feedback
 import style_space
 import fashn_credits
 import photo_check
@@ -1281,6 +1282,7 @@ async def auth_delete_account(login: str = Depends(access.require_account)):
     await asyncio.to_thread(jobs.purge_owner, login)
     await asyncio.to_thread(stage_cache.purge_owner, login)
     await asyncio.to_thread(closet.purge_owner, login)
+    await asyncio.to_thread(feedback.purge_owner, login)
     existed = await asyncio.to_thread(accounts.delete_account, login)
     return {"deleted": bool(existed), "login": login}
 
@@ -1390,6 +1392,45 @@ def garment_style(file: UploadFile = File(...), category: str = Form(""), sectio
     return {"styleVec": value}
 
 
+class CategoryFeedback(BaseModel):
+    analysisId: str = Field(min_length=8, max_length=64, pattern=r'^[0-9a-f]+$')
+    category: str = Field(max_length=40)
+
+
+@app.post("/feedback/category")
+def feedback_category(body: CategoryFeedback, device: str = Depends(access.require_account)):
+    """The category an analysed photo was saved under: a training example for the category head (no photo is kept)."""
+    access.throttle(device, 'feedback', _env_int('AI_FEEDBACK_PER_MINUTE', 60))
+    if body.category not in {entry[0] for entry in CATEGORIES}:
+        raise HTTPException(422, "Неизвестная категория вещи.")
+    return {"kept": feedback.category_chosen(device, body.analysisId, body.category)}
+
+
+class FeedbackPiece(BaseModel):
+    category: str = Field('', max_length=40)
+    section: str = Field('', max_length=40)
+    styleVec: str | None = Field(None, max_length=200)
+
+
+class LookFeedback(BaseModel):
+    action: str = Field(pattern=r'^(favorite|tryon|dismiss)$')
+    source: str = Field('rules', pattern=r'^(stylist|rules)$')
+    event: str = Field('', max_length=40)
+    style: str = Field('', max_length=40)
+    temperature: float | None = None
+    precipitation: str | None = Field(None, max_length=10)
+    place: int = Field(0, ge=0, le=50)
+    pieces: list[FeedbackPiece] = Field(max_length=12)
+
+
+@app.post("/feedback/look")
+def feedback_look(body: LookFeedback, device: str = Depends(access.require_account)):
+    """An outfit idea saved, tried on or put aside: an example for the style space and the ideas' order."""
+    access.throttle(device, 'feedback', _env_int('AI_FEEDBACK_PER_MINUTE', 60))
+    feedback.look_action(device, body.action, body.model_dump(exclude={'action'}))
+    return {"kept": True}
+
+
 class LookItem(BaseModel):
     id: str = Field(max_length=64)
     section: str = Field('', max_length=40)
@@ -1465,6 +1506,11 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
             alpha = foreground.getchannel("A")
         try:
             result = get_classifier().predict(original, foreground, section_hint or None)
+            embedding = result.pop("embedding", None)
+            if embedding is not None:
+                # Kept until the item is saved (/feedback/category); never part of the answer.
+                result["analysisId"] = key[:24]
+                feedback.remember_analysis(key[:24], embedding, result.get("category"), result.get("needsReview"))
         except Exception as exc:
             print(f"Clothing classifier unavailable: {type(exc).__name__}")
             result = {"category": None, "section": section_hint or None, "season": None, "pattern": None,

@@ -43,6 +43,22 @@ def load_hf():
     return np.concatenate(X), np.array(y), np.array(src)
 
 
+def load_feedback():
+    """Users' saved categories (server feedback.py, a copy of feedback.sqlite3 in FEEDBACK_DB): embeddings, labels,
+    owners. A correction (chosen differs from proposed) is the app's own mistake, labelled by the garment's owner."""
+    import os, sqlite3
+    path = os.environ.get('FEEDBACK_DB')
+    if not path:
+        return None
+    rows = sqlite3.connect(f'file:{path}?mode=ro', uri=True).execute(
+        'SELECT owner, embedding, proposed, chosen FROM category_feedback').fetchall()
+    rows = [r for r in rows if r[3] in INDEX]
+    if not rows:
+        return None
+    X = np.stack([np.frombuffer(r[1], dtype=np.float16).astype(np.float32) for r in rows])
+    return X, np.array([INDEX[r[3]] for r in rows]), np.array([r[0] for r in rows]), np.array([r[2] != r[3] for r in rows])
+
+
 def softmax(z):
     z = z - z.max(1, keepdims=True)
     e = np.exp(z)
@@ -103,6 +119,14 @@ def main():
     g_test = np.array([s in test_senders for s in g['sender']])
     g_train = ~g_test & np.array([l in GROUPS for l in g['label']])
 
+    users = load_feedback()
+    if users is not None:
+        # Half the owners teach, the other half test: an owner's photos look alike.
+        uX, uy, owners, corrected = users
+        u_test = np.array([int(o[:8], 16) % 2 == 0 for o in owners])
+        print(f'user examples {len(uy)}, corrections {corrected.sum()}')
+        X = np.concatenate([X, uX[~u_test]]); y = np.concatenate([y, uy[~u_test]])
+        test = np.concatenate([test, np.zeros((~u_test).sum(), bool)])
     Xtr = np.concatenate([X[~test], gX[g_train]])
     k = len(CATS)
     M = np.zeros((len(Xtr), k), np.float32)
@@ -131,6 +155,9 @@ def main():
         per = defaultdict(lambda: [0, 0, 0])
         for label, a, c, s in zip(gl, z0, z1, sets):
             per[label][0] += 1; per[label][1] += CATS[a] in s; per[label][2] += CATS[c] in s
+        if users is not None and u_test.any():
+            print(report('  Users\' photos zero-shot', predict(uX[u_test]), [{CATS[i]} for i in uy[u_test]]))
+            print(report('  Users\' photos trained  ', predict(uX[u_test], W, b), [{CATS[i]} for i in uy[u_test]]))
         print('   ', '; '.join(f'{k} {v[1] * 100 // v[0]}→{v[2] * 100 // v[0]}% n={v[0]}' for k, v in sorted(per.items(), key=lambda x: -x[1][0])))
     np.savez(HERE / 'head.npz', **{f'W_{k}': v[0] for k, v in results.items()}, **{f'b_{k}': v[1] for k, v in results.items()})
 

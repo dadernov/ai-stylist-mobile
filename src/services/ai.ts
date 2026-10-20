@@ -10,6 +10,8 @@ import { decodeGarmentProfile, decodeStyleVec } from '../domain/garmentTraits';
 import { translate } from '../constants/i18n';
 
 export type AiResult = {
+  /** Names this analysis when the item is saved, so the category chosen teaches the model (sendCategoryFeedback). */
+  analysisId?: string;
   dominantColor: string | null;
   palette: string[];
   bgRemovedBase64: string;
@@ -240,6 +242,26 @@ export async function readGarmentStyle(uri: string, category: string, section: s
   form.append('section', section);
   const result = await fetchJson(AI_BASE_URL + '/garment-style', { method: 'POST', headers: await authHeaders(), body: form }, 30000);
   return decodeStyleVec(result?.styleVec);
+}
+
+// What users do teaches the models (server feedback.py): the category a photo was saved under, and outfit
+// ideas saved, tried on or put aside. Fire and forget: a lost example costs nothing.
+export function sendCategoryFeedback(analysisId: string, category: string) {
+  void (async () => {
+    await fetchJson(AI_BASE_URL + '/feedback/category', { method: 'POST', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ analysisId, category }) }, 15000);
+  })().catch(() => {});
+}
+
+export type LookAction = 'favorite' | 'tryon' | 'dismiss';
+export function sendLookFeedback(action: LookAction, look: { source?: string; event: string; style: string; temperature?: number | null },
+  pieces: WardrobeItem[], place: number, precipitation: string | null) {
+  void (async () => {
+    await fetchJson(AI_BASE_URL + '/feedback/look', { method: 'POST', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, source: look.source === 'stylist' ? 'stylist' : 'rules', event: look.event, style: look.style,
+        temperature: look.temperature ?? null, precipitation, place: Math.min(place, 50),
+        pieces: pieces.slice(0, 12).map(item => ({ category: item.category, section: item.section, styleVec: item.styleVec ?? null })) }) }, 15000);
+  })().catch(() => {});
 }
 
 export type StylistLook = { itemIds: string[]; title: string; why: string; tips: string[] };

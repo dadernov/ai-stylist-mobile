@@ -80,3 +80,33 @@ class RankTest(unittest.TestCase):
         self.assertGreater(style_space.harmony(list(close.values())), .8)
         # Without vectors the stylist's own order stands.
         self.assertEqual(stylist.rank(looks, {item['id']: item for item in WARDROBE}), looks)
+
+
+class FeedbackTest(unittest.TestCase):
+    def setUp(self):
+        import os, tempfile
+        import feedback
+        self.feedback = feedback
+        self.dir = tempfile.TemporaryDirectory()
+        os.environ['AI_FEEDBACK_DB'] = os.path.join(self.dir.name, 'f.sqlite3')
+        feedback.reset_state_for_tests()
+
+    def tearDown(self):
+        self.feedback.reset_state_for_tests()
+        self.dir.cleanup()
+
+    def test_a_saved_category_is_kept_with_the_embedding_and_goes_with_the_account(self):
+        import numpy as np
+        f = self.feedback
+        f.remember_analysis('abc123abc123', np.ones(768) / np.sqrt(768), 'Свитер', True)
+        self.assertFalse(f.category_chosen('anna', 'unknown00000', 'Кардиган'))
+        self.assertTrue(f.category_chosen('anna', 'abc123abc123', 'Кардиган'))
+        self.assertTrue(f.category_chosen('anna', 'abc123abc123', 'Кардиган'))  # saved twice: one example
+        f.look_action('anna', 'tryon', {'pieces': []})
+        db = f._database()
+        row = db.execute('SELECT proposed, chosen, unsure, length(embedding) FROM category_feedback').fetchall()
+        self.assertEqual(row, [('Свитер', 'Кардиган', 1, 768 * 2)])
+        self.assertNotIn('anna', db.execute('SELECT owner FROM look_feedback').fetchone()[0])
+        f.purge_owner('anna')
+        self.assertEqual(db.execute('SELECT COUNT(*) FROM category_feedback').fetchone()[0], 0)
+        self.assertEqual(db.execute('SELECT COUNT(*) FROM look_feedback').fetchone()[0], 0)

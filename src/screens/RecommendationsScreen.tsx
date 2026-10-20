@@ -20,6 +20,8 @@ import { MatchSummary } from '../components/MatchSummary';
 import { useWeather } from '../components/useWeather';
 import { describeWeatherCode } from '../services/weather';
 import { useStylistLooks } from '../services/stylistLooks';
+import { LookAction, sendLookFeedback } from '../services/ai';
+import { hasAiConsent } from '../services/aiConsent';
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
@@ -146,13 +148,13 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <PrimaryButton title={t(hidden.length ? 'Вернуть варианты' : 'К гардеробу')} icon={hidden.length ? RefreshCw : ArrowRight} onPress={hidden.length ? () => setHidden([]) : onWardrobe} />
     </View>}
     {visible.map((look, index) => <Recommendation key={look.id} look={look} index={index} items={items} anchorId={anchor?.id} beautyAdvice={beautyAdvice} precipitation={precipitation}
-      favorites={favorites} onFavorite={onFavorite} onTryOn={onTryOn} onHide={ids => { setHidden(previous => [...previous, look.id]); onDismiss?.(lookCore(ids.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[])); }} />)}
+      favorites={favorites} onFavorite={onFavorite} onTryOn={onTryOn} login={login} onHide={ids => { setHidden(previous => [...previous, look.id]); onDismiss?.(lookCore(ids.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[])); }} />)}
   </FormScrollView>;
 }
 
-function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitation, favorites, onFavorite, onTryOn, onHide }: {
+function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitation, favorites, onFavorite, onTryOn, onHide, login }: {
   look: GeneratedLook; index: number; items: WardrobeItem[]; anchorId?: string; beautyAdvice: boolean; precipitation: Precipitation; favorites: GeneratedLook[];
-  onFavorite: Props['onFavorite']; onTryOn: Props['onTryOn']; onHide: (ids: string[]) => void;
+  onFavorite: Props['onFavorite']; onTryOn: Props['onTryOn']; onHide: (ids: string[]) => void; login?: string;
 }) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
@@ -168,6 +170,8 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
   const savedId = `${look.id}:${ids.join(',')}`;
   const saved = favorites.some(favorite => favorite.id === savedId);
   const selectedForSwap = selection.find(item => item.id === replaceId);
+  // What is done with the idea teaches the ideas' order; only with the AI consent given.
+  const told = (action: LookAction) => { if (login) void hasAiConsent(login).then(ok => { if (ok) sendLookFeedback(action, look, selection, index, precipitation); }); };
   const onePiece = (item: WardrobeItem) => ['Платье', 'Сарафан', 'Комбинезон'].includes(item.category);
   const alternatives = selectedForSwap ? items.filter(item => item.section === selectedForSwap.section && !ids.includes(item.id) && onePiece(item) === onePiece(selectedForSwap)) : [];
   const replace = (from: string, to: string) => { setIds(previous => previous.map(id => id === from ? to : id)); setReplaceId(null); };
@@ -179,7 +183,7 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
   return <View style={styles.look}>
     <View style={styles.lookHeading}>
       <View style={{ flex: 1, gap: 5 }}><Text style={styles.number}>{t('ВАРИАНТ {number}', { number: String(index + 1).padStart(2, '0') })}</Text><Text style={styles.lookTitle}>{title}</Text></View>
-      <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode })} />
+      <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && (told('favorite'), onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode }))} />
     </View>
     <LookPreview items={selection} swappingId={replaceId} canSwap={item => item.id !== anchorId}
       swapLabel={item => t('Заменить {name}', { name: item.name })} onSwap={item => setReplaceId(replaceId === item.id ? null : item.id)} />
@@ -197,8 +201,8 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
       {beautyAdvice && <Text style={styles.body}>{[look.makeup, look.hair].filter(Boolean).map(text => t(text)).join('\n')}</Text>}
     </View>}
     <AppPressable accessibilityRole="button" onPress={() => setExpanded(!expanded)} style={styles.details}><Text style={styles.label}>{t(expanded ? 'Свернуть' : 'Почему сочетается')}</Text>{expanded ? <ChevronUp size={16} color={c.muted} /> : <ChevronDown size={16} color={c.muted} />}</AppPressable>
-    <PrimaryButton title={t('Примерить сочетание')} icon={ArrowRight} onPress={() => onTryOn(ids)} />
-    <AppPressable accessibilityRole="button" onPress={() => onHide(ids)} style={styles.details}><Text style={styles.muted}>{t('Не сейчас')}</Text></AppPressable>
+    <PrimaryButton title={t('Примерить сочетание')} icon={ArrowRight} onPress={() => { told('tryon'); onTryOn(ids); }} />
+    <AppPressable accessibilityRole="button" onPress={() => { told('dismiss'); onHide(ids); }} style={styles.details}><Text style={styles.muted}>{t('Не сейчас')}</Text></AppPressable>
   </View>;
 }
 

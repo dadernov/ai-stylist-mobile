@@ -21,3 +21,14 @@ category. Style space on held-out Polyvore outfits: FITB 69% (53% raw embedding,
 
 The text features the head was trained over must be the ones deployed (`text_features.json` signature); the
 classifier refuses a head built over others.
+
+## Learning from users
+
+`/analyze` keeps each photo's embedding for a day; when the item is saved the app sends the category it was saved
+under (`/feedback/category`), and the server stores embedding, proposed and chosen category in `feedback.sqlite3`
+(no photo; owner as a hash; deleted with the account). Outfit ideas saved, tried on or put aside are stored there
+too (`/feedback/look`: pieces' style vectors, situation, the idea's place and source).
+
+To retrain: copy `/opt/wardrobe/ai-server/feedback.sqlite3`, run `FEEDBACK_DB=<copy> REAL_W=10 python train.py 1e-4`
+(users' examples join the training set; half the owners are held out and reported as "Users' photos"), check the
+held-out numbers against the deployed head, then export and deploy as above.

@@ -381,7 +381,9 @@ class ClothingClassifier:
                 "needsReview": uncertain, "pattern": pattern, "season": _season_for(top["category"], top["section"]),
                 "seasonSource": "category", "warnings": warnings,
                 "analysisSource": "fashion-siglip-onnx+head" if self.head is not None else "fashion-siglip-onnx",
-                "wornByPerson": worn}
+                "wornByPerson": worn,
+                # For feedback.py: what the user then saves the photo as becomes a training example.
+                "embedding": normalise(vectors.mean(axis=0))}
 
 
     def _trait_text(self):
