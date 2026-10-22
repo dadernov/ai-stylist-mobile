@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { Alert, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PersonStanding } from 'lucide-react-native';
 import { usePhotoPicker } from '../components/usePhotoPicker';
-import { LinearGradient } from 'expo-linear-gradient';
-import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
-import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { useTheme } from '../constants/ThemeContext';
 import { LANGUAGES, useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { SectionLabel } from '../components/ui/SectionLabel';
-import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { FadeInView } from '../components/ui/FadeInView';
 import { Gender } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
+import { ChoiceSheet, SettingsPanel, SettingsRow } from '../components/SettingsRows';
 import { PhotoAdvice } from '../components/PhotoAdvice';
-import { Bot, ChevronRight, Globe, LockKeyhole, LogOut, LucideIcon, Moon, PersonStanding, Sun, Trash2 } from 'lucide-react-native';
+import { ProductHelp } from '../components/ProductHelp';
+import { Glass, Pill } from '../components/studio/Glass';
+import { font, INK } from '../components/studio/studio';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -34,15 +34,12 @@ type ProfileScreenProps = {
   onBeautyChange: (enabled: boolean) => void;
 };
 
-
-
 export function ProfileScreen({
   displayName,
   contact,
   authMethod,
   avatarUri,
   modelUri,
-  favoritesCount,
   onAvatarChange,
   onModelChange,
   onLogout,
@@ -54,12 +51,12 @@ export function ProfileScreen({
   onGenderChange,
   onBeautyChange
 }: ProfileScreenProps) {
-  const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { mode, setMode, colors } = useTheme();
+  const { mode, setMode, colors: c, isDark } = useTheme();
   const { lang, setLang } = useLanguage();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const { pickPhoto: pickImageFromGallery, cropModal } = usePhotoPicker();
 
@@ -73,404 +70,128 @@ export function ProfileScreen({
     if (uri) onModelChange(uri);
   };
 
-  const renderPreviewModal = () => {
-    if (!previewUri) return null;
-    return (
-      <Modal transparent animationType="fade" visible onRequestClose={() => setPreviewUri(null)}>
-        <View style={styles.previewBackdrop}>
-          <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" />
-          <AppPressable style={styles.previewClose} onPress={() => setPreviewUri(null)}>
-            <Text style={styles.previewCloseText}>{t('Закрыть')}</Text>
-          </AppPressable>
-        </View>
-      </Modal>
-    );
-  };
-
-  const renderSettingRow = (options: {
-    icon: LucideIcon;
-    title: string;
-    hint?: string;
-    value?: string;
-    danger?: boolean;
-    delay: number;
-    onPress: () => void;
-  }) => (
-    <FadeInView delay={options.delay}>
-      <AppPressable haptics style={styles.settingCard} onPress={options.onPress}>
-        <View style={[styles.settingIconWrap, options.danger && styles.settingIconWrapDanger]}>
-          <options.icon size={18} strokeWidth={1.6} color={options.danger ? colors.danger : colors.text} />
-        </View>
-        <View style={styles.settingBody}>
-          <Text style={[styles.settingTitle, options.danger && styles.settingTitleDanger]}>{options.title}</Text>
-          {options.hint ? <Text style={styles.settingHint}>{options.hint}</Text> : null}
-        </View>
-        {options.value ? <Text style={styles.settingValue}>{options.value}</Text> : null}
-        <ChevronRight size={18} strokeWidth={1.6} color={options.danger ? colors.danger : colors.muted} />
-      </AppPressable>
-    </FadeInView>
-  );
+  const name = t(displayName);
+  const onInk = isDark ? INK : '#FFFFFF';
 
   return (
     <View style={styles.container}>
-      <ScreenHeader
-        title={t('Профиль')}
-      />
+      <ScreenHeader title={t('Профиль')} />
 
-      {renderPreviewModal()}
-      <Modal transparent animationType="fade" visible={languageOpen} onRequestClose={() => setLanguageOpen(false)}>
-        <AppPressable style={styles.previewBackdrop} onPress={() => setLanguageOpen(false)} accessibilityLabel={t('Закрыть')}>
-          <View style={[styles.languageSheet, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityRole="radiogroup">
-            <Text style={[styles.settingTitle, { marginBottom: 6 }]}>{t('Язык')}</Text>
-            {LANGUAGES.map(item => (
-              <AppPressable key={item.code} haptics accessibilityRole="radio" accessibilityState={{ checked: item.code === lang }}
-                style={[styles.languageOption, item.code === lang && { borderColor: colors.accentGold, backgroundColor: colors.accentGoldSoft }]}
-                onPress={() => { setLang(item.code); setLanguageOpen(false); }}>
-                <Text style={[styles.settingTitle, item.code === lang && { color: colors.accentGold }]}>{item.label}</Text>
-              </AppPressable>
-            ))}
+      {previewUri ? (
+        <Modal transparent animationType="fade" visible onRequestClose={() => setPreviewUri(null)}>
+          <View style={styles.previewBackdrop}>
+            <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" />
+            {/* The preview is black in either theme, so its button is fixed light-on-dark. */}
+            <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewUri(null)}>
+              <Text style={[font('semibold'), { fontSize: 15, color: '#FFFFFF' }]}>{t('Закрыть')}</Text>
+            </AppPressable>
           </View>
-        </AppPressable>
-      </Modal>
+        </Modal>
+      ) : null}
+      <ChoiceSheet visible={languageOpen} title={t('Язык')} options={LANGUAGES.map(item => ({ value: item.code, label: item.label }))} value={lang}
+        onChoose={code => { setLang(code); setLanguageOpen(false); }} onClose={() => setLanguageOpen(false)} />
+      {helpOpen ? <ProductHelp onClose={() => setHelpOpen(false)} /> : null}
       {cropModal}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <FadeInView delay={0}>
-          <View style={styles.profileCard}>
-            <View style={styles.profileTopRow}>
-              <AppPressable haptics style={styles.avatarPressable} onPress={handlePickAvatar}>
-                <LinearGradient
-                  colors={[colors.goldFrom, colors.goldTo] as const}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.avatarRing}
-                >
-                  <View style={styles.avatarInner}>
-                    {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-                    ) : (
-                      <Text style={styles.avatarPlaceholder}>+</Text>
-                    )}
-                  </View>
-                </LinearGradient>
-              </AppPressable>
-              <View style={styles.profileInfo}>
-                <Text style={styles.userName}>{t(displayName)}</Text>
-                <Text style={styles.userMeta}>{contact || t('Контакт не указан')}</Text>
-                <Text style={styles.userMeta} numberOfLines={1}>{t('Вход: {method}', { method: t(authMethod).toLocaleLowerCase() })}</Text>
-              </View>
+          <View style={styles.account}>
+            <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Фото профиля')} style={styles.avatar} onPress={handlePickAvatar}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+              ) : (
+                <View style={[styles.avatarImage, styles.avatarInitial, { backgroundColor: isDark ? '#FFFFFF' : INK }]}>
+                  <Text style={[font('semibold'), { fontSize: 24, color: onInk }]}>{name.trim().charAt(0).toUpperCase() || '?'}</Text>
+                </View>
+              )}
+            </AppPressable>
+            <View style={styles.accountInfo}>
+              <Text style={[font('semibold'), styles.userName, { color: c.text }]} numberOfLines={1}>{name}</Text>
+              <Text style={[font('regular'), styles.userMeta, { color: c.muted }]} numberOfLines={1}>{contact || t('Контакт не указан')}</Text>
+              <Text style={[font('regular'), styles.userMeta, { color: c.muted }]} numberOfLines={1}>{t('Вход: {method}', { method: t(authMethod).toLocaleLowerCase() })}</Text>
             </View>
           </View>
         </FadeInView>
 
-        <StylePreferencesFields gender={gender} beautyAdvice={beautyAdvice} onGenderChange={onGenderChange} onBeautyChange={onBeautyChange} />
-
         <FadeInView delay={60}>
-          <SectionLabel>{t('Примерка')}</SectionLabel>
-          <View style={styles.modelCard}>
-            <Text style={styles.modelTitle}>{t('Фото для виртуальной примерки')}</Text>
-            <Text style={styles.modelText}>
-              {t('Фото в полный рост, от макушки до стоп, руки опущены. Фон любой, вырезать его не нужно. Лучше в облегающей одежде. На это фото мы надеваем образы.')}
-            </Text>
-            {/* The try-on photo is shown full length: it is the person every look is put on. */}
-            <AppPressable style={styles.modelPreview} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}
-              accessibilityRole={modelUri ? 'imagebutton' : 'button'} accessibilityLabel={t(modelUri ? 'Фото для примерки' : '+ Добавить фото модели')}>
-              {modelUri ? (
-                <Image source={{ uri: modelUri }} style={styles.modelImage} resizeMode="contain" />
-              ) : (
-                <View style={styles.modelEmpty}>
-                  <LinearGradient
-                    colors={[colors.accentGoldSoft, colors.surface] as const}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.modelEmptyCircle}
-                  >
-                    <PersonStanding size={34} strokeWidth={1.3} color={colors.accentGold} />
-                  </LinearGradient>
-                  <Text style={styles.modelPlaceholder}>{t('+ Добавить фото модели')}</Text>
+          <Glass radius={28} style={styles.tryOn}>
+            <View style={styles.tryOnRow}>
+              {/* The try-on photo is the person every look is put on; the full-length picture opens on tap. */}
+              <AppPressable style={styles.photo} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}
+                accessibilityRole={modelUri ? 'imagebutton' : 'button'} accessibilityLabel={t(modelUri ? 'Фото для примерки' : '+ Добавить фото модели')}>
+                {modelUri ? (
+                  <Image source={{ uri: modelUri }} style={styles.photoImage} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.photoImage, styles.photoEmpty, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)' }]}>
+                    <PersonStanding size={30} strokeWidth={1.3} color={c.muted} />
+                  </View>
+                )}
+              </AppPressable>
+              <View style={styles.tryOnBody}>
+                <Text style={[font('semibold'), styles.tryOnTitle, { color: c.text }]}>{t('Фото для примерки')}</Text>
+                <Text style={[font('regular'), styles.tryOnHint, { color: c.muted }]}>
+                  {t('Фото в полный рост, от макушки до стоп, руки опущены. Фон любой, вырезать его не нужно. Лучше в облегающей одежде. На это фото мы надеваем образы.')}
+                </Text>
+                <Pill variant="primary" size="sm" title={t(modelUri ? 'Заменить фото' : 'Выбрать из галереи')} onPress={handlePickModel} style={styles.replace} />
+              </View>
+            </View>
+            {modelUri ? <View style={styles.advice}><PhotoAdvice uri={modelUri} /></View> : null}
+          </Glass>
+        </FadeInView>
+
+        <FadeInView delay={120}>
+          <SettingsPanel>
+            <StylePreferencesFields bare gender={gender} beautyAdvice={beautyAdvice} onGenderChange={onGenderChange} onBeautyChange={onBeautyChange} />
+            <SettingsRow title={t('Язык')} value={LANGUAGES.find(item => item.code === lang)?.label} onPress={() => setLanguageOpen(true)} />
+            <SettingsRow title={t('Тема оформления')} value={t(mode === 'dark' ? 'Тёмная' : 'Светлая')} onPress={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
+            <SettingsRow title={t('Политика конфиденциальности')} hint={t('Какие данные обрабатываются и где')} onPress={onOpenPrivacy} />
+            <SettingsRow title={t('Согласие на обработку фото ИИ')} hint={t('Отозвать разрешение на отправку фото нейросетям')} onPress={onRevokeAiConsent} />
+            <SettingsRow danger title={t('Удалить аккаунт')} hint={t('Удалит аккаунт и все данные без возможности восстановления')} onPress={onDeleteAccount} />
+          </SettingsPanel>
+        </FadeInView>
+
+        <FadeInView delay={180}>
+          <View style={styles.actions}>
+            <Pill title={t('Как это работает')} style={styles.help} onPress={() => setHelpOpen(true)} />
+            <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Выйти из аккаунта')} onPress={onLogout} style={styles.logout}>
+              <Glass>
+                <View style={styles.logoutInner}>
+                  <Text style={[font('semibold'), { fontSize: 15, color: isDark ? c.danger : '#C62828' }]} numberOfLines={1}>{t('Выйти')}</Text>
                 </View>
-              )}
+              </Glass>
             </AppPressable>
-            {modelUri ? <PhotoAdvice uri={modelUri} /> : null}
-            <PrimaryButton title={t(modelUri ? 'Заменить фото' : 'Выбрать из галереи')} onPress={handlePickModel} variant={modelUri ? 'ghost' : 'gold'} />
           </View>
         </FadeInView>
-
-        <FadeInView delay={120} style={styles.settingsLabelWrap}>
-          <SectionLabel>{t('Настройки')}</SectionLabel>
-        </FadeInView>
-
-        {renderSettingRow({
-          icon: mode === 'dark' ? Moon : Sun,
-          title: t('Тема оформления'),
-          value: t(mode === 'dark' ? 'Тёмная' : 'Светлая'),
-          delay: 160,
-          onPress: () => setMode(mode === 'dark' ? 'light' : 'dark')
-        })}
-
-        {renderSettingRow({
-          icon: Globe,
-          title: t('Язык'),
-          value: LANGUAGES.find(item => item.code === lang)?.label,
-          delay: 200,
-          onPress: () => setLanguageOpen(true)
-        })}
-
-        {renderSettingRow({
-          icon: LockKeyhole,
-          title: t('Политика конфиденциальности'),
-          hint: t('Какие данные обрабатываются и где'),
-          delay: 240,
-          onPress: onOpenPrivacy
-        })}
-
-        {renderSettingRow({
-          icon: Bot,
-          title: t('Согласие на обработку фото ИИ'),
-          hint: t('Отозвать разрешение на отправку фото нейросетям'),
-          delay: 260,
-          onPress: onRevokeAiConsent
-        })}
-
-        {renderSettingRow({
-          icon: LogOut,
-          title: t('Выйти из аккаунта'),
-          danger: true,
-          delay: 280,
-          onPress: onLogout
-        })}
-
-        {renderSettingRow({
-          icon: Trash2,
-          title: t('Удалить аккаунт'),
-          hint: t('Удалит аккаунт и все данные без возможности восстановления'),
-          danger: true,
-          delay: 320,
-          onPress: onDeleteAccount
-        })}
       </ScrollView>
     </View>
   );
 }
 
-const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  languageSheet: { borderRadius: 4, borderWidth: 1, padding: 18, gap: 10 },
-  languageOption: { borderWidth: 1, borderColor: c.border, borderRadius: 4, paddingHorizontal: 16, paddingVertical: 14 },
-  container: {
-    flex: 1
-  },
-  content: {
-    gap: SPACING.md,
-    paddingBottom: 28
-  },
-  // The account as a plain row at the top of the screen, not a card inside the screen.
-  profileCard: {
-    paddingBottom: SPACING.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border
-  },
-  profileTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.lg
-  },
-  avatarPressable: {
-    borderRadius: 40
-  },
-  avatarRing: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarInner: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: c.chip,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden'
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%'
-  },
-  avatarPlaceholder: {
-    fontSize: 28,
-    color: c.muted,
-    fontWeight: '600'
-  },
-  profileInfo: {
-    flex: 1
-  },
-  userName: {
-    fontFamily: SERIF,
-    fontSize: 21,
-    letterSpacing: -0.2,
-    color: c.text
-  },
-  userMeta: {
-    marginTop: 4,
-    color: c.muted,
-    fontSize: 13
-  },
-  statsDivider: {
-    height: 1,
-    backgroundColor: c.goldHairline,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.md
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch'
-  },
-  statCell: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3
-  },
-  statsSeparator: {
-    width: 1,
-    backgroundColor: c.border,
-    marginHorizontal: SPACING.sm
-  },
-  statValue: {
-    fontFamily: SERIF,
-    fontSize: 19,
-    color: c.accentGold
-  },
-  statText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: c.text
-  },
-  statLabel: {
-    ...TYPE.caption,
-    color: c.muted,
-    textAlign: 'center'
-  },
-  modelCard: {
-    backgroundColor: c.card,
-    borderRadius: RADII.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.lg,
-    gap: SPACING.md,
-    ...SHADOWS.card
-  },
-  modelTitle: {
-    ...TYPE.title,
-    color: c.text
-  },
-  modelText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  modelPreview: {
-    height: 420,
-    borderRadius: RADII.lg,
-    overflow: 'hidden',
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  modelImage: {
-    width: '100%',
-    height: '100%'
-  },
-  modelEmpty: {
-    alignItems: 'center',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.xl
-  },
-  modelEmptyCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: c.goldHairline
-  },
-  modelPlaceholder: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: c.muted,
-    textAlign: 'center'
-  },
-  settingsLabelWrap: {
-    marginTop: SPACING.sm,
-    marginBottom: -SPACING.sm
-  },
-  settingCard: {
-    backgroundColor: c.card,
-    borderRadius: RADII.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    ...SHADOWS.card
-  },
-  settingIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: c.surface,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  settingIconWrapDanger: {
-    backgroundColor: c.dangerSoft
-  },
-  settingBody: {
-    flex: 1,
-    gap: 2
-  },
-  settingTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: c.text
-  },
-  settingTitleDanger: {
-    color: c.danger
-  },
-  settingHint: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  settingValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: c.accentGold
-  },
-  previewBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    justifyContent: 'center',
-    padding: 16
-  },
-  previewImageFull: {
-    width: '100%',
-    height: '86%'
-  },
-  previewClose: {
-    alignSelf: 'center',
-    marginTop: 12,
-    backgroundColor: c.chip,
-    borderRadius: 4,
-    paddingHorizontal: 20,
-    paddingVertical: 11
-  },
-  previewCloseText: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '700'
-  }
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  content: { gap: 12, paddingBottom: 8 },
+  account: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 4 },
+  avatar: { borderRadius: 32 },
+  avatarImage: { width: 64, height: 64, borderRadius: 32 },
+  avatarInitial: { alignItems: 'center', justifyContent: 'center' },
+  accountInfo: { flex: 1, gap: 1 },
+  userName: { fontSize: 20, lineHeight: 26, letterSpacing: -0.4 },
+  userMeta: { fontSize: 13, lineHeight: 18 },
+  tryOn: { padding: 12 },
+  tryOnRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  photo: { borderRadius: 18 },
+  photoImage: { width: 74, height: 100, borderRadius: 18 },
+  photoEmpty: { alignItems: 'center', justifyContent: 'center' },
+  tryOnBody: { flex: 1 },
+  tryOnTitle: { fontSize: 15, lineHeight: 20 },
+  tryOnHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  replace: { alignSelf: 'flex-start', marginTop: 8 },
+  advice: { marginTop: 12 },
+  actions: { flexDirection: 'row', gap: 8 },
+  help: { flex: 1 },
+  logout: { borderRadius: 999 },
+  logoutInner: { height: 50, paddingHorizontal: 22, alignItems: 'center', justifyContent: 'center' },
+  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
+  previewImageFull: { width: '100%', height: '86%' },
+  previewClose: { alignSelf: 'center', marginTop: 12, height: 44, paddingHorizontal: 24, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' }
 });

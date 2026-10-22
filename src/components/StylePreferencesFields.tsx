@@ -1,48 +1,36 @@
-import { StyleSheet, Switch, Text, View } from 'react-native';
-import { Check } from 'lucide-react-native';
+import { useState } from 'react';
+import { Switch } from 'react-native';
 import { Gender, genderOptions } from '../types/profile';
-import { useTheme, useThemedStyles } from '../constants/ThemeContext';
-import { ThemeColors } from '../constants/theme';
+import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { AppPressable } from './AppPressable';
+import { INK } from './studio/studio';
+import { ChoiceSheet, SettingsPanel, SettingsRow } from './SettingsRows';
 
-export function StylePreferencesFields({ gender, beautyAdvice, onGenderChange, onBeautyChange }: {
+/**
+ * Gender and beauty advice as settings rows. On its own it sits on a glass panel;
+ * with `bare` it gives just the rows, for a panel that holds more settings.
+ */
+export function StylePreferencesFields({ gender, beautyAdvice, onGenderChange, onBeautyChange, bare }: {
   gender?: Gender;
   beautyAdvice: boolean;
   onGenderChange: (gender: Gender) => void;
   onBeautyChange: (enabled: boolean) => void;
+  bare?: boolean;
 }) {
   const t = useT();
-  const { colors } = useTheme();
-  const styles = useThemedStyles(makeStyles);
-  return <View style={styles.wrap}>
-    <Text style={styles.label}>{t('Пол')}</Text>
-    <View accessibilityRole="radiogroup" style={styles.options}>
-      {genderOptions.map(option => <AppPressable key={option.value} accessibilityRole="radio" accessibilityLabel={t(option.label)}
-        accessibilityState={{ checked: gender === option.value }} onPress={() => onGenderChange(option.value)}
-        style={[styles.option, gender === option.value && styles.active]}>
-        <Text style={styles.text}>{t(option.label)}</Text>
-        <View style={[styles.radio, gender === option.value && { backgroundColor: colors.buttonPrimaryBg }]}>
-          {gender === option.value && <Check size={13} color={colors.buttonPrimaryText} />}
-        </View>
-      </AppPressable>)}
-    </View>
-    <View style={styles.toggle}>
-      <Text style={[styles.text, { flex: 1 }]}>{t('Советы по макияжу и укладке')}</Text>
+  const { isDark } = useTheme();
+  const [genderOpen, setGenderOpen] = useState(false);
+  const options = genderOptions.map(option => ({ value: option.value, label: t(option.label) }));
+  const rows = <>
+    <SettingsRow title={t('Пол')} value={options.find(option => option.value === gender)?.label ?? t('Выбрать')} onPress={() => setGenderOpen(true)} />
+    <SettingsRow title={t('Советы по макияжу и укладке')} right={
+      // Black track when on; on dark ground the track turns light so it stays visible.
       <Switch accessibilityLabel={t('Советы по макияжу и укладке')} value={beautyAdvice} onValueChange={onBeautyChange}
-        trackColor={{ false: colors.border, true: colors.accentGold }} />
-    </View>
-  </View>;
+        trackColor={{ false: isDark ? '#3A3D42' : '#D7D9DC', true: isDark ? '#F4F5F7' : INK }}
+        thumbColor={beautyAdvice && isDark ? INK : '#FFFFFF'} {...{ activeThumbColor: beautyAdvice && isDark ? INK : '#FFFFFF' }} />
+    } />
+    <ChoiceSheet visible={genderOpen} title={t('Пол')} options={options} value={gender}
+      onChoose={value => { onGenderChange(value); setGenderOpen(false); }} onClose={() => setGenderOpen(false)} />
+  </>;
+  return bare ? rows : <SettingsPanel>{rows}</SettingsPanel>;
 }
-
-const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  wrap: { gap: 14 },
-  label: { color: c.muted, fontSize: 13 },
-  // A plain list on hairlines, the chosen row marked by its radio alone: no boxed cards.
-  options: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
-  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border },
-  active: {},
-  text: { color: c.text, fontSize: 15, lineHeight: 20 },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14 }
-});
