@@ -95,6 +95,8 @@ export const en: Record<string, string> = {
   "Магазин": "Store",
   "Рисунок": "Pattern",
   "Не удалось выровнять фото": "Could not smooth the photo",
+  "Ровное фото вышло непохожим на вещь, оставили исходное.": "The smoothed photo didn't look like the item, so the original was kept.",
+  "Не удалось вырезать вещь на ровном фото, оставили исходное.": "Couldn't cut the item out of the smoothed photo, so the original was kept.",
   "Попробуй ещё раз.": "Please try again.",
   "Вернуть прежнее фото": "Restore the previous photo",
   "Выровнять фото": "Smooth the photo",

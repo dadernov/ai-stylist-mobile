@@ -335,13 +335,17 @@ class ClothingClassifier:
     def _fit(self, image: Image.Image):
         return ImageOps.pad(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC, color="white")
 
-    def predict(self, original: Image.Image, foreground: Image.Image, section_hint=None):
+    def _view_vectors(self, original: Image.Image, foreground: Image.Image):
+        """One photo's two image vectors: the garment cut out on white, and the whole frame."""
         white = Image.new("RGB", foreground.size, "white")
         white.paste(foreground.convert("RGB"), mask=foreground.getchannel("A"))
         bbox = foreground.getchannel("A").getbbox()
         subject = self._fit(white.crop(bbox) if bbox else white)
         full = self._fit(ImageOps.fit(original.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
-        vectors = self._embed([subject, full])
+        return self._embed([subject, full])
+
+    def _view_scores(self, vectors):
+        """The category similarities one photo gives (its cut-out and frame, plus the learned head), and its cut-out's own scores."""
         subject_scores, full_scores = [vector @ self.features.T * 100 for vector in vectors]
         # The cutout shows the garment, the frame shows the context; each alone
         # misreads a class of photos, and an even blend measured best.
@@ -351,6 +355,33 @@ class ClothingClassifier:
             weights, bias = self.head
             similarities = similarities.copy()
             similarities[:len(CATEGORIES)] += normalise(vectors.mean(axis=0)) @ weights + bias
+        return similarities, subject_scores, full_scores
+
+    def predict(self, original: Image.Image, foreground: Image.Image, section_hint=None, extra=()):
+        """The garment's category, pattern and traits from its photo and cut-out.
+
+        extra: more views of the same garment as (photo, cut-out) pairs, such as its smoothed flat
+        picture (/garment-flat). The category and pattern scores are then averaged over every view;
+        the person check, the traits and the feedback embedding stay the first photo's own. Each extra
+        view is also reported on its own under "views": its top category and how alike its cut-out is
+        to the first one's (cosine), so the caller can tell a different garment from another view.
+        """
+        vectors = self._view_vectors(original, foreground)
+        similarities, subject_scores, full_scores = self._view_scores(vectors)
+        views = []
+        if extra:
+            all_similarities, all_subjects = [similarities], [subject_scores]
+            for view_original, view_foreground in extra:
+                view_vectors = self._view_vectors(view_original, view_foreground)
+                view_similarities, view_subject, _ = self._view_scores(view_vectors)
+                all_similarities.append(view_similarities); all_subjects.append(view_subject)
+                own = CATEGORIES[int(np.argmax(view_similarities[:len(CATEGORIES)]))][0]
+                views.append({"category": own, "similarity": round(float(vectors[0] @ view_vectors[0]), 4)})
+            first = CATEGORIES[int(np.argmax(similarities[:len(CATEGORIES)]))][0]
+            views.insert(0, {"category": first, "similarity": 1.0})
+            # Averaged logits: one view's strong opinion counts, but two views that agree count more.
+            similarities = np.mean(all_similarities, axis=0)
+            subject_scores = np.mean(all_subjects, axis=0)
 
         indices = [index for index, entry in enumerate(CATEGORIES) if not section_hint or entry[1] == section_hint]
         choices = ranked(similarities[indices])
@@ -382,6 +413,7 @@ class ClothingClassifier:
                 "seasonSource": "category", "warnings": warnings,
                 "analysisSource": "fashion-siglip-onnx+head" if self.head is not None else "fashion-siglip-onnx",
                 "wornByPerson": worn,
+                **({"views": views} if views else {}),
                 # For feedback.py: what the user then saves the photo as becomes a training example.
                 "embedding": normalise(vectors.mean(axis=0))}
 

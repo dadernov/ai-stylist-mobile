@@ -207,13 +207,28 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 
 }
 
-/** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo. */
-export async function flattenGarment(uri: string): Promise<string> {
+/** What the flat picture and the photo show together: the same fields /analyze reads, from both views. */
+export type FlatAnalysis = Pick<AiResult, 'category' | 'section' | 'categoryCandidates' | 'needsReview' | 'pattern' | 'season'
+  | 'dominantColor' | 'palette' | 'warnings' | 'traits' | 'analysisSource'>;
+
+export type FlatGarment = {
+  /** The smoothed, laid-flat garment as a transparent PNG cut-out (an older server sends a JPEG). */
+  image: string;
+  /** Absent from an older server, or when recognition was unavailable. */
+  analysis?: FlatAnalysis;
+};
+
+/** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo.
+ *  The server refuses a flat that does not show the photo's garment, so the caller keeps its picture. */
+export async function flattenGarment(uri: string, sectionHint?: string): Promise<FlatGarment> {
   const form = new FormData();
   await appendPhoto(form, 'file', uri);
+  // The analysis keeps to the section the item is being added to, as /analyze does.
+  if (sectionHint) form.append('section_hint', sectionHint);
   const result = await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000);
   if (typeof result?.image !== 'string') throw new Error('no image');
-  return result.image;
+  const analysis = result.analysis && typeof result.analysis === 'object' && typeof result.analysis.category === 'string' ? result.analysis : undefined;
+  return { image: result.image, analysis };
 }
 
 /** The traits of an item added before /analyze returned them: read once, then kept with the item. */

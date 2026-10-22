@@ -34,7 +34,7 @@ import { SHADOWS, ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { analyzeImage, AiResult, flattenGarment, sendCategoryFeedback } from '../services/ai';
+import { analyzeImage, AiResult, FlatAnalysis, flattenGarment, sendCategoryFeedback } from '../services/ai';
 import { GarmentLabel } from '../components/GarmentLabel';
 import { WardrobeStudio } from '../components/studio/WardrobeStudio';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
@@ -362,10 +362,11 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     if (!photo || flatBusyId || !(await aiConsent.ensure())) return;
     setFlatBusyId(item.id);
     try {
+      // Only the picture changes: what the item was saved as stays the person's.
       const flat = await flattenGarment(photo);
       if (item.imageUri) setFlatUndo({ id: item.id, imageUri: item.imageUri });
       forgetFlat(item.id);
-      putFlat(item.id, flat);
+      putFlat(item.id, flat.image);
     } catch (error: any) {
       Alert.alert(t('Не удалось выровнять фото'), String(error?.message || t('Попробуй ещё раз.')));
     } finally {
@@ -502,6 +503,27 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     }
   };
 
+  // Fills the draft from what recognition read, leaving alone every field the person set by hand.
+  const applyReading = (result: FlatAnalysis) => {
+    const hex = normalizeHex(result.dominantColor || '');
+    const named = hex ? getClosestColorName(hex) : 'Не определено';
+    if (!manualFields.current.has('color')) setDraftColor(hex ? named : '');
+    if (!manualFields.current.has('color')) setDraftColorHex(hex);
+    const normalizedPalette = (result.palette || []).map((color) => normalizeHex(color)).filter(Boolean);
+    const paletteNames = normalizedPalette
+      .map((color) => getClosestColorName(color))
+      .filter((name) => name && name !== 'Не определено');
+    const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
+    if (!manualFields.current.has('color')) setDraftPalette(uniquePalette);
+    if (result.category && !manualFields.current.has('category')) {
+      setDraftCategory(result.category);
+      setCategoryConfirmed(!result.needsReview);
+      if (!manualFields.current.has('section')) setDraftSection(getSectionByCategory(result.category));
+    }
+    if (result.season && !manualFields.current.has('season')) setDraftSeason(result.season);
+    if (result.pattern && !manualFields.current.has('pattern')) setDraftPattern(result.pattern);
+  };
+
   const applyAi = async (photoUri: string, sectionHint?: string) => {
     const requestId = ++analysisRequestRef.current;
     if (!(await aiConsent.ensure())) {
@@ -514,23 +536,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       const result = await analyzeImage(photoUri, sectionHint);
       if (analysisRequestRef.current !== requestId) return; // ответ на уже неактуальное фото
       setAnalysis(result);
-      const hex = normalizeHex(result.dominantColor || '');
-      const named = hex ? getClosestColorName(hex) : 'Не определено';
-      if (!manualFields.current.has('color')) setDraftColor(hex ? named : '');
-      setDraftColorHex(hex);
-      const normalizedPalette = (result.palette || []).map((color) => normalizeHex(color)).filter(Boolean);
-      const paletteNames = normalizedPalette
-        .map((color) => getClosestColorName(color))
-        .filter((name) => name && name !== 'Не определено');
-      const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
-      if (!manualFields.current.has('color')) setDraftPalette(uniquePalette);
-      if (result.category && !manualFields.current.has('category')) {
-        setDraftCategory(result.category);
-        setCategoryConfirmed(!result.needsReview);
-        if (!manualFields.current.has('section')) setDraftSection(getSectionByCategory(result.category));
-      }
-      if (result.season && !manualFields.current.has('season')) setDraftSeason(result.season);
-      if (result.pattern && !manualFields.current.has('pattern')) setDraftPattern(result.pattern);
+      applyReading(result);
       if (result.bgRemovedBase64) {
         setDraftPhoto(result.bgRemovedBase64);
       }
@@ -539,12 +545,19 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       if (result.category && FLAT_SECTIONS.includes(getSectionByCategory(result.category))) {
         const cutout = result.bgRemovedBase64 || photoUri;
         setDraftFlat({ flat: null, cutout, busy: true });
-        flattenGarment(photoUri).then(flat => {
+        flattenGarment(photoUri, sectionHint).then(flat => {
+          // Saved already: only its picture changes, never what it was saved as.
           const saved = flatTargets.current.get(requestId);
-          if (saved) { flatTargets.current.delete(requestId); putFlat(saved, flat); return; }
+          if (saved) { flatTargets.current.delete(requestId); putFlat(saved, flat.image); return; }
           if (analysisRequestRef.current !== requestId) return;
-          setDraftFlat({ flat, cutout, busy: false });
-          setDraftPhoto(flat);
+          setDraftFlat({ flat: flat.image, cutout, busy: false });
+          setDraftPhoto(flat.image);
+          // The flat and the photo read together are the surer reading; the analysis id stays the photo's.
+          const reading = flat.analysis;
+          if (reading) {
+            setAnalysis(previous => previous ? { ...previous, ...reading } : previous);
+            applyReading(reading);
+          }
         }).catch(() => { if (analysisRequestRef.current === requestId) setDraftFlat({ flat: null, cutout, busy: false }); });
       }
     } catch (error: any) {
@@ -849,7 +862,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
               ) : null}
               {isAnalyzing ? <ScanBeam height={draftStageHeight} reduced={reduced} /> : null}
               {!isAnalyzing ? draftTags.map(({ key, label, swatch, at }, slot) => label ? (
-                <RevealTag key={key} label={label} swatch={swatch} delay={slot * 250} reduced={reduced} ink={ink}
+                <RevealTag key={`${key}:${label}`} label={label} swatch={swatch} delay={slot * 250} reduced={reduced} ink={ink}
                   style={{ left: at.left, right: at.right, top: Math.round(at.top * draftStageHeight) }} />
               ) : null) : null}
               {isAnalyzing ? (

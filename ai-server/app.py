@@ -1301,14 +1301,95 @@ FLAT_PROMPT = ('Product photo of exactly this garment alone, neatly laid out fla
                'person, mannequin and background. Do not add, remove or change any detail of the garment.')
 
 
+# The flat picture must show the very garment of the photo: the generator may change it (another
+# collar, a whole outfit, a different piece). Its cut-out is compared with the photo's own, as the
+# classifier sees both (SigLIP image vectors): measured on real home photos and their flats
+# (FLAT_REPORT.md), the same garment never fell below this while a different garment of the same
+# kind often stays above it, so it only catches a flat that drew something else.
+FLAT_MIN_SIMILARITY = _env_float('AI_FLAT_MIN_SIMILARITY', 0.70)
+FLAT_MAX_SIDE = 1000
+FLAT_DIFFERENT = "Ровное фото вышло непохожим на вещь, оставили исходное."
+FLAT_NO_CUTOUT = "Не удалось вырезать вещь на ровном фото, оставили исходное."
+_FLAT_LOCK = threading.Lock()
+_ONE_PIECE = {"Платье", "Сарафан", "Комбинезон"}
+_CATEGORY_SECTION = {entry[0]: entry[1] for entry in CATEGORIES}
+# Analysis fields the flat picture answers; traits, the person check and the feedback id stay /analyze's.
+_FLAT_ANALYSIS_FIELDS = ("category", "section", "categoryCandidates", "needsReview", "pattern", "season", "traits", "analysisSource")
+
+
+def _garment_zone(category):
+    """Where a garment is worn: top, bottom or one-piece for clothes; its section for the rest."""
+    if category in _ONE_PIECE:
+        return "one-piece"
+    section = _CATEGORY_SECTION.get(category)
+    return "top" if section in ("Верх", "Верхняя одежда") else section
+
+
+def _garment_foreground(content: bytes, image: Image.Image):
+    """The garment cut out by rembg and how much of the frame it covers."""
+    rgba, _ = _remove_background_rgba(content, image)
+    if rgba.size != image.size:
+        rgba = rgba.resize(image.size)
+    return rgba, float((np.asarray(rgba.getchannel("A")) > 180).mean())
+
+
+def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
+    """The flat picture as a transparent cut-out for the card, and what it and the photo show together.
+
+    Raises HTTPException when the flat cannot be cut out or does not show the photo's garment;
+    the app then keeps the photo's own cut-out.
+    """
+    original, analysis_content = _prepare_image_for_analysis(content)
+    flat = flat.convert("RGB")
+    buffer = BytesIO()
+    flat.save(buffer, "JPEG", quality=92)
+    with _FLAT_LOCK:
+        flat_rgba, flat_cover = _garment_foreground(buffer.getvalue(), flat)
+        if not 0.02 < flat_cover < 0.98:
+            print(f"Garment flat: no cut-out (cover {flat_cover:.3f})", flush=True)
+            raise HTTPException(502, FLAT_NO_CUTOUT)
+        original_rgba, cover = _garment_foreground(analysis_content, original)
+        if cover <= 0.02:
+            original_rgba = original.convert("RGBA")
+        try:
+            result = get_classifier().predict(original, original_rgba, section_hint or None, extra=[(flat, flat_rgba)])
+        except Exception as exc:
+            print(f"Garment flat: classifier unavailable: {type(exc).__name__}", flush=True)
+            result = None
+    analysis = None
+    if result is not None:
+        own, other = result["views"][0], result["views"][1]
+        if other["similarity"] < FLAT_MIN_SIMILARITY or _garment_zone(own["category"]) != _garment_zone(other["category"]):
+            print(f"Garment flat rejected: similarity {other['similarity']:.3f}, {own['category']} -> {other['category']}", flush=True)
+            raise HTTPException(422, FLAT_DIFFERENT)
+        palette = extract_palette(flat_rgba, flat_rgba.getchannel("A"))
+        # The flat shows the garment alone: its colour is the garment's even when the photo had a person in it.
+        analysis = {field: result[field] for field in _FLAT_ANALYSIS_FIELDS if field in result}
+        analysis.update({"dominantColor": palette[0] if palette else None, "palette": palette,
+                         "warnings": [warning for warning in result.get("warnings", []) if not warning.startswith("На фото человек")]})
+        print(f"Garment flat: similarity {other['similarity']:.3f}, {own['category']} / {other['category']} -> {result['category']}", flush=True)
+    alpha = flat_rgba.getchannel("A")
+    x0, y0, x1, y1 = alpha.getbbox()
+    margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
+    card = flat_rgba.crop((max(0, x0 - margin), max(0, y0 - margin), min(flat.width, x1 + margin), min(flat.height, y1 + margin)))
+    card.thumbnail((FLAT_MAX_SIDE, FLAT_MAX_SIDE), Image.Resampling.LANCZOS)
+    return {"image": _image_to_data_url(card), **({"analysis": analysis} if analysis else {})}
+
+
 @app.post("/garment-flat")
-async def garment_flat(file: UploadFile = File(...), device: str = Depends(access.require_account)):
-    """A smoothed, laid-flat picture of a garment for its card in the wardrobe.
+async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
+    """A smoothed, laid-flat picture of a garment for its card in the wardrobe, cut out on transparency.
 
     Only for the card: the try-on keeps the item's own photo, so whatever the
     editor invents here never reaches a look. Seedream 5.0 Flash at 1K, about 15 s.
+    "image" is a PNG cut-out of the flat (at most 1000 px); "analysis" is the category,
+    colour and pattern read from the flat and the photo together. A flat that does not
+    show the photo's garment is refused (422), so the app keeps the photo's own cut-out.
+    section_hint narrows the category as in /analyze.
     """
     access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
+    if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
+        raise HTTPException(422, "Неизвестная категория гардероба.")
     if not fal_tryon.enabled():
         raise HTTPException(503, "Выравнивание фото сейчас недоступно.")
     content = await file.read(15 * 1024 * 1024 + 1)
@@ -1328,12 +1409,11 @@ async def garment_flat(file: UploadFile = File(...), device: str = Depends(acces
         image = await _load_image_from_url_or_data_url(client, result['outputUrl'])
     if image is None:
         raise HTTPException(502, "Не удалось получить выровненное фото.")
-    image = image.convert('RGB')
-    image.thumbnail((1280, 1280))
-    buffer = BytesIO()
-    image.save(buffer, 'JPEG', quality=90)
     print(f"Garment flat: {result.get('runSeconds')} s, usd={model.flat_usd}", flush=True)
-    return {"image": 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode()}
+    try:
+        return await asyncio.to_thread(_flat_card, content, image, section_hint)
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(422, "Не удалось открыть фото.")
 
 
 @app.post("/garment-traits")
