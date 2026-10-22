@@ -1,0 +1,61 @@
+{
+ "version": 1,
+ "projectId": "9beaebe2-7f09-4452-b892-15bff5f484a0",
+ "targets": {
+  "wardrobe": {
+   "route": "Гардероб tab (src/screens/WardrobeScreen.tsx)",
+   "baselineDraftId": "6a0ed267-29d0-465c-ae2a-4f0992282815",
+   "activeDraftId": "37ec3bf7-7116-4fc3-a89a-99f205d820bd",
+   "candidates": {
+    "nomerok": "80de0a67-112c-47ec-83a1-b0b8ff77ca68",
+    "oblozhka": "05e6e330-23fd-43be-a000-997d4d0b7e71",
+    "garderobnaya": "813cf2c6-5176-4820-9beb-293bce38533a",
+    "uhod": "13a7f2c7-6a58-48b3-b3b4-1f3071df6a8c",
+    "birka_generated": "27c85c92-76ce-4ea2-8abd-249313da48dd",
+    "vykroyka_generated": "db91280e-d866-476b-a5fc-bf9dc477b6ac",
+    "flatlay_generated": "33a9f04a-2dcc-43bd-a61b-da377c277864",
+    "studio": "37ec3bf7-7116-4fc3-a89a-99f205d820bd",
+    "cvet": "2128cff4-97c3-43c9-8854-f4112478c274",
+    "nevesomost": "08596dad-225f-4ea4-ba90-d784e11622a6",
+    "stopka": "139eb3a3-ea7c-4ee6-8bce-c30f105cd206"
+   },
+   "contextFiles": [
+    ".superdesign/design-system.md",
+    "src/screens/WardrobeScreen.tsx:655:720",
+    "src/screens/WardrobeScreen.tsx:945:975",
+    "src/components/GarmentTile.tsx",
+    "src/components/Chip.tsx",
+    "src/components/ui/ScreenHeader.tsx",
+    "src/constants/theme.ts",
+    "App.tsx:686:722",
+    "App.tsx:900:960"
+   ],
+   "activeDirection": "Студия (v2: tinted key light, swipe, sections, all-items sheet)"
+  },
+  "ideas": {
+   "route": "Идеи (RecommendationsScreen)",
+   "activeDraftId": "3766287d-49f3-4647-a78d-c720149c3f6f",
+   "source": ".superdesign/tmp/build_screens.py"
+  },
+  "fitting": {
+   "route": "Примерка (OutfitBuilderScreen)",
+   "activeDraftId": "a4ca3c22-0583-402e-99a0-8c52280dfed4",
+   "source": ".superdesign/tmp/build_screens.py"
+  },
+  "add-item": {
+   "route": "Add item sheet (WardrobeScreen)",
+   "activeDraftId": "fab6e30d-57d2-4c69-a467-4e2606e29bea",
+   "source": ".superdesign/tmp/build_screens.py"
+  },
+  "saved": {
+   "route": "Избранное (FavoritesScreen)",
+   "activeDraftId": "26fc517f-8c6b-481f-bb3d-fd72759afe8e",
+   "source": ".superdesign/tmp/build_screens.py"
+  },
+  "profile": {
+   "route": "Профиль (ProfileScreen)",
+   "activeDraftId": "41857385-f09b-4297-849f-c41beb46d8ea",
+   "source": ".superdesign/tmp/build_screens.py"
+  }
+ }
+}
