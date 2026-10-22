@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
-import { ThemeColors } from '../constants/theme';
-import { useThemedStyles } from '../constants/ThemeContext';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+import { useTheme } from '../constants/ThemeContext';
 import { AppPressable } from './AppPressable';
+import { Glass } from './studio/Glass';
+import { font, INK } from './studio/studio';
 
 type ChipProps = {
   label: string;
@@ -13,7 +14,7 @@ type ChipProps = {
 };
 
 export function Chip({ label, active = false, onPress, icon }: ChipProps) {
-  const styles = useThemedStyles(makeStyles);
+  const { isDark } = useTheme();
   const activeProgress = useRef(new Animated.Value(active ? 1 : 0)).current;
 
   useEffect(() => {
@@ -24,54 +25,24 @@ export function Chip({ label, active = false, onPress, icon }: ChipProps) {
     }).start();
   }, [active, activeProgress]);
 
+  const activeText = isDark ? INK : '#FFFFFF';
+  const idleText = isDark ? '#E4E6EA' : '#3F444B';
   return (
-    <AppPressable haptics style={styles.chip} onPress={onPress}>
-      {/* Выбранный пункт подчёркнут, как раздел в навигации магазина; черта плавно проявляется. */}
-      <Animated.View style={[styles.activeLayer, { opacity: activeProgress }]} />
+    <AppPressable haptics accessibilityState={{ selected: active }} style={styles.chip} onPress={onPress}>
+      <Glass style={StyleSheet.absoluteFill} />
+      {/* The black fill fades in over the glass when the chip is chosen. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 999, backgroundColor: isDark ? '#FFFFFF' : INK, opacity: activeProgress }]} />
       <View style={styles.content}>
         {icon ? <Text style={styles.icon}>{icon}</Text> : null}
-        <Text style={[styles.label, active && styles.labelActive]}>{label}</Text>
+        <Text style={[font('semibold'), styles.label, { color: active ? activeText : idleText }]}>{label}</Text>
       </View>
     </AppPressable>
   );
 }
 
-const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  // A text tab, not a filled pill: choices read as a store's sections, the chosen one underlined.
-  chip: {
-    height: 36,
-    paddingHorizontal: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16
-  },
-  activeLayer: {
-    position: 'absolute', left: 0, right: 0, bottom: 2, height: 1.5,
-    pointerEvents: 'none',
-    backgroundColor: c.text
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7
-  },
-  icon: {
-    fontSize: 15,
-    lineHeight: 20,
-    includeFontPadding: false
-  },
-  label: {
-    color: c.muted,
-    fontSize: 15,
-    fontWeight: '400',
-    letterSpacing: 0,
-    textAlign: 'center',
-    lineHeight: 20,
-    includeFontPadding: false,
-    ...(Platform.OS === 'android' ? { textAlignVertical: 'center' as const } : null)
-  },
-  labelActive: {
-    color: c.text
-  }
+const styles = StyleSheet.create({
+  chip: { height: 36, paddingHorizontal: 16, marginRight: 8, borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  icon: { fontSize: 15, lineHeight: 20, includeFontPadding: false },
+  label: { fontSize: 13, lineHeight: 18, textAlign: 'center', includeFontPadding: false }
 });

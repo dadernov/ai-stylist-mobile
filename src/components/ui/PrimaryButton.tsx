@@ -1,8 +1,9 @@
-import { ActivityIndicator, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { SHADOWS, ThemeColors } from '../../constants/theme';
-import { useTheme, useThemedStyles } from '../../constants/ThemeContext';
+import { ActivityIndicator, StyleProp, Text, View, ViewStyle } from 'react-native';
+import { useTheme } from '../../constants/ThemeContext';
 import { AppPressable } from '../AppPressable';
 import { LucideIcon } from 'lucide-react-native';
+import { Glass, PrimarySurface } from '../studio/Glass';
+import { font, INK } from '../studio/studio';
 
 type PrimaryButtonProps = {
   title: string;
@@ -10,15 +11,14 @@ type PrimaryButtonProps = {
   disabled?: boolean;
   loading?: boolean;
   variant?: 'primary' | 'gold' | 'ghost';
-  size?: 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg';
   style?: StyleProp<ViewStyle>;
   icon?: LucideIcon;
 };
 
 /**
- * The main button: a flat black rectangle with its icon before the title, as on
- * fashion storefronts. `ghost` is the quieter one beside it: white with a thin
- * black outline. 'gold' is kept for older callers and draws as 'primary'.
+ * The main button as the studio draws it: a black pill with the sheen. `ghost` is the quieter
+ * one beside it: a glass pill. 'gold' is kept for older callers and draws as 'primary'.
  */
 export function PrimaryButton({
   title,
@@ -30,11 +30,27 @@ export function PrimaryButton({
   style,
   icon: Icon
 }: PrimaryButtonProps) {
-  const { colors } = useTheme();
-  const styles = useThemedStyles(makeStyles);
+  const { isDark } = useTheme();
   const blocked = disabled || loading;
   const filled = variant !== 'ghost';
-  const contentColor = filled ? colors.buttonPrimaryText : colors.text;
+  const ink = filled ? (isDark ? INK : '#FFFFFF') : (isDark ? '#FFFFFF' : INK);
+  const height = size === 'lg' ? 56 : size === 'sm' ? 40 : 50;
+
+  const content = (
+    <View style={{ height, paddingHorizontal: size === 'sm' ? 16 : 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+      {loading ? (
+        <ActivityIndicator size="small" color={ink} />
+      ) : (
+        <>
+          {Icon ? <Icon size={18} strokeWidth={1.8} color={ink} /> : null}
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
+            style={[font('semibold'), { flexShrink: 1, color: ink, fontSize: size === 'lg' ? 16 : size === 'sm' ? 13 : 15 }]}>
+            {title}
+          </Text>
+        </>
+      )}
+    </View>
+  );
 
   return (
     <AppPressable
@@ -43,64 +59,9 @@ export function PrimaryButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ disabled: blocked, busy: loading }}
-      style={[
-        styles.base,
-        size === 'lg' ? styles.lg : styles.md,
-        filled ? styles.filled : styles.ghost,
-        blocked && styles.disabled,
-        style
-      ]}
+      style={[{ borderRadius: 999, opacity: blocked ? 0.45 : 1 }, style]}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={contentColor} />
-      ) : (
-        <>
-          {Icon ? <Icon size={18} strokeWidth={1.8} color={contentColor} /> : null}
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}
-            style={[styles.text, size === 'lg' && styles.textLg, { color: contentColor }]}>
-            {title}
-          </Text>
-        </>
-      )}
+      {filled ? <PrimarySurface dark={isDark}>{content}</PrimarySurface> : <Glass>{content}</Glass>}
     </AppPressable>
   );
 }
-
-const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  base: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    borderRadius: 4
-  },
-  md: {
-    height: 52,
-    paddingHorizontal: 24
-  },
-  lg: {
-    height: 56,
-    paddingHorizontal: 28
-  },
-  filled: {
-    backgroundColor: c.buttonPrimaryBg,
-    ...SHADOWS.button
-  },
-  ghost: {
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.text
-  },
-  disabled: {
-    opacity: 0.45
-  },
-  text: {
-    flexShrink: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0
-  },
-  textLg: {
-    fontSize: 16
-  }
-});

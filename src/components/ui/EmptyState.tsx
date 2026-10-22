@@ -1,8 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { SERIF, ThemeColors, TYPE } from '../../constants/theme';
+import { ThemeColors } from '../../constants/theme';
 import { useThemedStyles } from '../../constants/ThemeContext';
 import { FadeInView } from './FadeInView';
 import { PrimaryButton } from './PrimaryButton';
+import { font, INK_SOFT } from '../studio/studio';
 
 type EmptyStateProps = {
   emoji: string;
@@ -37,14 +38,16 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     lineHeight: 48
   },
   title: {
-    fontFamily: SERIF,
+    ...font('semibold'),
     fontSize: 22,
     lineHeight: 28,
     color: c.text
   },
   hint: {
-    ...TYPE.body,
-    color: c.muted,
+    ...font('regular'),
+    fontSize: 14,
+    lineHeight: 20,
+    color: INK_SOFT,
     marginTop: 6,
     maxWidth: 320
   },

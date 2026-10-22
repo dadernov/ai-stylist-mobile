@@ -63,7 +63,7 @@ export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'g
   );
 }
 
-function PrimarySurface({ children, dark }: { children: ReactNode; dark: boolean }) {
+export function PrimarySurface({ children, dark }: { children: ReactNode; dark: boolean }) {
   const [w, setW] = useState(0);
   return (
     <View onLayout={(event: LayoutChangeEvent) => setW(event.nativeEvent.layout.width)}
