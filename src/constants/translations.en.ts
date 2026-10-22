@@ -896,4 +896,8 @@ export const en: Record<string, string> = {
   "Сохранено в образы": "Saved to looks",
   "В гардероб": "Add to wardrobe",
   "Распознаём вещь…": "Reading the piece…",
+  "Образов: {count}": "{count} looks",
+  "С примеркой": "With try-on",
+  "Нет образов с примеркой": "No looks with a try-on yet",
+  "Примерь образ на себе, и он появится здесь.": "Try a look on yourself and it will show up here.",
 };
