@@ -4,6 +4,8 @@ import { Lightbulb } from 'lucide-react-native';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
+import { Glass } from './studio/Glass';
+import { font } from './studio/studio';
 import { checkTryOnPhoto, PhotoIssue } from '../services/ai';
 
 // One check per photo and session: the answer does not change, and a failed
@@ -47,19 +49,21 @@ export function PhotoAdvice({ uri }: { uri?: string | null }) {
   const known = issues.filter(issue => issue in advice);
   if (!known.length) return null;
   return (
-    <View style={styles.box} accessibilityRole="summary">
-      <Lightbulb size={18} color={colors.accentGold} />
-      <View style={styles.texts}>
-        <Text style={styles.title}>{t('Фото можно улучшить')}</Text>
-        {known.map(issue => <Text key={issue} style={styles.text}>{advice[issue]}</Text>)}
+    <Glass radius={24}>
+      <View style={styles.box} accessibilityRole="summary">
+        <Lightbulb size={18} strokeWidth={1.8} color={colors.muted} />
+        <View style={styles.texts}>
+          <Text style={styles.title}>{t('Фото можно улучшить')}</Text>
+          {known.map(issue => <Text key={issue} style={styles.text}>{advice[issue]}</Text>)}
+        </View>
       </View>
-    </View>
+    </Glass>
   );
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  box: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 4, backgroundColor: c.accentGoldSoft },
+  box: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16 },
   texts: { flex: 1, gap: 4 },
-  title: { color: c.text, fontSize: 14, fontWeight: '600' },
-  text: { color: c.text, fontSize: 13, lineHeight: 18 },
+  title: { ...font('semibold'), color: c.text, fontSize: 14, lineHeight: 19 },
+  text: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
 });
