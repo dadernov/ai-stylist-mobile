@@ -3,7 +3,7 @@ import { ThemeColors } from '../../constants/theme';
 import { useThemedStyles } from '../../constants/ThemeContext';
 import { FadeInView } from './FadeInView';
 import { PrimaryButton } from './PrimaryButton';
-import { font, INK_SOFT } from '../studio/studio';
+import { font } from '../studio/studio';
 
 type EmptyStateProps = {
   emoji: string;
@@ -47,7 +47,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...font('regular'),
     fontSize: 14,
     lineHeight: 20,
-    color: INK_SOFT,
+    color: c.muted,
     marginTop: 6,
     maxWidth: 320
   },

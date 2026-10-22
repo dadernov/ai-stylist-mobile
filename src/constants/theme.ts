@@ -31,7 +31,7 @@ export const lightColors = {
   goldFrom: '#000000',
   goldTo: '#000000',
   textOnGold: '#FFFFFF',
-  danger: '#D0021B',
+  danger: '#C62828',
   dangerSoft: '#FDECEE',
   heroFrom: '#FFFFFF',
   heroTo: '#FFFFFF',

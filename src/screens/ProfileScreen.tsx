@@ -156,7 +156,7 @@ export function ProfileScreen({
             <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Выйти из аккаунта')} onPress={onLogout} style={styles.logout}>
               <Glass>
                 <View style={styles.logoutInner}>
-                  <Text style={[font('semibold'), { fontSize: 15, color: isDark ? c.danger : '#C62828' }]} numberOfLines={1}>{t('Выйти')}</Text>
+                  <Text style={[font('semibold'), { fontSize: 15, color: c.danger }]} numberOfLines={1}>{t('Выйти')}</Text>
                 </View>
               </Glass>
             </AppPressable>

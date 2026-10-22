@@ -8,7 +8,7 @@ import { AppPressable } from './AppPressable';
 import { SettingsPanel } from './SettingsRows';
 import { Pill } from './studio/Glass';
 import { StudioBackdrop } from './studio/StudioBackdrop';
-import { font } from './studio/studio';
+import { font, hairline } from './studio/studio';
 
 // Titles are shown in all three languages at once: the person hasn't chosen yet.
 const TITLE: Record<Lang, string> = { ru: 'Выберите язык', en: 'Choose your language', zh: '选择语言' };
@@ -23,7 +23,6 @@ export function LanguageChooser() {
   const { colors, isDark } = useTheme();
   const { setLang } = useLanguage();
   const [selected, setSelected] = useState<Lang>(deviceLanguage());
-  const hairline = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   return (
     <StudioBackdrop>
       <SafeAreaView style={styles.screen}>
@@ -40,7 +39,7 @@ export function LanguageChooser() {
                 const active = item.code === selected;
                 return (
                   <AppPressable key={item.code} haptics accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => setSelected(item.code)}>
-                    <View style={[styles.option, { borderTopColor: hairline }]}>
+                    <View style={[styles.option, { borderTopColor: hairline(isDark) }]}>
                       <Text style={[font(active ? 'semibold' : 'regular'), styles.optionText, { color: colors.text }]}>{item.label}</Text>
                       {active ? <Check size={20} strokeWidth={2} color={colors.text} /> : null}
                     </View>

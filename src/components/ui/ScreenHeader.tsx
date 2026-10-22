@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ThemeColors } from '../../constants/theme';
 import { useThemedStyles } from '../../constants/ThemeContext';
-import { font, INK_SOFT } from '../studio/studio';
+import { font } from '../studio/studio';
 
 type ScreenHeaderProps = {
   title: string;
@@ -30,5 +30,5 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { ...font('semibold'), flexShrink: 1, fontSize: 34, lineHeight: 40, letterSpacing: -1, color: c.text },
   right: { flexShrink: 0 },
-  subtitle: { ...font('regular'), fontSize: 14, lineHeight: 20, color: INK_SOFT }
+  subtitle: { ...font('regular'), fontSize: 14, lineHeight: 20, color: c.muted }
 });

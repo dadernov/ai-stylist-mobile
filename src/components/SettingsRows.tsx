@@ -5,9 +5,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { AppPressable } from './AppPressable';
 import { Glass } from './studio/Glass';
 import { StudioSheet } from './studio/StudioSheet';
-import { font } from './studio/studio';
-
-const hairline = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)');
+import { font, hairline } from './studio/studio';
 
 /** Settings on one glass panel: every row draws a hairline above itself, and the panel hides the first one. */
 export function SettingsPanel({ children }: { children: ReactNode }) {
@@ -35,7 +33,7 @@ export function SettingsRow({ title, hint, value, right, danger, onPress, access
   const body = (
     <View style={[styles.row, { borderTopColor: hairline(isDark) }]}>
       <View style={styles.body}>
-        <Text style={[font('regular'), styles.title, { color: danger ? (isDark ? c.danger : '#C62828') : c.text }]}>{title}</Text>
+        <Text style={[font('regular'), styles.title, { color: danger ? c.danger : c.text }]}>{title}</Text>
         {hint ? <Text style={[font('regular'), styles.hint, { color: c.muted }]}>{hint}</Text> : null}
       </View>
       {right ?? (onPress && !danger ? (
