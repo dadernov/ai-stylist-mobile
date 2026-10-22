@@ -2,6 +2,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
+import { font } from './studio/studio';
 import { useT } from '../constants/i18n';
 import { canFasten, canTuck, FastenChoice, GarmentOption, GarmentOptions, TuckChoice } from '../domain/garmentOptions';
 import { AppPressable } from './AppPressable';
@@ -78,15 +79,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   list: { gap: 10 },
   row: { gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: c.border },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: { width: 44, height: 44, borderRadius: 4, backgroundColor: c.stage },
-  name: { color: c.text, fontSize: 14, fontWeight: '700' },
-  muted: { color: c.muted, fontSize: 13, lineHeight: 18 },
-  segmentRow: { gap: 6 },
-  segmentLabel: { color: c.muted, fontSize: 10, fontWeight: '600', letterSpacing: 0 },
+  thumb: { width: 44, height: 44, borderRadius: 14, backgroundColor: c.stage },
+  name: { ...font('semibold'), color: c.text, fontSize: 14 },
+  muted: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
+  segmentRow: { gap: 8 },
+  segmentLabel: { ...font('medium'), color: c.muted, fontSize: 12 },
   // Options as pills; the chosen one is filled.
   segment: { flexDirection: 'row', gap: 6 },
-  choice: { flex: 1, minHeight: 40, borderRadius: 4, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  choiceActive: { borderColor: c.buttonPrimaryBg, backgroundColor: c.buttonPrimaryBg },
-  choiceText: { color: c.muted, fontSize: 11, fontWeight: '600', letterSpacing: .6 },
-  choiceTextActive: { color: c.buttonPrimaryText, fontWeight: '700' },
+  choice: { flex: 1, height: 38, borderRadius: 999, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  choiceActive: { backgroundColor: c.text },
+  choiceText: { ...font('semibold'), color: c.text, fontSize: 13, opacity: 0.78 },
+  choiceTextActive: { color: c.background, opacity: 1 },
 });

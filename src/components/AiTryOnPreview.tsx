@@ -1,7 +1,9 @@
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View, Platform, Share } from 'react-native';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
-import { SHADOWS, ThemeColors } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
+import { Glass, PrimarySurface } from './studio/Glass';
+import { font, INK } from './studio/studio';
 import { useThemedStyles } from '../constants/ThemeContext';
 import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
@@ -19,7 +21,7 @@ import { FormScrollView } from './ui/FormScrollView';
 import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
-import { ArrowUpRight, Check, Download, X, Share2 } from 'lucide-react-native';
+import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { ZoomableImage } from './ui/ZoomableImage';
 
@@ -88,7 +90,7 @@ export function AiTryOnPreview({
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { jobs, store, ready: jobsReady, readOnly, error: journalError, login } = useTryOnJobs();
   const aiConsent = useAiConsent();
   const dock = useGenerationDock();
@@ -278,13 +280,14 @@ export function AiTryOnPreview({
 
   const historyBlock = history.length ? (
         <View style={styles.historyWrap}>
-          <Text style={styles.compareTitle}>{t('История генераций')}</Text>
+          <Text style={styles.sheetTitle}>{t('История генераций')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
             {history.slice(0, 8).map((item) => (
               <AppPressable
                 key={item.id}
                 accessibilityRole="button"
                 accessibilityLabel={t('Примерка от {date}', { date: shortDateTime(item.updatedAt) })}
+                accessibilityState={{ selected: (reanchorTryOnUri(item.imageUri) || item.imageUri) === resultUri }}
                 style={styles.historyCard}
                 onPress={() => {
                   const anchored = reanchorTryOnUri(item.imageUri) || item.imageUri;
@@ -298,7 +301,7 @@ export function AiTryOnPreview({
                   setPreviewOpen(true);
                 }}
               >
-                <View style={styles.historyImageWrap}>
+                <View style={[styles.historyImageWrap, { borderColor: (reanchorTryOnUri(item.imageUri) || item.imageUri) === resultUri ? colors.text : 'transparent' }]}>
                   <Image
                     source={{ uri: reanchorTryOnUri(item.imageUri) || item.imageUri }}
                     style={styles.historyImage}
@@ -322,6 +325,7 @@ export function AiTryOnPreview({
       {/* While the look generates the button brings its window back: the window
           may have been folded away, and this is the way to it from here. */}
       <AppPressable
+        haptics
         style={[styles.button, ((!canGenerate && !pendingJob) || isLoading) && styles.buttonDisabled]}
         onPress={() => pendingJob ? dock.open(pendingJob.id, onLeave)
           // The sheet already shows the choices; anywhere else the window opens on them first.
@@ -331,16 +335,18 @@ export function AiTryOnPreview({
         accessibilityRole="button"
         accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
       >
-        <Text style={styles.buttonText} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
-        <View style={[styles.buttonBadge, { backgroundColor: colors.buttonPrimaryText }]}>
-          {isBusy ? <ActivityIndicator size="small" color={colors.buttonPrimaryBg} /> : <ArrowUpRight size={19} strokeWidth={2} color={colors.buttonPrimaryBg} />}
-        </View>
+        <PrimarySurface dark={isDark}>
+          <View style={styles.buttonInner}>
+            {isBusy ? <ActivityIndicator size="small" color={isDark ? INK : '#FFFFFF'} /> : null}
+            <Text style={[styles.buttonText, { color: isDark ? INK : '#FFFFFF' }]} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+          </View>
+        </PrimarySurface>
       </AppPressable>
       {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
   </>;
   const warningsBlock = readinessWarnings.length > 0 ? <View style={styles.qualityCard}>
     {readinessWarnings.map((item) => (
-      <Text key={item} style={styles.qualityText}>• {item}</Text>
+      <Text key={item} style={styles.qualityText}>{item}</Text>
     ))}
   </View> : null;
   const errorsBlock = <>
@@ -352,7 +358,7 @@ export function AiTryOnPreview({
         <View style={styles.previewBackdrop}>
           {previewUri ? <ZoomableImage uri={previewUri} style={styles.previewImageFull} /> : null}
           <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
-            <X size={22} color={colors.text} />
+            <Glass style={styles.previewCloseGlass}><View style={styles.center}><X size={22} color={isDark ? '#FFFFFF' : INK} /></View></Glass>
           </AppPressable>
         </View>
       </Modal>
@@ -382,16 +388,16 @@ export function AiTryOnPreview({
 
   return (
     <View style={styles.wrap}>
-      {resultUri && modelUri && !intermediateUri && <View style={styles.comparison} accessibilityRole="tablist">
-        {[false, true].map(original => <AppPressable key={String(original)} accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
+      {resultUri && modelUri && !intermediateUri && <Glass><View style={styles.comparison} accessibilityRole="tablist">
+        {[false, true].map(original => <AppPressable key={String(original)} haptics accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
           style={[styles.compareTab, showOriginal === original && styles.compareTabActive]} onPress={() => setShowOriginal(original)}>
-          <Text style={styles.compareTitle}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
+          <Text style={[styles.compareTitle, showOriginal === original && styles.compareTitleActive]}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
         </AppPressable>)}
-      </View>}
+      </View></Glass>}
       {intermediateUri ? (
         <View style={styles.imageWrap} accessibilityLabel={t('Промежуточный результат')}>
           <Image source={{ uri: intermediateUri }} style={styles.image} resizeMode="contain" />
-          <View style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></View>
+          <Glass style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></Glass>
         </View>
       ) : null}
       {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
@@ -419,11 +425,11 @@ export function AiTryOnPreview({
             }}
           />
           {isDraft && !showOriginal ? (
-            <View style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Черновик')}</Text></View>
+            <Glass style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Черновик')}</Text></Glass>
           ) : null}
           {resultImageLoading && !resultImageError ? (
             <View style={styles.imageOverlay}>
-              <ActivityIndicator color="#1F1D1A" />
+              <ActivityIndicator color={INK} />
             </View>
           ) : null}
           {resultImageError ? (
@@ -435,15 +441,17 @@ export function AiTryOnPreview({
       ) : null}
       {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
       {resultUri && !isBusy ? (<View style={styles.resultActions}>
-        <AppPressable style={[styles.secondaryButton, { flex: 1 }]} onPress={saveToGallery} disabled={saveState === 'saving'}
+        <AppPressable haptics style={{ flex: 1, borderRadius: 999 }} onPress={saveToGallery} disabled={saveState === 'saving'}
           accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
+          <Glass><View style={styles.secondaryButton}>
           {saveState === 'saving' ? <ActivityIndicator size="small" color={colors.text} />
             : saveState === 'saved' ? <Check size={17} strokeWidth={1.8} color={colors.text} /> : <Download size={17} strokeWidth={1.6} color={colors.text} />}
           <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею'
             : isDraft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')}</Text>
+          </View></Glass>
         </AppPressable>
-        {Platform.OS !== 'web' ? <AppPressable style={styles.shareButton} onPress={() => { void shareResult(); }} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
-          <Share2 size={17} strokeWidth={1.6} color={colors.text} />
+        {Platform.OS !== 'web' ? <AppPressable haptics style={styles.shareButton} onPress={() => { void shareResult(); }} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
+          <Glass style={styles.shareButton}><View style={styles.center}><Share2 size={17} strokeWidth={1.6} color={colors.text} /></View></Glass>
         </AppPressable> : null}
       </View>) : null}
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
@@ -464,240 +472,45 @@ export function AiTryOnPreview({
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   sheetWrap: { flex: 1, gap: 12 },
   sheetContent: { gap: 14, paddingBottom: 16 },
-  sheetTitle: { color: c.text, fontSize: 15, fontWeight: '600' },
-  sheetFooter: { gap: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.border },
-  wrap: {
-    gap: 14,
-    marginTop: 6,
-    marginBottom: 4
-  },
-  image: {
-    width: '100%',
-    height: 420,
-    borderRadius: 4,
-    backgroundColor: c.surface
-  },
-  imageWrap: {
-    borderRadius: 4,
-    overflow: 'hidden',
-    position: 'relative'
-  },
-  imageOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(245,241,234,0.88)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 18
-  },
-  imageErrorText: {
-    color: '#1F1D1A',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-    fontWeight: '700'
-  },
-  placeholder: {
-    height: 120,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 14
-  },
-  placeholderText: {
-    color: c.muted,
-    fontSize: 12
-  },
-  // The same filled pill as PrimaryButton: its icon in a round badge at the end.
-  button: {
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 4,
-    minHeight: 58,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingHorizontal: 60,
-    alignItems: 'center',
-    ...SHADOWS.button
-  },
-  buttonBadge: {
-    position: 'absolute',
-    right: 9,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  buttonDisabled: {
-    opacity: 0.45
-  },
-  buttonText: {
-    color: c.buttonPrimaryText,
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.1
-  },
-  error: {
-    color: c.danger,
-    fontSize: 12
-  },
-  hint: {
-    color: c.muted,
-    fontSize: 11
-  },
-  intermediateBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(31,29,26,0.78)',
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6
-  },
-  intermediateBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700'
-  },
+  sheetTitle: { ...font('semibold'), color: c.text, fontSize: 15, lineHeight: 20 },
+  sheetFooter: { gap: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
+  wrap: { gap: 14, marginTop: 6, marginBottom: 4 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // The look on the person: a rounded print, like the fitting room's frame.
+  image: { width: '100%', height: 420, borderRadius: 28, backgroundColor: c.surface },
+  imageWrap: { borderRadius: 28, overflow: 'hidden', position: 'relative' },
+  imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.72)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  imageErrorText: { ...font('semibold'), color: INK, fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  // The main action: the studio's black pill.
+  button: { borderRadius: 999 },
+  buttonInner: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 },
+  buttonDisabled: { opacity: 0.45 },
+  buttonText: { ...font('semibold'), fontSize: 16, flexShrink: 1 },
+  error: { ...font('regular'), color: c.danger, fontSize: 13, lineHeight: 18 },
+  hint: { ...font('regular'), color: c.muted, fontSize: 12, lineHeight: 17 },
+  intermediateBadge: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 12, height: 30, justifyContent: 'center' },
+  intermediateBadgeText: { ...font('semibold'), color: c.text, fontSize: 12 },
   resultActions: { flexDirection: 'row', gap: 8 },
-  shareButton: { width: 48, minHeight: 46, borderWidth: 1, borderColor: c.border, borderRadius: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: c.card },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 4,
-    minHeight: 46,
-    paddingVertical: 11,
-    backgroundColor: c.card
-  },
-  secondaryButtonText: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  qualityCard: {
-    paddingVertical: 8,
-    gap: 8
-  },
-  qualityTitle: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '500'
-  },
-  qualityText: {
-    color: c.muted,
-    fontSize: 12,
-    lineHeight: 18
-  },
-  optionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 2
-  },
-  optionPill: {
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  optionPillActive: {
-    backgroundColor: c.accentGoldSoft,
-    borderColor: c.goldHairline
-  },
-  optionPillText: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  optionPillTextActive: {
-    color: c.accentGold,
-    fontWeight: '700'
-  },
-  compareTitle: {
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  comparison: { flexDirection: 'row', backgroundColor: c.surface, padding: 4, borderRadius: 4 },
-  compareTab: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 4 },
-  compareTabActive: { backgroundColor: c.card },
-  settingsToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  settingsLabel: { flex: 1, color: c.muted, fontSize: 13 },
-  settingsContent: { paddingBottom: 8, borderBottomWidth: 1, borderColor: c.border },
-  historyWrap: {
-    gap: 6
-  },
-  historyRow: {
-    gap: 8,
-    paddingRight: 4
-  },
-  historyCard: {
-    width: 86,
-    gap: 4
-  },
-  historyImageWrap: {
-    width: 86,
-    height: 108,
-    borderRadius: 4,
-    overflow: 'hidden',
-    position: 'relative'
-  },
-  historyImage: {
-    width: 86,
-    height: 108,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.surface
-  },
-  historyImageError: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: c.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6
-  },
-  historyImageErrorText: {
-    color: c.muted,
-    fontSize: 9,
-    textAlign: 'center',
-    fontWeight: '700'
-  },
-  historyText: {
-    color: c.muted,
-    fontSize: 9,
-    textAlign: 'center'
-  },
-  previewBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    justifyContent: 'center',
-    padding: 16
-  },
-  previewImageFull: {
-    width: '100%',
-    height: '86%',
-    flex: 0
-  },
-  previewClose: {
-    alignSelf: 'center',
-    marginTop: 12,
-    backgroundColor: c.chip,
-    borderRadius: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 10
-  },
-  previewCloseText: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '700'
-  }
+  shareButton: { width: 46, height: 46, borderRadius: 23 },
+  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, paddingHorizontal: 16 },
+  secondaryButtonText: { ...font('semibold'), color: c.text, fontSize: 14, flexShrink: 1 },
+  qualityCard: { paddingVertical: 4, gap: 6 },
+  qualityText: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
+  compareTitle: { ...font('semibold'), color: c.text, fontSize: 13, opacity: 0.78 },
+  compareTitleActive: { color: c.background, opacity: 1 },
+  comparison: { flexDirection: 'row', padding: 3 },
+  compareTab: { flex: 1, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+  compareTabActive: { backgroundColor: c.text },
+  historyWrap: { gap: 10 },
+  historyRow: { gap: 10, paddingRight: 4 },
+  historyCard: { width: 62, gap: 4 },
+  historyImageWrap: { width: 62, height: 84, borderRadius: 16, borderWidth: 2, overflow: 'hidden', position: 'relative', backgroundColor: c.surface },
+  historyImage: { width: '100%', height: '100%' },
+  historyImageError: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.surface, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
+  historyImageErrorText: { ...font('medium'), color: c.muted, fontSize: 9, textAlign: 'center' },
+  historyText: { ...font('regular'), color: c.muted, fontSize: 10, textAlign: 'center' },
+  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
+  previewImageFull: { width: '100%', height: '86%', flex: 0 },
+  previewClose: { alignSelf: 'center', marginTop: 12, borderRadius: 22 },
+  previewCloseGlass: { width: 44, height: 44 }
 });

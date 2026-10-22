@@ -1,6 +1,5 @@
 import { Animated, Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
 import { AiTryOnPreview } from '../components/AiTryOnPreview';
@@ -10,12 +9,13 @@ import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { SectionLabel } from '../components/ui/SectionLabel';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { ProgressGlow } from '../components/ui/ProgressGlow';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
-import { RADII, SERIF, SHADOWS, SPACING, ThemeColors, TYPE } from '../constants/theme';
+import { SPACING, ThemeColors } from '../constants/theme';
+import { Glass, Pill } from '../components/studio/Glass';
+import { font, INK_SOFT } from '../components/studio/studio';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
@@ -103,7 +103,7 @@ const renderFitBadge = (score: number | undefined, styles: ReturnType<typeof mak
   if (typeof score !== 'number') return null;
   return (
     <View style={styles.fitBadge}>
-      <Text style={styles.fitBadgeText}>✦ {Math.round(score)}%</Text>
+      <Text style={styles.fitBadgeText}>{`${Math.round(score)}%`}</Text>
     </View>
   );
 };
@@ -125,6 +125,21 @@ const renderFitReasons = (
     </View>
   );
 };
+
+/** A quiet action on a look: a small glass pill; `danger` for the one that deletes. */
+function CardAction({ label, onPress, disabled, danger }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <AppPressable haptics disabled={disabled} onPress={onPress} accessibilityRole="button" accessibilityState={{ disabled }}
+      style={{ borderRadius: 999, opacity: disabled ? 0.5 : 1 }}>
+      <Glass>
+        <View style={{ height: 34, paddingHorizontal: 14, justifyContent: 'center' }}>
+          <Text style={[font('semibold'), { fontSize: 13, color: danger ? colors.danger : colors.text }]}>{label}</Text>
+        </View>
+      </Glass>
+    </AppPressable>
+  );
+}
 
 type GeneratedLookCardProps = {
   beautyAdvice: boolean;
@@ -170,7 +185,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
     [lookItems, look.style, look.event, look.temperature, t]);
   return (
     <FadeInView delay={index * 60}>
-      <View style={styles.lookCard}>
+      <Glass radius={28} style={styles.lookCard}>
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.title}</Text>
@@ -178,17 +193,8 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
             {match ? null : renderFitBadge(look.matchPercent, styles)}
           </View>
           <View style={styles.lookActions}>
-            <AppPressable haptics style={styles.actionSoft} onPress={() => onSaveToLooks(look)}>
-              <Text style={styles.actionSoftText}>{t('В луки')}</Text>
-            </AppPressable>
-            <AppPressable
-              haptics
-              style={[styles.actionGhost, isFavorited && styles.actionGhostDone]}
-              disabled={isFavorited}
-              onPress={() => onFavoriteAdd(look)}
-            >
-              <Text style={styles.actionGhostText}>{isFavorited ? t('Добавлено') : t('В избранное')}</Text>
-            </AppPressable>
+            <CardAction label={t('В луки')} onPress={() => onSaveToLooks(look)} />
+            <CardAction label={isFavorited ? t('Добавлено') : t('В избранное')} disabled={isFavorited} onPress={() => onFavoriteAdd(look)} />
           </View>
         </View>
         {look.weather ? <Text style={styles.lookWeather}>{look.weather}</Text> : null}
@@ -196,7 +202,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
         {match ? <MatchSummary {...match} detailed={details} /> : null}
         <AppPressable style={styles.detailsToggle} accessibilityRole="button" accessibilityState={{ expanded: details }} onPress={() => setDetails(open => !open)}>
           <Text style={styles.detailsToggleText}>{t(details ? 'Свернуть' : 'Почему сочетается')}</Text>
-          {details ? <ChevronUp size={16} color={colors.accentGold} /> : <ChevronDown size={16} color={colors.accentGold} />}
+          {details ? <ChevronUp size={16} color={colors.text} /> : <ChevronDown size={16} color={colors.text} />}
         </AppPressable>
         {details ? <>
           {renderFitReasons(look.fitReasons, styles, t)}
@@ -224,7 +230,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
           onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
-      </View>
+      </Glass>
     </FadeInView>
   );
 });
@@ -264,26 +270,15 @@ const SavedLookCard = memo(function SavedLookCard({
   const isFavorited = favoriteLookIds?.has(look.id);
   return (
     <FadeInView delay={index * 60}>
-      <View style={styles.lookCard}>
+      <Glass radius={28} style={styles.lookCard}>
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
             <Text style={styles.lookTitle}>{look.name}</Text>
           </View>
           <View style={styles.lookActions}>
-            <AppPressable haptics style={styles.actionSoft} onPress={() => onEdit(look)}>
-              <Text style={styles.actionSoftText}>{t('Изменить')}</Text>
-            </AppPressable>
-            <AppPressable
-              haptics
-              style={[styles.actionGhost, isFavorited && styles.actionGhostDone]}
-              disabled={isFavorited}
-              onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))}
-            >
-              <Text style={styles.actionGhostText}>{isFavorited ? t('Добавлено') : t('В избранное')}</Text>
-            </AppPressable>
-            <AppPressable haptics style={styles.actionDanger} onPress={() => onDelete(look.id)}>
-              <Text style={styles.actionDangerText}>{t('Удалить')}</Text>
-            </AppPressable>
+            <CardAction label={t('Изменить')} onPress={() => onEdit(look)} />
+            <CardAction label={isFavorited ? t('Добавлено') : t('В избранное')} disabled={isFavorited} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))} />
+            <CardAction label={t('Удалить')} danger onPress={() => onDelete(look.id)} />
           </View>
         </View>
         <LookPreview items={lookItems} />
@@ -300,7 +295,7 @@ const SavedLookCard = memo(function SavedLookCard({
           onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
         {renderFitReasons(look.fitReasons, styles, t)}
-      </View>
+      </Glass>
     </FadeInView>
   );
 });
@@ -603,22 +598,15 @@ export function OutfitBuilderScreen({
   );
 
   const WeatherIcon = weatherIcon(weatherCode);
-  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 8) / 4 : 0;
+  const segmentThumbWidth = segmentWidth > 0 ? (segmentWidth - 6) / 4 : 0;
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[themeColors.heroTo, themeColors.heroFrom] as const}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.heroWash}
-        pointerEvents="none"
-      />
       <View style={styles.pageHeader}>
-        <ScreenHeader
-          title={t('Примерочная')}
-        />
+        <ScreenHeader title={t('Примерка')} />
 
+        {/* A glass track with the open part as a black pill sliding along it. */}
+        <Glass style={styles.segmentGlass}>
         <View accessibilityRole="tablist" style={styles.segment} onLayout={(e) => setSegmentWidth(e.nativeEvent.layout.width)}>
           {segmentThumbWidth > 0 ? (
             <Animated.View
@@ -654,6 +642,7 @@ export function OutfitBuilderScreen({
             <Text style={[styles.segmentText, activeTab === 'history' && styles.segmentTextActive]}>{t('История')}</Text>
           </AppPressable>
         </View>
+        </Glass>
       </View>
       {activeTab === 'history' && <GenerationHistory items={items} savedLooks={savedLooks} itemId={historyItemId}
         onFilter={setHistoryItemId} onOpenItem={onOpenItem}
@@ -670,7 +659,7 @@ export function OutfitBuilderScreen({
         </View>
         {activeTab === 'builder' ? (
           <>
-            <SectionLabel>{t('Стиль')}</SectionLabel>
+            <Text style={styles.sectionTitle}>{t('Стиль')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -687,7 +676,7 @@ export function OutfitBuilderScreen({
               ))}
             </ScrollView>
 
-            <SectionLabel>{t('Мероприятие')}</SectionLabel>
+            <Text style={styles.sectionTitle}>{t('Мероприятие')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -704,16 +693,9 @@ export function OutfitBuilderScreen({
               ))}
             </ScrollView>
 
-            <View style={styles.weatherCard}>
-              <LinearGradient
-                colors={[themeColors.heroFrom, themeColors.heroTo] as const}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.weatherWash}
-                pointerEvents="none"
-              />
+            <Glass radius={24} style={styles.weatherCard}>
               <View style={styles.weatherEmojiCircle}>
-                <WeatherIcon size={26} strokeWidth={1.5} color={themeColors.accentGold} />
+                <WeatherIcon size={26} strokeWidth={1.5} color={themeColors.text} />
               </View>
               <View style={styles.weatherInfo}>
                 {typeof temperature === 'number' ? (
@@ -722,12 +704,11 @@ export function OutfitBuilderScreen({
                 <Text style={styles.weatherTitle}>{t('Погода рядом с тобой')}</Text>
                 <Text style={styles.weatherText}>{weatherText}</Text>
                 {!weatherReady && !weatherLoading ? (
-                  <AppPressable haptics onPress={() => { if (weatherError === 'permission') void Linking.openSettings().catch(() => {}); else void loadWeather(); }} style={styles.weatherRetry}>
-                    <Text style={styles.weatherRetryText}>{t(weatherError === 'permission' ? 'Открыть настройки' : 'Повторить')}</Text>
-                  </AppPressable>
+                  <Pill size="sm" title={t(weatherError === 'permission' ? 'Открыть настройки' : 'Повторить')} style={styles.weatherRetry}
+                    onPress={() => { if (weatherError === 'permission') void Linking.openSettings().catch(() => {}); else void loadWeather(); }} />
                 ) : null}
               </View>
-            </View>
+            </Glass>
 
             <PrimaryButton
               title={t('Сгенерировать образы')}
@@ -838,496 +819,73 @@ export function OutfitBuilderScreen({
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1
-  },
-  heroWash: {
-    position: 'absolute',
-    top: -12,
-    left: -16,
-    right: -16,
-    height: 220
-  },
-  floatingCta: {
-    position: 'absolute',
-    left: SPACING.lg,
-    right: SPACING.lg,
-    bottom: SPACING.md,
-    ...SHADOWS.floating
-  },
-  pageContent: {
-    width: '100%',
-    maxWidth: 760,
-    alignSelf: 'center',
-    paddingBottom: SPACING.xl
-  },
+  // Transparent: the studio backdrop shows through.
+  container: { flex: 1 },
+  floatingCta: { position: 'absolute', left: SPACING.lg, right: SPACING.lg, bottom: SPACING.md },
+  pageContent: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingBottom: SPACING.xl },
   pageHeader: { width: '100%', maxWidth: 760, alignSelf: 'center' },
-  // A pill track; the open tab is a filled pill sliding along it.
-  // The fitting room's parts as text tabs on a hairline, the chosen one underlined, like the filters.
-  segment: {
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-    marginBottom: SPACING.lg
-  },
-  segmentThumb: {
-    position: 'absolute',
-    bottom: -0.5,
-    height: 1.5,
-    left: 4,
-    backgroundColor: c.text
-  },
-  segmentTab: {
-    flex: 1,
-    flexBasis: 0,
-    minWidth: 0,
-    minHeight: 44,
-    paddingVertical: 10,
-    borderRadius: RADII.sm,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: c.muted,
-    letterSpacing: 0
-  },
-  segmentTextActive: {
-    color: c.text
-  },
-  chipsRow: {
-    paddingBottom: 6,
-    marginBottom: 16,
-    paddingRight: 12
-  },
-  chipsRowAndroid: {
-    paddingBottom: 10,
-    marginBottom: 20
-  },
-  chipsScroll: {
-    minHeight: 48
-  },
-  weatherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    backgroundColor: c.card,
-    borderRadius: RADII.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
-    ...SHADOWS.card
-  },
-  weatherWash: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-    right: 1,
-    bottom: 1,
-    borderRadius: RADII.lg - 1
-  },
-  weatherEmojiCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  weatherInfo: {
-    flex: 1
-  },
-  weatherTemp: {
-    fontFamily: SERIF,
-    fontSize: 32,
-    letterSpacing: -0.5,
-    lineHeight: 36,
-    color: c.text
-  },
-  weatherTitle: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginTop: 2
-  },
-  weatherText: {
-    ...TYPE.caption,
-    color: c.muted,
-    marginTop: 2
-  },
-  weatherRetry: {
-    marginTop: 6,
-    alignSelf: 'flex-start'
-  },
-  weatherRetryText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: c.accentGold,
-    textDecorationLine: 'underline'
-  },
-  generateButton: {
-    marginBottom: SPACING.sm
-  },
-  generatingWrap: {
-    gap: SPACING.sm,
-    marginTop: 4,
-    marginBottom: SPACING.lg
-  },
-  generatingText: {
-    ...TYPE.caption,
-    color: c.accentGold,
-    textAlign: 'center'
-  },
-  generateHint: {
-    ...TYPE.caption,
-    color: c.muted,
-    textAlign: 'center',
-    marginBottom: SPACING.lg
-  },
-  manualWrap: {
-    backgroundColor: c.card,
-    borderRadius: RADII.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
-    ...SHADOWS.card
-  },
-  manualTitle: {
-    ...TYPE.title,
-    color: c.text,
-    marginBottom: SPACING.md
-  },
-  manualPreviewWrap: {
-    marginBottom: SPACING.lg
-  },
-  manualPreviewEmpty: {
-    borderRadius: RADII.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderStyle: 'dashed',
-    backgroundColor: c.surface,
-    paddingVertical: SPACING.xl,
-    paddingHorizontal: SPACING.lg,
-    alignItems: 'center',
-    marginBottom: 8
-  },
-  manualPreviewEmptyText: {
-    ...TYPE.caption,
-    color: c.muted,
-    textAlign: 'center'
-  },
-  manualPreviewCount: {
-    ...TYPE.caption,
-    color: c.accentGold,
-    fontWeight: '700',
-    textAlign: 'center'
-  },
-  manualLabel: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.sm
-  },
-  manualInput: {
-    backgroundColor: c.surface,
-    borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: c.text
-  },
-  addLookButton: {
-    marginTop: SPACING.md
-  },
-  slotCard: {
-    backgroundColor: c.surface,
-    borderRadius: RADII.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.md,
-    marginBottom: SPACING.md
-  },
-  slotHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginBottom: SPACING.sm
-  },
-  slotEmojiCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: c.surface,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  slotInitial: {
-    fontFamily: SERIF,
-    fontSize: 16,
-    color: c.accentGold
-  },
-  slotInfo: {
-    flex: 1
-  },
-  slotTitle: {
-    ...TYPE.eyebrow,
-    color: c.accentGold
-  },
-  slotValue: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2
-  },
-  slotValueEmpty: {
-    color: c.muted,
-    fontWeight: '400'
-  },
-  slotPreview: {
-    width: 44,
-    height: 44,
-    borderRadius: RADII.sm,
-    backgroundColor: c.chip,
-    borderWidth: 1,
-    borderColor: c.goldHairline
-  },
-  slotEmptyText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  selectorRow: {
-    gap: 8,
-    paddingBottom: 2
-  },
-  selectorCard: {
-    width: 108,
-    backgroundColor: c.card,
-    borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: 8
-  },
-  selectorCardActive: {
-    borderColor: c.goldHairline,
-    backgroundColor: c.accentGoldSoft
-  },
-  selectorImage: {
-    width: '100%',
-    height: 64,
-    borderRadius: RADII.sm,
-    backgroundColor: c.chip
-  },
-  selectorLabel: {
-    marginTop: 6,
-    color: c.text,
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  selectorLabelActive: {
-    color: c.accentGold
-  },
-  manualResult: {
-    marginTop: SPACING.md,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: c.goldHairline,
-    gap: 2
-  },
-  manualResultTitle: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginBottom: 4
-  },
-  manualItem: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  looksWrap: {
-    gap: SPACING.md,
-    paddingBottom: 20
-  },
-  lookCard: {
-    backgroundColor: c.card,
-    borderRadius: RADII.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.lg,
-    gap: 6,
-    ...SHADOWS.card
-  },
-  lookHeader: {
-    gap: 10
-  },
-  lookTitleWrap: {
-    flex: 1,
-    gap: 6,
-    alignItems: 'flex-start'
-  },
-  lookTitle: {
-    ...TYPE.title,
-    color: c.text
-  },
-  fitBadge: {
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 3
-  },
-  fitBadgeText: {
-    color: c.accentGold,
-    fontSize: 11.5,
-    fontWeight: '700',
-    letterSpacing: 0.4
-  },
-  lookActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8
-  },
-  detailsToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12
-  },
-  detailsToggleText: {
-    color: c.accentGold,
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  actionSoft: {
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  actionSoftText: {
-    color: c.accentGold,
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  actionGhost: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  actionGhostDone: {
-    opacity: 0.5
-  },
-  actionGhostText: {
-    color: c.accentGold,
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  actionDanger: {
-    backgroundColor: c.dangerSoft,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  actionDangerText: {
-    color: c.danger,
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  lookWeather: {
-    ...TYPE.caption,
-    color: c.muted,
-    marginBottom: 3
-  },
-  reasonBlock: {
-    marginTop: 6,
-    padding: SPACING.md,
-    borderRadius: RADII.md,
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.border,
-    gap: 2
-  },
-  reasonTitle: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginBottom: 2
-  },
-  reasonText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  beautyBlock: {
-    marginTop: 6,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: c.goldHairline,
-    gap: 4
-  },
-  beautyTitle: {
-    ...TYPE.eyebrow,
-    color: c.accentGold
-  },
-  beautyText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: c.overlay,
-    justifyContent: 'flex-end'
-  },
-  modalCard: {
-    backgroundColor: c.card,
-    borderTopLeftRadius: RADII.xl,
-    borderTopRightRadius: RADII.xl,
-    borderTopWidth: 1,
-    borderTopColor: c.goldHairline,
-    padding: SPACING.lg,
-    height: '85%'
-  },
-  modalContent: {
-    paddingBottom: SPACING.xl
-  },
-  modalTitle: {
-    fontFamily: SERIF,
-    fontSize: 20,
-    letterSpacing: -0.1,
-    color: c.text,
-    marginBottom: SPACING.lg
-  },
-  modalLabel: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginBottom: SPACING.sm
-  },
-  modalInput: {
-    backgroundColor: c.surface,
-    borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: c.text,
-    marginBottom: SPACING.sm
-  },
-  modalSave: {
-    marginTop: SPACING.md
-  },
-  modalClose: {
-    marginTop: SPACING.sm
-  }
+  // The fitting room's parts on a glass track; the open one is a black pill sliding along it.
+  segmentGlass: { marginBottom: SPACING.lg },
+  segment: { flexDirection: 'row', padding: 3, height: 44 },
+  segmentThumb: { position: 'absolute', top: 3, bottom: 3, left: 3, borderRadius: 999, backgroundColor: c.text },
+  segmentTab: { flex: 1, flexBasis: 0, minWidth: 0, borderRadius: 999, justifyContent: 'center', alignItems: 'center' },
+  segmentText: { ...font('semibold'), fontSize: 13, color: c.text, opacity: 0.78 },
+  segmentTextActive: { color: c.background, opacity: 1 },
+  sectionTitle: { ...font('semibold'), fontSize: 15, lineHeight: 20, color: c.text, marginBottom: 10 },
+  chipsRow: { paddingBottom: 6, marginBottom: 16, paddingRight: 12 },
+  chipsRowAndroid: { paddingBottom: 10, marginBottom: 20 },
+  chipsScroll: { minHeight: 48 },
+  weatherCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, padding: SPACING.lg, marginBottom: SPACING.lg },
+  weatherEmojiCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center' },
+  weatherInfo: { flex: 1, gap: 2 },
+  weatherTemp: { ...font('semibold'), fontSize: 32, lineHeight: 36, letterSpacing: -1, color: c.text },
+  weatherTitle: { ...font('semibold'), fontSize: 14, lineHeight: 19, color: c.text },
+  weatherText: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted },
+  weatherRetry: { marginTop: 8, alignSelf: 'flex-start' },
+  generateButton: { marginBottom: SPACING.sm },
+  generatingWrap: { gap: SPACING.sm, marginTop: 4, marginBottom: SPACING.lg },
+  generatingText: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted, textAlign: 'center' },
+  generateHint: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted, textAlign: 'center', marginBottom: SPACING.lg },
+  slotCard: { backgroundColor: c.surface, borderRadius: 22, padding: SPACING.md, marginBottom: SPACING.md },
+  slotHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.sm },
+  slotEmojiCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' },
+  slotInitial: { ...font('semibold'), fontSize: 16, color: c.text },
+  slotInfo: { flex: 1 },
+  slotTitle: { ...font('regular'), fontSize: 12, lineHeight: 16, color: c.muted },
+  slotValue: { ...font('semibold'), color: c.text, fontSize: 14, marginTop: 2 },
+  slotValueEmpty: { ...font('regular'), color: c.muted },
+  slotPreview: { width: 44, height: 44, borderRadius: 12, backgroundColor: c.stage },
+  slotEmptyText: { ...font('regular'), fontSize: 13, color: c.muted },
+  selectorRow: { gap: 8, paddingBottom: 2 },
+  selectorCard: { width: 108, backgroundColor: c.card, borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent', padding: 8 },
+  selectorCardActive: { borderColor: c.text },
+  selectorImage: { width: '100%', height: 64, borderRadius: 12, backgroundColor: c.stage },
+  selectorLabel: { ...font('medium'), marginTop: 6, color: c.text, fontSize: 12 },
+  selectorLabelActive: { ...font('semibold') },
+  looksWrap: { gap: SPACING.md, paddingBottom: 20 },
+  lookCard: { padding: SPACING.lg, gap: 8 },
+  lookHeader: { gap: 10 },
+  lookTitleWrap: { flex: 1, gap: 6, alignItems: 'flex-start' },
+  lookTitle: { ...font('semibold'), fontSize: 22, lineHeight: 28, letterSpacing: -0.6, color: c.text },
+  fitBadge: { backgroundColor: c.surface, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  fitBadgeText: { ...font('semibold'), color: c.text, fontSize: 12 },
+  lookActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  detailsToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12 },
+  detailsToggleText: { ...font('semibold'), color: c.text, fontSize: 14 },
+  lookWeather: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted, marginBottom: 3 },
+  // Inside the look's glass panel: hairline-separated, never a card in a card.
+  reasonBlock: { marginTop: 6, paddingTop: SPACING.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, gap: 4 },
+  reasonTitle: { ...font('semibold'), fontSize: 13, lineHeight: 18, color: c.text },
+  reasonText: { ...font('regular'), fontSize: 13, lineHeight: 19, color: INK_SOFT },
+  beautyBlock: { marginTop: 6, paddingTop: SPACING.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, gap: 4 },
+  beautyTitle: { ...font('semibold'), fontSize: 13, lineHeight: 18, color: c.text },
+  beautyText: { ...font('regular'), fontSize: 13, lineHeight: 19, color: c.muted },
+  modalBackdrop: { flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: c.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: SPACING.lg, height: '85%' },
+  modalContent: { paddingBottom: SPACING.xl },
+  modalTitle: { ...font('semibold'), fontSize: 22, lineHeight: 28, letterSpacing: -0.6, color: c.text, marginBottom: SPACING.lg },
+  modalLabel: { ...font('semibold'), fontSize: 13, color: c.text, marginBottom: SPACING.sm },
+  modalInput: { ...font('regular'), backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: SPACING.md, paddingVertical: 12, fontSize: 14, color: c.text, marginBottom: SPACING.sm },
+  modalSave: { marginTop: SPACING.md },
+  modalClose: { marginTop: SPACING.sm }
 });

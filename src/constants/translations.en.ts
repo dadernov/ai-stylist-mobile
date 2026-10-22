@@ -888,4 +888,7 @@ export const en: Record<string, string> = {
   "Образы вокруг «{name}»": "Looks built around “{name}”",
   "Верни отложенные варианты или выбери другой повод.": "Bring back the looks you set aside or pick another occasion.",
   "Добавь вещи или выбери другой повод и стиль.": "Add pieces or pick another occasion and style.",
+  "Переодеть": "Change",
+  "В образе": "In the look",
+  "До": "Before",
 };

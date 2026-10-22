@@ -1,21 +1,27 @@
 import { usePhotoPicker } from './usePhotoPicker';
 import { OverlayOutlet } from './OverlayHost';
-import { useMemo, useState, useEffect } from 'react';
-import { Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { ArrowUpRight, Check, Pencil, Save, Search, UserRound, X } from 'lucide-react-native';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { ActivityIndicator, Animated, Easing, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ArrowUpRight, Check, Download, Heart, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook, TryOnHistoryItem } from '../types/looks';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
-import { useT } from '../constants/i18n';
+import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { AiTryOnPreview } from './AiTryOnPreview';
 import { PrimaryButton } from './ui/PrimaryButton';
-import { GarmentTile } from './GarmentTile';
-import { IconButton } from './ui/IconButton';
 import { Chip } from './Chip';
-import { RecentTryOns } from './RecentTryOns';
 import { PhotoAdvice } from './PhotoAdvice';
+import { ZoomableImage } from './ui/ZoomableImage';
+import { Glass, Pill } from './studio/Glass';
+import { font, INK, INK_SOFT, isCutout, useReducedMotion } from './studio/studio';
+import { useTryOnJobs } from './TryOnJobsContext';
+import { useGenerationDock } from './GenerationDock';
+import { tryOnStatusLabel } from './tryOnStatus';
+import { saveTryOnToGallery } from '../services/tryOnExport';
+import { TryOnJob } from '../services/tryOnJobs';
 import { isLegwear } from '../domain/legwear';
 import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 
@@ -96,25 +102,26 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
 
   return (
     <View style={styles.content}>
-      <View style={styles.profileRow}>
-        {modelUri ? <Image source={{ uri: modelUri }} style={styles.person} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />
-          : <View style={styles.personEmpty}><UserRound size={26} strokeWidth={1.2} color={colors.muted} /></View>}
-        <View style={{ flex: 1, gap: 6 }}>
-          <Text style={styles.heading}>{t('Моё фото')}</Text>
-          <Text style={styles.muted}>{t(modelUri ? 'Из профиля' : 'Фото ещё не добавлено')}</Text>
-        </View>
-        <IconButton icon={modelUri ? Pencil : ArrowUpRight} label={t(modelUri ? 'Заменить фото' : 'Добавить фото')} onPress={() => { void pickModel(); }} />
-      </View>
+      <FittingStage items={items} modelUri={modelUri} onSave={onSave} onOpenHistory={onOpenHistory} quiet={selection.length > 0}
+        onPickModel={() => { void pickModel(); }}
+        // «Переодеть»: the look's pieces go back into the picker and the try-on sheet opens on them.
+        onRedo={ids => {
+          const present = ids.filter(id => items.some(item => item.id === id));
+          if (!present.length) return;
+          setSelectedIds(present); setPreviewOpen(true);
+        }} />
       <PhotoAdvice uri={modelUri} />
       <View style={styles.row}>
         <Text style={styles.heading}>{t('Вещи для примерки')}</Text>
         <Text style={styles.muted}>{t('Выбрано: {count}', { count: selection.length })}</Text>
       </View>
-      <View style={styles.searchBar}>
-        <Search size={17} strokeWidth={1.5} color={colors.muted} />
-        <TextInput accessibilityLabel={t('Найти вещь')} placeholder={t('Найти вещь')} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} style={styles.searchInput} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
-        {search.length > 0 && <AppPressable accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
-      </View>
+      <Glass style={styles.searchBar}>
+        <View style={styles.searchInner}>
+          <Search size={17} strokeWidth={1.6} color={colors.muted} />
+          <TextInput accessibilityLabel={t('Найти вещь')} placeholder={t('Найти вещь')} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} style={styles.searchInput} returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
+          {search.length > 0 && <AppPressable accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
+        </View>
+      </Glass>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
         {['Все', ...Array.from(new Set(items.map(item => item.section)))].map(value => (
           <Chip key={value} label={t(value)} active={section === value} onPress={() => setSection(value)} />
@@ -123,10 +130,14 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       {selection.length > 0 && (
         <View style={styles.selected}>
           {selection.map(item => (
-            <AppPressable key={item.id} onPress={() => toggle(item)} accessibilityRole="button" accessibilityLabel={t('Убрать {name}', { name: item.name })} style={styles.selectedItem}>
-              {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.selectedPhoto} resizeMode="contain" />}
-              <Text style={styles.selectedName} numberOfLines={1}>{item.name}</Text>
-              <X size={14} color={colors.muted} />
+            <AppPressable key={item.id} onPress={() => toggle(item)} accessibilityRole="button" accessibilityLabel={t('Убрать {name}', { name: item.name })} style={{ borderRadius: 999, maxWidth: '100%' }}>
+              <Glass>
+                <View style={styles.selectedItem}>
+                  {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.selectedPhoto} resizeMode="contain" />}
+                  <Text style={styles.selectedName} numberOfLines={1}>{item.name}</Text>
+                  <X size={14} color={colors.muted} />
+                </View>
+              </Glass>
             </AppPressable>
           ))}
           <AppPressable onPress={() => setSelectedIds([])}><Text style={styles.link}>{t('Очистить')}</Text></AppPressable>
@@ -142,8 +153,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           const available = supported && Boolean(item.imageUri);
           const selected = selection.some(candidate => candidate.id === item.id);
           return (
-            <View key={item.id} style={[styles.item, width >= 720 && { width: '32%' }]}>
-              <GarmentTile item={item} selected={selected} disabled={!available} onPress={() => toggle(item)}
+            <View key={item.id} style={[styles.item, width >= 720 && { width: '31.5%' }]}>
+              <PickTile item={item} selected={selected} disabled={!available} onPress={() => toggle(item)}
                 status={!supported ? t('Примерка недоступна') : !item.imageUri ? t('Нет фото') : undefined} />
             </View>
           );
@@ -151,16 +162,241 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       </View>
       {!visibleItems.length && <Text style={styles.muted}>{t(items.length ? 'Ничего не найдено' : 'Гардероб пока пуст')}</Text>}
       {!items.length && <PrimaryButton title={t('Добавить вещи')} onPress={onWardrobe} variant="ghost" />}
-      <RecentTryOns onSave={onSave} onOpenHistory={onOpenHistory} />
       {selection.length > 0 && <FittingSession key={sessionKey} items={selection} modelUri={modelUri} onSave={onSave} visible={previewOpen} onClose={() => setPreviewOpen(false)} />}
       {cropModal}
     </View>
   );
 }
 
+const shortDateTime = (timestamp: number) =>
+  new Date(timestamp).toLocaleString(localeFor(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+const KNOB = 78;
+
+/**
+ * The fitting room's picture: the person's own photo, or the try-on chosen in «Недавние примерки»
+ * (the durable try-on journal), with a glass switch that fades between the two.
+ */
+function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onRedo, quiet }: {
+  items: WardrobeItem[]; modelUri?: string; onSave: (look: SavedLook) => void; onOpenHistory: () => void;
+  onPickModel: () => void; onRedo: (ids: string[]) => void;
+  /** Garments are being picked: the floating «К примерке» is then the main action, not «Сохранить». */
+  quiet: boolean;
+}) {
+  const styles = useThemedStyles(makeStyles);
+  const t = useT();
+  const { colors: c, isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const { jobs, store, error, login } = useTryOnJobs();
+  // Looked at here, a finished look no longer waits in the small window.
+  const dock = useGenerationDock();
+  const recent = jobs.slice(0, 12);
+  const [currentId, setCurrentId] = useState<string>();
+  const current: TryOnJob | undefined = recent.find(job => job.id === currentId) || recent[0];
+  const result = current?.result;
+  const busy = current?.status === 'pending';
+  const [after, setAfter] = useState(true);
+  useEffect(() => { setAfter(true); }, [result?.imageUri]);
+  const showResult = Boolean(result && (after || !modelUri));
+  // 1 shows the try-on, 0 the person's own photo.
+  const fade = useRef(new Animated.Value(showResult ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(fade, { toValue: showResult ? 1 : 0, duration: reduced ? 0 : 700, easing: Easing.bezier(0.2, 0.7, 0.2, 1), useNativeDriver: true }).start();
+  }, [showResult, reduced, fade]);
+  const [saved, setSaved] = useState<string[]>([]);
+  const [viewer, setViewer] = useState(false);
+  const [gallery, setGallery] = useState<{ uri: string; state: 'saving' | 'saved' | 'error'; message?: string }>();
+  const galleryState = gallery && gallery.uri === result?.imageUri ? gallery : undefined;
+  const pieces = (current?.itemIds || []).map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
+  const ink = isDark ? '#FFFFFF' : INK;
+
+  const saveLook = (job: TryOnJob) => {
+    const done = job.result!;
+    onSave({ id: `job-${job.id}`, name: job.name, itemIds: job.itemIds, createdAt: job.createdAt,
+      tryOnImageUri: done.imageUri, tryOnUpdatedAt: done.updatedAt, tryOnWarning: done.warning, tuckMode: done.tuckMode,
+      tryOnQualityMode: 'quality', tryOnHistory: [done] });
+    setSaved(previous => [...previous, job.id]);
+  };
+  const saveToGallery = async () => {
+    if (!result || galleryState?.state === 'saving') return;
+    const uri = result.imageUri;
+    setGallery({ uri, state: 'saving' });
+    try {
+      // One way to the gallery for the whole app (tryOnExport): the full-size file, never a preview.
+      await saveTryOnToGallery(uri, login);
+      setGallery({ uri, state: 'saved', message: t('Сохранено в галерею в полном качестве') });
+    } catch (e: any) {
+      setGallery({ uri, state: 'error', message: e?.message || t('Не удалось сохранить в галерею') });
+    }
+  };
+
+  return <View style={{ gap: 12 }}>
+    <View style={styles.frameShadow}>
+      <View style={styles.frame}>
+        {modelUri ? <Animated.Image source={{ uri: modelUri }} resizeMode="cover" accessibilityLabel={t('Фото для примерки')}
+          style={[StyleSheet.absoluteFill, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+            transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }] }]} />
+          : <View style={styles.noPhoto}>
+            <UserRound size={40} strokeWidth={1.2} color={c.muted} />
+            <Text style={styles.noPhotoText}>{t('Фото ещё не добавлено')}</Text>
+            <Pill variant="primary" title={t('Добавить фото')} onPress={onPickModel} />
+          </View>}
+        {result ? <Animated.View pointerEvents={showResult ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { opacity: fade,
+          transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1] }) }] }]}>
+          <AppPressable feedback={false} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть примерку: {name}', { name: current!.name })}
+            onPress={() => setViewer(true)} style={StyleSheet.absoluteFill}>
+            <Image source={{ uri: result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
+          </AppPressable>
+        </Animated.View> : null}
+        {busy ? <BusyVeil label={tryOnStatusLabel(current?.progress, t)} reduced={reduced} /> : null}
+        <View style={styles.frameTop} pointerEvents="box-none">
+          {result && modelUri ? <Glass style={styles.switch}>
+            <View accessibilityRole="tablist" style={styles.switchInner}>
+              <Animated.View pointerEvents="none" style={[styles.knob, { backgroundColor: isDark ? '#FFFFFF' : INK,
+                transform: [{ translateX: fade.interpolate({ inputRange: [0, 1], outputRange: [0, KNOB] }) }] }]} />
+              {[false, true].map(look => <AppPressable key={String(look)} haptics accessibilityRole="tab" accessibilityState={{ selected: after === look }}
+                onPress={() => setAfter(look)} style={styles.switchTab}>
+                <Text style={[styles.switchText, { color: after === look ? (isDark ? INK : '#FFFFFF') : (isDark ? '#E4E6EA' : '#3F444B') }]}>{t(look ? 'В образе' : 'До')}</Text>
+              </AppPressable>)}
+            </View>
+          </Glass> : <View />}
+          <View style={styles.frameIcons}>
+            {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
+            {result && current ? <Pill size="sm" icon={Heart} iconFill={saved.includes(current.id)} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено' : 'Сохранить образ')}
+              accessibilityState={{ selected: saved.includes(current.id) }} onPress={() => { if (!saved.includes(current.id)) saveLook(current); }} /> : null}
+          </View>
+        </View>
+        {current && (result || !busy) ? <Glass radius={24} style={styles.caption}>
+          <View style={styles.captionInner}>
+            {pieces.length ? <View style={styles.pieces}>
+              {pieces.slice(0, 4).map((item, index) => <View key={item.id} style={[styles.piece, index > 0 && { marginLeft: -8 }]}>
+                {item.imageUri ? <Image source={{ uri: item.imageUri }} resizeMode={isCutout(item.imageUri) ? 'contain' : 'cover'}
+                  style={isCutout(item.imageUri) ? styles.pieceCutout : styles.piecePhoto} /> : <Shirt size={18} strokeWidth={1.4} color={INK_SOFT} />}
+              </View>)}
+            </View> : null}
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <Text style={styles.captionTitle} numberOfLines={1}>{current.name}</Text>
+              {result ? <Text style={styles.captionMeta}>{shortDateTime(result.updatedAt)}</Text>
+                : current.error ? <Text style={styles.captionError} numberOfLines={3}>{t(current.error)}</Text>
+                : <Text style={styles.captionMeta}>{t('Примерка не завершена')}</Text>}
+            </View>
+            {!result && current.status === 'retry' ? <Pill size="icon" icon={RefreshCw} accessibilityLabel={t('Проверить результат')} onPress={() => void store.poll(current)} /> : null}
+          </View>
+        </Glass> : null}
+      </View>
+    </View>
+    {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
+      : current ? <View style={styles.actions}>
+        {result ? <Pill style={{ flex: 1 }} variant={quiet ? 'glass' : 'primary'} icon={galleryState?.state === 'saved' ? Check : Download}
+          title={t(galleryState?.state === 'saving' ? 'Сохраняем…' : galleryState?.state === 'saved' ? 'Сохранено' : 'Сохранить')}
+          accessibilityLabel={t('Сохранить в галерею')} disabled={galleryState?.state === 'saving'} onPress={() => { void saveToGallery(); }} /> : null}
+        <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Переодеть')} disabled={!pieces.length} onPress={() => onRedo(current.itemIds)} />
+      </View> : null}
+    {galleryState?.message ? <Text style={galleryState.state === 'error' ? styles.error : styles.muted}>{galleryState.message}</Text> : null}
+    {error ? <Text style={styles.error}>{t(error)}</Text> : null}
+    {recent.length ? <>
+      <View style={styles.recentHead}>
+        <Text style={styles.recentTitle}>{t('Недавние примерки')}</Text>
+        <AppPressable accessibilityRole="button" accessibilityLabel={t('Вся история')} onPress={onOpenHistory} hitSlop={8}>
+          <Text style={styles.recentAll}>{t('Все')}</Text>
+        </AppPressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+        {recent.map(job => {
+          const on = job.id === current?.id;
+          return <AppPressable key={job.id} accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
+            accessibilityState={{ selected: on }} onPress={() => { setCurrentId(job.id); if (job.result) dock.viewed(job.id); }}
+            style={[styles.thumb, { borderColor: on ? ink : 'transparent' }]}>
+            {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
+              : <Glass radius={14} style={[StyleSheet.absoluteFill, styles.thumbState]}>
+                <View style={styles.thumbCenter}>
+                  {job.status === 'pending' ? <ActivityIndicator color={ink} /> : <RefreshCw color={job.error ? c.danger : c.muted} size={20} />}
+                </View>
+              </Glass>}
+          </AppPressable>;
+        })}
+      </ScrollView>
+    </> : null}
+    <Modal visible={viewer && Boolean(result)} presentationStyle="fullScreen" animationType="slide" onRequestClose={() => setViewer(false)}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: c.background }}>
+        {result && current ? <SafeAreaView style={{ flex: 1, backgroundColor: c.background, paddingHorizontal: 20, gap: 16 }}>
+          <View style={styles.viewerHead}>
+            <Text numberOfLines={2} style={styles.viewerTitle}>{current.name}</Text>
+            <Pill size="icon" icon={X} accessibilityLabel={t('Закрыть примерку')} onPress={() => setViewer(false)} />
+          </View>
+          <ZoomableImage uri={result.imageUri} />
+          <PrimaryButton title={t(saved.includes(current.id) ? 'Сохранено' : 'Сохранить образ')} icon={saved.includes(current.id) ? Check : Save}
+            disabled={saved.includes(current.id)} onPress={() => saveLook(current)} style={{ marginBottom: 16 }} />
+        </SafeAreaView> : null}
+      </SafeAreaProvider>
+      <OverlayOutlet />
+    </Modal>
+  </View>;
+}
+
+/** A try-on being made: the picture under a light veil, a beam of light passing over it. */
+function BusyVeil({ label, reduced }: { label: string; reduced: boolean }) {
+  const { isDark } = useTheme();
+  const [height, setHeight] = useState(0);
+  const beam = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduced || !height) return;
+    beam.setValue(0);
+    const loop = Animated.loop(Animated.timing(beam, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [reduced, height, beam]);
+  return <View pointerEvents="none" onLayout={event => setHeight(event.nativeEvent.layout.height)}
+    style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(18,20,23,0.45)' : 'rgba(255,255,255,0.35)', overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 96 }]}>
+    {!reduced && height ? <Animated.View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: height * 0.6,
+      transform: [{ translateY: beam.interpolate({ inputRange: [0, 1], outputRange: [-height * 0.6, height] }) }] }}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.0)' }} />
+      <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.45)' }} />
+      <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.0)' }} />
+    </Animated.View> : null}
+    <Glass>
+      <View style={{ height: 40, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : INK} />
+        <Text style={[font('semibold'), { fontSize: 13, color: isDark ? '#FFFFFF' : INK }]} numberOfLines={1}>{label}</Text>
+      </View>
+    </Glass>
+  </View>;
+}
+
+/** A garment to pick: a cut-out stands bare on glass, a photo with its own ground as a rounded print. */
+function PickTile({ item, selected, disabled, status, onPress }: { item: WardrobeItem; selected: boolean; disabled: boolean; status?: string; onPress: () => void }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors: c, isDark } = useTheme();
+  const t = useT();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [item.imageUri]);
+  const cutout = isCutout(item.imageUri);
+  const ink = isDark ? '#FFFFFF' : INK;
+  return (
+    <AppPressable haptics onPress={onPress} disabled={disabled} accessibilityRole="checkbox"
+      accessibilityLabel={item.name} accessibilityState={{ checked: selected, disabled }} style={{ gap: 8 }}>
+      <Glass radius={24} style={[styles.tile, { borderColor: selected ? ink : 'transparent' }, disabled && { opacity: 0.6 }]}>
+        {item.imageUri && !failed ? <Image source={{ uri: item.imageUri }} resizeMode={cutout ? 'contain' : 'cover'} onError={() => setFailed(true)}
+          style={cutout ? styles.tileCutout : styles.tilePrint} />
+          : <View style={styles.tileMissing}>
+            {failed ? <ImageOff size={30} strokeWidth={1} color={c.muted} /> : <Shirt size={36} strokeWidth={1} color={c.muted} />}
+            <Text style={styles.tileMissingText}>{t(failed ? 'Фото недоступно' : 'Нет фото')}</Text>
+          </View>}
+        {!disabled ? <View style={styles.tileBadge}>
+          {selected ? <View style={[styles.badgeFill, { backgroundColor: ink }]}><Check size={15} strokeWidth={2} color={isDark ? INK : '#FFFFFF'} /></View>
+            : <Glass style={styles.badgeFill}><View style={styles.badgeCenter}><Plus size={15} strokeWidth={2} color={ink} /></View></Glass>}
+        </View> : null}
+        {status ? <Glass radius={14} style={styles.tileStatus}><Text style={styles.tileStatusText}>{status}</Text></Glass> : null}
+      </Glass>
+      <Text style={styles.tileName} numberOfLines={1}>{item.name}</Text>
+    </AppPressable>
+  );
+}
+
 function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Props, 'items' | 'modelUri' | 'onSave'> & { visible: boolean; onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { isDark } = useTheme();
   const [name, setName] = useState('');
   const [history, setHistory] = useState<TryOnHistoryItem[]>([]);
   const [selected, setSelected] = useState<TryOnHistoryItem>();
@@ -168,13 +404,14 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
   const latest = selected || history[0];
   return <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
     <View style={styles.backdrop}>
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { backgroundColor: isDark ? '#181A1E' : '#FAFAF9' }]}>
+        <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
         <View style={styles.row}>
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={styles.heading}>{t('Примерка')}</Text>
+            <Text style={styles.sheetTitle}>{t('Примерка')}</Text>
             <Text style={styles.muted} numberOfLines={1}>{items.map(item => item.name).join(' + ')}</Text>
           </View>
-          <IconButton icon={X} label={t('Закрыть примерку')} onPress={onClose} />
+          <Pill size="icon" icon={X} accessibilityLabel={t('Закрыть примерку')} onPress={onClose} />
         </View>
         {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
         {/* Closing the generation window closes this sheet too: the next look is picked on the main screen,
@@ -190,7 +427,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
             setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
               .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
           }}
-          sheetContent={<TextInput style={styles.search} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
+          sheetContent={<TextInput style={styles.nameInput} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
           sheetFooter={<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
             onSave({
               id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
@@ -209,30 +446,66 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   content: { gap: 16, paddingBottom: 20 },
   backdrop: { flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end' },
-  sheet: { height: '92%', width: '100%', maxWidth: 600, alignSelf: 'center', backgroundColor: c.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 12 },
+  sheet: { height: '92%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingBottom: 20, gap: 12 },
+  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10 },
+  sheetTitle: { ...font('semibold'), color: c.text, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  heading: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: 0 },
-  text: { color: c.text, fontSize: 14 },
-  muted: { color: c.muted, fontSize: 12 },
-  link: { color: c.accentGold, fontSize: 14, paddingVertical: 8 },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingBottom: 16, borderBottomWidth: 1, borderColor: c.border },
-  person: { width: 68, height: 88, backgroundColor: c.surface, borderRadius: 4 },
-  personEmpty: { width: 68, height: 88, backgroundColor: c.surface, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
-  search: { color: c.text, borderWidth: 1, borderColor: c.border, borderRadius: 4, padding: 12, fontSize: 14 },
-  searchBar: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: c.surface, borderRadius: 4, paddingHorizontal: 14, height: 44 },
-  searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
+  heading: { ...font('semibold'), color: c.text, fontSize: 15, lineHeight: 20 },
+  muted: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
+  error: { ...font('regular'), color: c.danger, fontSize: 13, lineHeight: 18 },
+  link: { ...font('semibold'), color: c.text, fontSize: 13, paddingVertical: 8 },
+  // The picture: a 34-radius frame on a soft shadow, as in the mock-up.
+  frameShadow: { width: '100%', maxWidth: 480, alignSelf: 'center', aspectRatio: 0.8, borderRadius: 34,
+    boxShadow: '0px 30px 60px -24px rgba(20,25,30,0.35)' },
+  frame: { flex: 1, borderRadius: 34, overflow: 'hidden', backgroundColor: c.surface },
+  noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
+  noPhotoText: { ...font('medium'), color: c.muted, fontSize: 14, textAlign: 'center' },
+  frameTop: { position: 'absolute', left: 12, right: 12, top: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  frameIcons: { flexDirection: 'row', gap: 8 },
+  switch: { height: 38 },
+  switchInner: { flexDirection: 'row', padding: 3, height: 38 },
+  knob: { position: 'absolute', top: 3, left: 3, width: KNOB, height: 32, borderRadius: 999 },
+  switchTab: { width: KNOB, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
+  switchText: { ...font('semibold'), fontSize: 13 },
+  caption: { position: 'absolute', left: 12, right: 12, bottom: 12 },
+  captionInner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  pieces: { flexDirection: 'row' },
+  piece: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pieceCutout: { width: 28, height: 28 },
+  piecePhoto: { width: '100%', height: '100%' },
+  captionTitle: { ...font('semibold'), color: c.text, fontSize: 14, lineHeight: 18 },
+  captionMeta: { ...font('regular'), color: c.muted, fontSize: 12, lineHeight: 16 },
+  captionError: { ...font('regular'), color: c.danger, fontSize: 12, lineHeight: 16 },
+  actions: { flexDirection: 'row', gap: 8 },
+  recentHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 8 },
+  recentTitle: { ...font('semibold'), color: c.text, fontSize: 15 },
+  recentAll: { ...font('regular'), color: c.muted, fontSize: 13 },
+  thumb: { width: 62, height: 84, borderRadius: 16, overflow: 'hidden', borderWidth: 2, backgroundColor: c.surface },
+  thumbState: { borderRadius: 14 },
+  thumbCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  viewerHead: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
+  viewerTitle: { ...font('semibold'), flex: 1, color: c.text, fontSize: 17, lineHeight: 22 },
+  nameInput: { ...font('regular'), color: c.text, backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
+  searchBar: { height: 44 },
+  searchInner: { flex: 1, flexDirection: 'row', gap: 10, alignItems: 'center', paddingHorizontal: 16 },
+  searchInput: { ...font('regular'), flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
   filters: { gap: 0 },
-  filter: { padding: 10, borderRadius: 4 },
-  layerHint: { color: c.muted, fontSize: 13, lineHeight: 18 },
-  selected: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  selectedItem: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%', borderWidth: 1, borderColor: c.border, borderRadius: 4, padding: 6 },
-  selectedPhoto: { width: 32, height: 38, backgroundColor: c.stage, borderRadius: 8 },
-  selectedName: { color: c.text, fontSize: 12, flexShrink: 1 },
+  layerHint: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
+  selected: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  selectedItem: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, paddingLeft: 6, paddingRight: 12 },
+  selectedPhoto: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFFFFF' },
+  selectedName: { ...font('medium'), color: c.text, fontSize: 13, flexShrink: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  catalog: { maxHeight: 360 },
   item: { width: '48%' },
-  activeItem: { borderColor: c.accentGold, backgroundColor: c.accentGoldSoft },
-  unavailable: { opacity: 0.55 },
-  garment: { width: '100%', aspectRatio: 1, backgroundColor: c.stage, borderRadius: 4 },
-  itemName: { color: c.text, fontSize: 14, fontWeight: '600', minHeight: 36 }
+  tile: { width: '100%', aspectRatio: 0.8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  tileCutout: { width: '80%', height: '80%' },
+  tilePrint: { width: '82%', height: '86%', borderRadius: 18 },
+  tileMissing: { alignItems: 'center', justifyContent: 'center', gap: 8 },
+  tileMissingText: { ...font('regular'), fontSize: 12, color: c.muted },
+  tileBadge: { position: 'absolute', right: 10, top: 10 },
+  badgeFill: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  badgeCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tileStatus: { position: 'absolute', left: 8, right: 8, bottom: 8, paddingVertical: 6, paddingHorizontal: 8 },
+  tileStatusText: { ...font('medium'), color: c.text, fontSize: 11, textAlign: 'center' },
+  tileName: { ...font('medium'), color: c.text, fontSize: 13, lineHeight: 18, paddingHorizontal: 4 }
 });
