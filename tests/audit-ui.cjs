@@ -138,7 +138,7 @@ async function login(page, name) {
     await page.goto(BASE, { waitUntil: 'networkidle' });
     await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
     await page.getByRole('checkbox', { name: item.name, exact: true }).click();
-    await page.getByRole('button', { name: 'К примерке', exact: true }).click();
+    await page.getByRole('button', { name: /^К примерке/ }).click();
     await page.getByRole('button', { name: 'Примерить', exact: true }).click();
     await page.getByRole('button', { name: 'Перегенерировать', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Перегенерировать', exact: true }).click();
@@ -165,7 +165,7 @@ async function login(page, name) {
     console.log('PASS UI: generation survives navigation and is savable from recent jobs');
 
     await page.getByRole('checkbox', { name: item.name, exact: true }).click();
-    await page.getByRole('button', { name: 'К примерке', exact: true }).click();
+    await page.getByRole('button', { name: /^К примерке/ }).click();
     release = false;
     await page.getByRole('button', { name: 'Перегенерировать', exact: true }).click();
     await eventually(async () => assert.equal(calls, 4));
@@ -325,7 +325,7 @@ async function login(page, name) {
     await page.goto(BASE, { waitUntil: 'networkidle' });
     await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
     await page.getByRole('checkbox', { name: item.name, exact: true }).click();
-    await page.getByRole('button', { name: 'К примерке', exact: true }).click();
+    await page.getByRole('button', { name: /^К примерке/ }).click();
     await page.getByRole('button', { name: 'Настройки примерки', exact: true }).click();
     for (const [label, mode] of [['Заправить', 'tucked'], ['Навыпуск', 'untucked']]) {
       await page.getByRole('radio', { name: label, exact: true }).click();

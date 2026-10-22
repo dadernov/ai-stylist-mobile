@@ -192,6 +192,9 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
   const dock = useGenerationDock();
   const recent = jobs.slice(0, 12);
   const [currentId, setCurrentId] = useState<string>();
+  // A newly started try-on takes the frame, so its veil shows.
+  const newest = recent[0]?.id;
+  useEffect(() => { setCurrentId(undefined); }, [newest]);
   const current: TryOnJob | undefined = recent.find(job => job.id === currentId) || recent[0];
   const result = current?.result;
   const busy = current?.status === 'pending';
@@ -205,6 +208,13 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
   }, [showResult, reduced, fade]);
   const [saved, setSaved] = useState<string[]>([]);
   const [viewer, setViewer] = useState(false);
+  // A finished try-on opened full screen has been looked at: it no longer waits in the small window.
+  const openViewer = (job: TryOnJob) => {
+    setCurrentId(job.id);
+    if (!job.result) return;
+    dock.viewed(job.id);
+    setViewer(true);
+  };
   const [gallery, setGallery] = useState<{ uri: string; state: 'saving' | 'saved' | 'error'; message?: string }>();
   const galleryState = gallery && gallery.uri === result?.imageUri ? gallery : undefined;
   const pieces = (current?.itemIds || []).map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
@@ -243,8 +253,8 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
           </View>}
         {result ? <Animated.View pointerEvents={showResult ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { opacity: fade,
           transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1] }) }] }]}>
-          <AppPressable feedback={false} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть примерку: {name}', { name: current!.name })}
-            onPress={() => setViewer(true)} style={StyleSheet.absoluteFill}>
+          <AppPressable feedback={false} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть во весь экран')}
+            onPress={() => openViewer(current!)} style={StyleSheet.absoluteFill}>
             <Image source={{ uri: result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
           </AppPressable>
         </Animated.View> : null}
@@ -262,7 +272,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
           </Glass> : <View />}
           <View style={styles.frameIcons}>
             {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
-            {result && current ? <Pill size="sm" icon={Heart} iconFill={saved.includes(current.id)} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено' : 'Сохранить образ')}
+            {result && current ? <Pill size="sm" icon={Heart} iconFill={saved.includes(current.id)} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено в образы' : 'Сохранить в образы')}
               accessibilityState={{ selected: saved.includes(current.id) }} onPress={() => { if (!saved.includes(current.id)) saveLook(current); }} /> : null}
           </View>
         </View>
@@ -305,7 +315,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
         {recent.map(job => {
           const on = job.id === current?.id;
           return <AppPressable key={job.id} accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
-            accessibilityState={{ selected: on }} onPress={() => { setCurrentId(job.id); if (job.result) dock.viewed(job.id); }}
+            accessibilityState={{ selected: on }} onPress={() => openViewer(job)}
             style={[styles.thumb, { borderColor: on ? ink : 'transparent' }]}>
             {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
               : <Glass radius={14} style={[StyleSheet.absoluteFill, styles.thumbState]}>

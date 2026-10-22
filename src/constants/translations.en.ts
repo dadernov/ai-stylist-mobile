@@ -891,4 +891,7 @@ export const en: Record<string, string> = {
   "Переодеть": "Change",
   "В образе": "In the look",
   "До": "Before",
+  "Открыть во весь экран": "Open full screen",
+  "Сохранить в образы": "Save to looks",
+  "Сохранено в образы": "Saved to looks",
 };
