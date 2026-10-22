@@ -9,7 +9,7 @@ export const lightColors = {
   // подложка под фото вещей. Цвет в приложение приносят сами вещи и фото.
   background: '#FFFFFF',
   card: '#FFFFFF',
-  surface: 'rgba(255,255,255,0.6)',
+  surface: 'rgba(18,20,23,0.06)',
   chip: '#F2F2F2',
   accent: '#E5E5E5',
   border: '#E5E5E5',
