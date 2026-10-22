@@ -1,8 +1,8 @@
 import { usePhotoPicker } from './usePhotoPicker';
 import { OverlayOutlet } from './OverlayHost';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { ArrowUpRight, Check, Download, Heart, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
+import { ArrowUpRight, Bookmark, BookmarkCheck, Check, Download, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook, TryOnHistoryItem } from '../types/looks';
@@ -16,7 +16,7 @@ import { Chip } from './Chip';
 import { PhotoAdvice } from './PhotoAdvice';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Glass, Pill } from './studio/Glass';
-import { font, INK, INK_SOFT, isCutout, useReducedMotion } from './studio/studio';
+import { font, glassEdge, glassFill, INK, INK_SOFT, isCutout, useReducedMotion } from './studio/studio';
 import { StudioSheet } from './studio/StudioSheet';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
@@ -75,7 +75,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   // The session belongs to these exact photos, including the profile photo.
   const sessionKey = JSON.stringify([modelUri, selection.map(item => [item.id, item.imageUri, item.section])]);
 
-  const toggle = (item: WardrobeItem) => {
+  // Stable while the wardrobe is unchanged, so a tile redraws only when its own state does.
+  const toggle = useCallback((item: WardrobeItem) => {
     setSelectedIds(previous => {
       if (previous.includes(item.id)) return previous.filter(id => id !== item.id);
       // Upper layers can be combined; the server puts them on in their natural order.
@@ -99,7 +100,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
         return true;
       }), item.id];
     });
-  };
+  }, [items]);
 
   return (
     <View style={styles.content}>
@@ -155,7 +156,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           const selected = selection.some(candidate => candidate.id === item.id);
           return (
             <View key={item.id} style={[styles.item, width >= 720 && { width: '31.5%' }]}>
-              <PickTile item={item} selected={selected} disabled={!available} onPress={() => toggle(item)}
+              <PickTile item={item} selected={selected} disabled={!available} onToggle={toggle}
                 status={!supported ? t('Примерка недоступна') : !item.imageUri ? t('Нет фото') : undefined} />
             </View>
           );
@@ -273,7 +274,8 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
           </Glass> : <View />}
           <View style={styles.frameIcons}>
             {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
-            {result && current ? <Pill size="sm" icon={Heart} iconFill={saved.includes(current.id)} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено в образы' : 'Сохранить в образы')}
+            {/* A bookmark, not a heart: hearts mean «Избранное» only; this keeps the try-on in «Образы». */}
+            {result && current ? <Pill size="sm" icon={saved.includes(current.id) ? BookmarkCheck : Bookmark} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено в образы' : 'Сохранить в образы')}
               accessibilityState={{ selected: saved.includes(current.id) }} onPress={() => { if (!saved.includes(current.id)) saveLook(current); }} /> : null}
           </View>
         </View>
@@ -374,8 +376,13 @@ function BusyVeil({ label, reduced }: { label: string; reduced: boolean }) {
   </View>;
 }
 
-/** A garment to pick: a cut-out stands bare on glass, a photo with its own ground as a rounded print. */
-function PickTile({ item, selected, disabled, status, onPress }: { item: WardrobeItem; selected: boolean; disabled: boolean; status?: string; onPress: () => void }) {
+/**
+ * A garment to pick: a cut-out stands bare on glass, a photo with its own ground as a rounded print. A wardrobe
+ * can hold hundreds, so the tile is memoised and drawn with glass's tint alone, without a blur of its own.
+ */
+const PickTile = memo(function PickTile({ item, selected, disabled, status, onToggle }: {
+  item: WardrobeItem; selected: boolean; disabled: boolean; status?: string; onToggle: (item: WardrobeItem) => void;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { colors: c, isDark } = useTheme();
   const t = useT();
@@ -383,10 +390,11 @@ function PickTile({ item, selected, disabled, status, onPress }: { item: Wardrob
   useEffect(() => { setFailed(false); }, [item.imageUri]);
   const cutout = isCutout(item.imageUri);
   const ink = isDark ? '#FFFFFF' : INK;
+  const fill = { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) };
   return (
-    <AppPressable haptics onPress={onPress} disabled={disabled} accessibilityRole="checkbox"
+    <AppPressable haptics onPress={() => onToggle(item)} disabled={disabled} accessibilityRole="checkbox"
       accessibilityLabel={item.name} accessibilityState={{ checked: selected, disabled }} style={{ gap: 8 }}>
-      <Glass radius={24} style={[styles.tile, { borderColor: selected ? ink : 'transparent' }, disabled && { opacity: 0.6 }]}>
+      <View style={[styles.tile, { backgroundColor: fill.backgroundColor, borderColor: selected ? ink : fill.borderColor }, disabled && { opacity: 0.6 }]}>
         {item.imageUri && !failed ? <Image source={{ uri: item.imageUri }} resizeMode={cutout ? 'contain' : 'cover'} onError={() => setFailed(true)}
           style={cutout ? styles.tileCutout : styles.tilePrint} />
           : <View style={styles.tileMissing}>
@@ -395,14 +403,14 @@ function PickTile({ item, selected, disabled, status, onPress }: { item: Wardrob
           </View>}
         {!disabled ? <View style={styles.tileBadge}>
           {selected ? <View style={[styles.badgeFill, { backgroundColor: ink }]}><Check size={15} strokeWidth={2} color={isDark ? INK : '#FFFFFF'} /></View>
-            : <Glass style={styles.badgeFill}><View style={styles.badgeCenter}><Plus size={15} strokeWidth={2} color={ink} /></View></Glass>}
+            : <View style={[styles.badgeFill, styles.badgeGlass, fill]}><Plus size={15} strokeWidth={2} color={ink} /></View>}
         </View> : null}
-        {status ? <Glass radius={14} style={styles.tileStatus}><Text style={styles.tileStatusText}>{status}</Text></Glass> : null}
-      </Glass>
+        {status ? <View style={[styles.tileStatus, styles.badgeGlass, fill]}><Text style={styles.tileStatusText}>{status}</Text></View> : null}
+      </View>
       <Text style={styles.tileName} numberOfLines={1}>{item.name}</Text>
     </AppPressable>
   );
-}
+});
 
 function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Props, 'items' | 'modelUri' | 'onSave'> & { visible: boolean; onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
@@ -491,15 +499,15 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   selectedName: { ...font('medium'), color: c.text, fontSize: 13, flexShrink: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   item: { width: '48%' },
-  tile: { width: '100%', aspectRatio: 0.8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  tile: { width: '100%', aspectRatio: 0.8, borderRadius: 24, borderWidth: 1.5, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   tileCutout: { width: '80%', height: '80%' },
   tilePrint: { width: '82%', height: '86%', borderRadius: 18 },
   tileMissing: { alignItems: 'center', justifyContent: 'center', gap: 8 },
   tileMissingText: { ...font('regular'), fontSize: 12, color: c.muted },
   tileBadge: { position: 'absolute', right: 10, top: 10 },
   badgeFill: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  badgeCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tileStatus: { position: 'absolute', left: 8, right: 8, bottom: 8, paddingVertical: 6, paddingHorizontal: 8 },
+  badgeGlass: { borderWidth: StyleSheet.hairlineWidth * 2 },
+  tileStatus: { position: 'absolute', left: 8, right: 8, bottom: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 14 },
   tileStatusText: { ...font('medium'), color: c.text, fontSize: 11, textAlign: 'center' },
   tileName: { ...font('medium'), color: c.text, fontSize: 13, lineHeight: 18, paddingHorizontal: 4 }
 });
