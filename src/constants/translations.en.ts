@@ -79,6 +79,8 @@ export const en: Record<string, string> = {
   "Других вещей в этой категории нет.": "No other items in this category.",
   "Свернуть": "Collapse",
   "Почему сочетается": "Why it works",
+  "Распознать": "Recognise",
+  "Распознать вещь заново": "Recognise the item again",
   "Размер {size}": "Size {size}",
   "Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.": "Save a look with the heart in Ideas or after a try-on, and it will be here.",
   "К примерке ({count})": "Try on ({count})",
