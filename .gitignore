@@ -15,3 +15,4 @@ ai-server/models/
 # QR для дев-туннеля, не часть проекта
 qr.png
 .superdesign/tmp/
+.superpowers/
