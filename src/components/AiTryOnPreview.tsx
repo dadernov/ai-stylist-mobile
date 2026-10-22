@@ -321,6 +321,12 @@ export function AiTryOnPreview({
           </ScrollView>
         </View>
       ) : null;
+  const buttonContent = (ink: string) => (
+    <View style={[styles.buttonInner, variant !== 'sheet' && { height: 50 }]}>
+      {isBusy ? <ActivityIndicator size="small" color={ink} /> : null}
+      <Text style={[styles.buttonText, { color: ink }]} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+    </View>
+  );
   const mainButton = <>
       {/* While the look generates the button brings its window back: the window
           may have been folded away, and this is the way to it from here. */}
@@ -335,12 +341,10 @@ export function AiTryOnPreview({
         accessibilityRole="button"
         accessibilityState={{ disabled: pendingJob ? false : !canGenerate || isBusy, busy: isBusy }}
       >
-        <PrimarySurface dark={isDark}>
-          <View style={styles.buttonInner}>
-            {isBusy ? <ActivityIndicator size="small" color={isDark ? INK : '#FFFFFF'} /> : null}
-            <Text style={[styles.buttonText, { color: isDark ? INK : '#FFFFFF' }]} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
-          </View>
-        </PrimarySurface>
+        {/* The sheet's button is its one main action; on the cards of «Образы» each look's button is glass,
+            so the screen keeps one black button and no sheen loops on every card. */}
+        {variant === 'sheet' ? <PrimarySurface dark={isDark}>{buttonContent(isDark ? INK : '#FFFFFF')}</PrimarySurface>
+          : <Glass>{buttonContent(colors.text)}</Glass>}
       </AppPressable>
       {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
   </>;

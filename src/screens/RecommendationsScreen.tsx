@@ -221,7 +221,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     </ScrollView>
     {anchor ? <View style={styles.anchor}>
       <Text style={[font('regular'), styles.muted, { flex: 1 }]} numberOfLines={1}>{t('Образы вокруг «{name}»', { name: anchor.name })}</Text>
-      <Pill icon={X} size="icon" style={{ transform: [{ scale: 0.8 }] }} accessibilityLabel={t('Без привязки к вещи')} onPress={() => { setAnchorId('any'); fresh(); }} />
+      <Pill icon={X} size="icon" accessibilityLabel={t('Без привязки к вещи')} onPress={() => { setAnchorId('any'); fresh(); }} />
     </View> : null}
 
     {/* The look, composed on the stage: each piece where it is worn */}
