@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Что надеть — Студия</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .f { font-family: 'Manrope', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .base { background: radial-gradient(80% 50% at 50% 44%, #FFFFFF 0%, #F2F2F0 60%, #E4E4E1 100%); }
+  .tint { position: absolute; inset: 0; transition: background-color 1.1s ease; mix-blend-mode: multiply; pointer-events: none;
+          -webkit-mask-image: radial-gradient(60% 34% at 50% var(--ty,44%), #000 0%, rgba(0,0,0,.55) 45%, transparent 80%);
+                  mask-image: radial-gradient(60% 34% at 50% var(--ty,44%), #000 0%, rgba(0,0,0,.55) 45%, transparent 80%); }
+  @keyframes float { 0%,100% { transform: translateY(0) rotate(var(--r,0deg)) } 50% { transform: translateY(-9px) rotate(var(--r,0deg)) } }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+  @keyframes sheen { 0% { transform: translateX(-140%) } 60%,100% { transform: translateX(260%) } }
+  .float { animation: float var(--t,5s) ease-in-out infinite; }
+  .rise { animation: rise .8s cubic-bezier(.2,.7,.2,1) both; }
+  .glass { background: rgba(255,255,255,.55); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 10px 30px rgba(0,0,0,.08); }
+  .sheen::after { content: ''; position: absolute; inset: 0; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent); animation: sheen 4.5s ease-in-out infinite; }
+  .swap { transition: opacity .35s ease, transform .35s ease, filter .35s ease; }
+  .swap.hide { opacity: 0; transform: translateY(8px); filter: blur(6px); }
+  .noscroll::-webkit-scrollbar { display: none; }
+
+  .piece { position: absolute; transition: all .7s cubic-bezier(.2,.7,.2,1); filter: drop-shadow(0 18px 18px rgba(0,0,0,.14)); }
+  .piece.gone { opacity: 0; transform: translateY(30px) scale(.9); filter: blur(10px); }
+  .chip { transition: all .3s ease; }
+
+</style>
+</head>
+<body>
+<div id="app" class="base f relative mx-auto overflow-hidden text-[#121417] select-none" style="width:390px;height:844px;">
+
+  <div id="tint" class="tint" style="background-color:#BFDCCF;--ty:46%"></div>
+  <div class="relative">
+    <div class="h-[54px]"></div>
+    <div class="px-5 flex items-center justify-between rise">
+      <h1 class="text-[34px] leading-[40px] font-semibold tracking-[-1px]">Что надеть</h1>
+      <a id="weather" href="#weather" class="glass h-[38px] px-3.5 rounded-full flex items-center gap-1.5 text-[13px] font-semibold"><iconify-icon icon="ph:cloud-sun" class="text-[17px]"></iconify-icon>+12°</a>
+    </div>
+    <div id="occasions" class="noscroll mt-4 pl-5 pr-5 flex gap-2 overflow-x-auto text-[13px] font-semibold whitespace-nowrap rise" style="animation-delay:.06s"></div>
+
+    <!-- The look, put together in the studio: its pieces float where they are worn -->
+    <div id="stage" class="relative h-[404px] mt-2">
+      <img id="p0" class="piece float" alt="">
+      <img id="p1" class="piece float" alt="">
+      <img id="p2" class="piece float" alt="">
+      <img id="p3" class="piece float" alt="">
+      <div id="pos" class="swap absolute right-5 bottom-[4px] text-[12px] text-[#7A7F87]">1 из 3</div>
+    </div>
+
+    <div class="px-5 rise" style="animation-delay:.12s">
+      <h2 id="look-title" class="swap text-[26px] leading-[30px] font-semibold tracking-[-0.7px]">Мягкий кэжуал</h2>
+      <p id="look-why" class="swap text-[14px] leading-[20px] text-[#5F646C] mt-1.5 min-h-[60px]"></p>
+    </div>
+
+    <div class="px-5 mt-3 flex gap-2 rise" style="animation-delay:.18s">
+      <a id="try-look" href="#try" class="relative overflow-hidden sheen flex-1 h-[50px] rounded-full bg-[#121417] text-white flex items-center justify-center gap-2 text-[15px] font-semibold"><iconify-icon icon="ph:person-simple" class="text-[18px]"></iconify-icon>Примерить образ</a>
+      <a id="save-look" href="#save" class="glass w-[50px] h-[50px] rounded-full flex items-center justify-center"><iconify-icon id="heart" icon="ph:heart" class="text-[20px]"></iconify-icon></a>
+      <a id="next-look" href="#next" class="glass w-[50px] h-[50px] rounded-full flex items-center justify-center"><iconify-icon icon="ph:arrow-right" class="text-[19px]"></iconify-icon></a>
+    </div>
+  </div>
+<div class="absolute left-5 right-5 bottom-[26px] glass rounded-full h-[62px] flex items-center justify-around px-2 z-20"><a id="tab-wardrobe" href="#wardrobe" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:coat-hanger" class="text-[23px]"></iconify-icon></a><a id="tab-fitting" href="#fitting" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:person-simple" class="text-[22px]"></iconify-icon></a><a id="tab-ideas" href="#ideas" class="h-[46px] px-4 rounded-full bg-[#121417] text-white flex items-center gap-2 text-[13px] font-semibold"><iconify-icon icon="ph:stack" class="text-[19px]"></iconify-icon>Идеи</a><a id="tab-saved" href="#saved" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:heart" class="text-[21px]"></iconify-icon></a><a id="tab-profile" href="#profile" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:user" class="text-[21px]"></iconify-icon></a></div>
+</div>
+<script>
+
+const LOOKS = [
+  { title: 'Мягкий кэжуал', why: 'Зелёный кардиган поверх белой футболки смягчает джинсы, кеды держат образ лёгким. Как раз для прогулки при +12°.', tint: '#BFDCCF',
+    p: [['a', 132, 40, 142, '-2deg', 5.2], ['c', 24, 70, 196, '-3deg', 6], ['e', 222, 136, 106, '3deg', 5.6], ['g', 236, 318, 124, '-6deg', 6.4]] },
+  { title: 'Твид и деним', why: 'Твидовое пальто собирает белую футболку и джинсы в городской образ. Кеды вместо ботинок, чтобы не было слишком строго.', tint: '#D9D9D5',
+    p: [['d', 20, 24, 214, '-2deg', 6.2], ['a', 216, 34, 136, '3deg', 5.4], ['e', 236, 160, 100, '-2deg', 5.8], ['g', 104, 318, 128, '-5deg', 6.6]] },
+  { title: 'Тихий выходной', why: 'Худи оверсайз и прямые джинсы: свободно и тепло. Белые кеды повторяют цвет худи, образ выглядит цельным.', tint: '#E1E4EA',
+    p: [['b', 30, 34, 210, '-2deg', 5.8], ['e', 240, 104, 104, '2deg', 5.2], ['g', 190, 318, 132, '-6deg', 6.2], ['h', 250, 0, 0, '0deg', 5]] },
+];
+const OCC = ['Прогулка', 'Работа', 'Свидание', 'Учёба', 'Театр', 'Путешествие'];
+const U = 'https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/';
+let i = 0, occ = 0, saved = new Set(), auto = true;
+const $ = id => document.getElementById(id);
+function renderOcc() {
+  $('occasions').innerHTML = OCC.map((o, n) => `<a id="o-${n}" href="#o-${n}" data-n="${n}" class="chip h-[36px] px-4 rounded-full flex items-center ${n === occ ? 'bg-[#121417] text-white' : 'glass text-[#3F444B]'}">${o}</a>`).join('');
+  $('occasions').querySelectorAll('a').forEach(a => a.onclick = e => { e.preventDefault(); auto = false; occ = +a.dataset.n; renderOcc(); show(1); });
+}
+function place(look, gone) {
+  look.p.forEach((q, n) => {
+    const el = $('p' + n), [k, x, y, w, r, t] = q;
+    if (!w) { el.style.opacity = 0; return; }
+    el.src = U + 'cutout-' + k + '/' + k + '.png';
+    Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px', opacity: '' });
+    el.style.setProperty('--r', r); el.style.setProperty('--t', t + 's');
+    el.style.transitionDelay = (n * 70) + 'ms';
+    el.classList.toggle('gone', gone);
+  });
+}
+function show(dir) {
+  if (dir) {
+    ['p0','p1','p2','p3'].forEach(id => $(id).classList.add('gone'));
+    ['look-title','look-why','pos'].forEach(id => $(id).classList.add('hide'));
+  }
+  setTimeout(() => {
+    if (dir) i = (i + dir + LOOKS.length) % LOOKS.length;
+    const L = LOOKS[i];
+    place(L, true);
+    requestAnimationFrame(() => requestAnimationFrame(() => place(L, false)));
+    $('look-title').textContent = L.title; $('look-why').textContent = L.why; $('pos').textContent = (i + 1) + ' из ' + LOOKS.length;
+    ['look-title','look-why','pos'].forEach(id => $(id).classList.remove('hide'));
+    $('tint').style.backgroundColor = L.tint;
+    $('heart').setAttribute('icon', saved.has(i) ? 'ph:heart-fill' : 'ph:heart');
+  }, dir ? 420 : 0);
+}
+$('next-look').onclick = e => { e.preventDefault(); auto = false; show(1); };
+$('save-look').onclick = e => { e.preventDefault(); auto = false; saved.has(i) ? saved.delete(i) : saved.add(i); $('heart').setAttribute('icon', saved.has(i) ? 'ph:heart-fill' : 'ph:heart'); };
+let x0 = null;
+$('stage').addEventListener('pointerdown', e => x0 = e.clientX);
+$('stage').addEventListener('pointerup', e => { if (x0 === null) return; const dx = e.clientX - x0; x0 = null; if (Math.abs(dx) > 30) { auto = false; show(dx < 0 ? 1 : -1); } });
+renderOcc(); show(0);
+setInterval(() => { if (auto) show(1); }, 4200);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Примерка — Студия</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .f { font-family: 'Manrope', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .base { background: radial-gradient(80% 50% at 50% 44%, #FFFFFF 0%, #F2F2F0 60%, #E4E4E1 100%); }
+  .tint { position: absolute; inset: 0; transition: background-color 1.1s ease; mix-blend-mode: multiply; pointer-events: none;
+          -webkit-mask-image: radial-gradient(60% 34% at 50% var(--ty,44%), #000 0%, rgba(0,0,0,.55) 45%, transparent 80%);
+                  mask-image: radial-gradient(60% 34% at 50% var(--ty,44%), #000 0%, rgba(0,0,0,.55) 45%, transparent 80%); }
+  @keyframes float { 0%,100% { transform: translateY(0) rotate(var(--r,0deg)) } 50% { transform: translateY(-9px) rotate(var(--r,0deg)) } }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+  @keyframes sheen { 0% { transform: translateX(-140%) } 60%,100% { transform: translateX(260%) } }
+  .float { animation: float var(--t,5s) ease-in-out infinite; }
+  .rise { animation: rise .8s cubic-bezier(.2,.7,.2,1) both; }
+  .glass { background: rgba(255,255,255,.55); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 10px 30px rgba(0,0,0,.08); }
+  .sheen::after { content: ''; position: absolute; inset: 0; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent); animation: sheen 4.5s ease-in-out infinite; }
+  .swap { transition: opacity .35s ease, transform .35s ease, filter .35s ease; }
+  .swap.hide { opacity: 0; transform: translateY(8px); filter: blur(6px); }
+  .noscroll::-webkit-scrollbar { display: none; }
+
+  .frame { border-radius: 34px; overflow: hidden; box-shadow: 0 30px 60px -24px rgba(20,25,30,.35); }
+  .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .7s ease, transform 1.2s cubic-bezier(.2,.7,.2,1), filter .7s ease; }
+  .layer.off { opacity: 0; transform: scale(1.04); filter: blur(8px); }
+  .knob { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+  @keyframes scan { from { transform: translateY(-100%) } to { transform: translateY(100%) } }
+  .busy { transition: opacity .5s ease; }
+  .busy.off { opacity: 0; pointer-events: none; }
+  .beam { position: absolute; left: 0; right: 0; height: 60%; background: linear-gradient(180deg, transparent, rgba(255,255,255,.55), transparent); animation: scan 1.8s ease-in-out infinite; }
+
+</style>
+</head>
+<body>
+<div id="app" class="base f relative mx-auto overflow-hidden text-[#121417] select-none" style="width:390px;height:844px;">
+
+  <div class="relative">
+    <div class="h-[54px]"></div>
+    <div class="px-5 flex items-center justify-between rise">
+      <h1 class="text-[34px] leading-[40px] font-semibold tracking-[-1px]">Примерка</h1>
+      <a id="history" href="#history" class="glass h-[38px] px-3.5 rounded-full flex items-center gap-1.5 text-[13px] font-semibold"><iconify-icon icon="ph:clock-counter-clockwise" class="text-[16px]"></iconify-icon>История</a>
+    </div>
+
+    <!-- The picture: you before and in the look; the glass switch fades one into the other -->
+    <div class="px-5 mt-4 rise" style="animation-delay:.08s">
+      <div class="frame relative h-[432px] bg-[#E9E9E6]">
+        <img id="before" class="layer off" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-f1/f1.jpg" alt="Моё фото">
+        <img id="after" class="layer" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-ac4/ac4.jpg" alt="Образ на мне">
+        <div id="busy" class="busy off absolute inset-0 bg-white/35 backdrop-blur-[6px] overflow-hidden flex items-end justify-center pb-24">
+          <div class="beam"></div>
+          <div class="glass relative rounded-full px-4 h-[40px] flex items-center gap-2 text-[13px] font-semibold"><iconify-icon icon="ph:sparkle" class="hidden"></iconify-icon>Примеряем, обычно около минуты</div>
+        </div>
+        <div class="absolute left-3 right-3 top-3 flex justify-between">
+          <div class="glass relative rounded-full h-[38px] p-[3px] flex text-[13px] font-semibold">
+            <span id="knob" class="knob absolute top-[3px] left-[3px] h-[32px] w-[78px] rounded-full bg-[#121417]"></span>
+            <a id="show-before" href="#before" class="relative z-10 w-[78px] flex items-center justify-center text-[#3F444B]">До</a>
+            <a id="show-after" href="#after" class="relative z-10 w-[78px] flex items-center justify-center text-white">В образе</a>
+          </div>
+          <a id="fav" href="#fav" class="glass w-[38px] h-[38px] rounded-full flex items-center justify-center"><iconify-icon id="heart" icon="ph:heart" class="text-[18px]"></iconify-icon></a>
+        </div>
+        <div class="absolute left-3 right-3 bottom-3 glass rounded-[24px] p-3 flex items-center gap-3">
+          <div class="flex -space-x-2">
+            <div class="w-[40px] h-[40px] rounded-full bg-white flex items-center justify-center ring-2 ring-white/80"><img class="h-[28px]" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/cutout-a/a.png" alt=""></div>
+            <div class="w-[40px] h-[40px] rounded-full bg-white flex items-center justify-center ring-2 ring-white/80"><img class="h-[30px]" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/cutout-e/e.png" alt=""></div>
+            <div class="w-[40px] h-[40px] rounded-full bg-white flex items-center justify-center ring-2 ring-white/80"><img class="w-[30px]" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/cutout-g/g.png" alt=""></div>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[14px] font-semibold leading-[18px] truncate">Белая футболка, джинсы, кеды</p>
+            <p class="text-[12px] text-[#5F646C]">Сегодня, 9:40</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 mt-3 flex gap-2 rise" style="animation-delay:.16s">
+      <a id="save" href="#save" class="relative overflow-hidden sheen flex-1 h-[50px] rounded-full bg-[#121417] text-white flex items-center justify-center gap-2 text-[15px] font-semibold"><iconify-icon icon="ph:download-simple" class="text-[18px]"></iconify-icon>Сохранить</a>
+      <a id="redo" href="#redo" class="glass flex-1 h-[50px] rounded-full flex items-center justify-center gap-2 text-[15px] font-semibold"><iconify-icon icon="ph:arrows-clockwise" class="text-[17px]"></iconify-icon>Переодеть</a>
+    </div>
+    <!-- Recent try-ons: one tap back to any of them -->
+    <div class="px-5 mt-5 flex items-baseline justify-between rise" style="animation-delay:.22s">
+      <span class="text-[15px] font-semibold">Недавние примерки</span>
+      <a id="all-history" href="#history" class="text-[13px] text-[#6E737B]">Все</a>
+    </div>
+    <div class="noscroll mt-2.5 pl-5 pr-5 flex gap-2.5 overflow-x-auto rise" style="animation-delay:.26s">
+      <a id="r1" href="#r1" class="shrink-0 w-[62px] h-[84px] rounded-[16px] overflow-hidden ring-2 ring-[#121417]"><img class="w-full h-full object-cover" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-ac4/ac4.jpg" alt=""></a>
+      <a id="r2" href="#r2" class="shrink-0 w-[62px] h-[84px] rounded-[16px] overflow-hidden"><img class="w-full h-full object-cover" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-w12/w12.jpg" alt=""></a>
+      <a id="r3" href="#r3" class="shrink-0 w-[62px] h-[84px] rounded-[16px] overflow-hidden"><img class="w-full h-full object-cover" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-hc09/hc09.jpg" alt=""></a>
+      <a id="r4" href="#r4" class="shrink-0 w-[62px] h-[84px] rounded-[16px] overflow-hidden"><img class="w-full h-full object-cover" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-w05/w05.jpg" alt=""></a>
+      <a id="r5" href="#r5" class="shrink-0 w-[62px] h-[84px] rounded-[16px] overflow-hidden"><img class="w-full h-full object-cover" src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/9beaebe2-7f09-4452-b892-15bff5f484a0/content-assets/tryon-hc16/hc16.jpg" alt=""></a>
+    </div>
+  </div>
+<div class="absolute left-5 right-5 bottom-[26px] glass rounded-full h-[62px] flex items-center justify-around px-2 z-20"><a id="tab-wardrobe" href="#wardrobe" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:coat-hanger" class="text-[23px]"></iconify-icon></a><a id="tab-fitting" href="#fitting" class="h-[46px] px-4 rounded-full bg-[#121417] text-white flex items-center gap-2 text-[13px] font-semibold"><iconify-icon icon="ph:person-simple" class="text-[19px]"></iconify-icon>Примерка</a><a id="tab-ideas" href="#ideas" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:stack" class="text-[21px]"></iconify-icon></a><a id="tab-saved" href="#saved" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:heart" class="text-[21px]"></iconify-icon></a><a id="tab-profile" href="#profile" class="w-[44px] h-[44px] flex items-center justify-center text-[#4A4F57]"><iconify-icon icon="ph:user" class="text-[21px]"></iconify-icon></a></div>
+</div>
+<script>
+
+const $ = id => document.getElementById(id);
+function view(after) {
+  $('before').classList.toggle('off', after); $('after').classList.toggle('off', !after);
+  $('knob').style.transform = after ? 'translateX(78px)' : 'none';
+  $('show-before').style.color = after ? '#3F444B' : '#fff'; $('show-after').style.color = after ? '#fff' : '#3F444B';
+}
+$('show-before').onclick = e => { e.preventDefault(); view(false); };
+$('show-after').onclick = e => { e.preventDefault(); view(true); };
+$('fav').onclick = e => { e.preventDefault(); const h = $('heart'); h.setAttribute('icon', h.getAttribute('icon') === 'ph:heart' ? 'ph:heart-fill' : 'ph:heart'); };
+$('redo').onclick = e => { e.preventDefault(); view(false); $('busy').classList.remove('off'); setTimeout(() => { $('busy').classList.add('off'); view(true); }, 3200); };
+view(true);
+
+</script>
+</body>
+</html>
