@@ -1,4 +1,8 @@
 import {
+  ActivityIndicator,
+  Animated,
+  DimensionValue,
+  Easing,
   FlatList,
   Image,
   Keyboard,
@@ -11,7 +15,10 @@ import {
   View,
   useWindowDimensions
 } from 'react-native';
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { ReactNode, useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePhotoPicker } from '../components/usePhotoPicker';
 import { PhotoSourcePicker, PhotoSource } from '../components/PhotoSourcePicker';
 import { useAppDialog } from '../components/AppDialog';
@@ -19,26 +26,25 @@ import { FormScrollView } from '../components/ui/FormScrollView';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { Chip } from '../components/Chip';
 import { AppPressable } from '../components/AppPressable';
-import { DragHandle } from '../components/DragHandle';
 import { isAutoItemName, suggestItemName } from '../domain/itemName';
 import { useAiConsent } from '../components/AiConsentContext';
 import { OverlayOutlet } from '../components/OverlayHost';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { SectionLabel } from '../components/ui/SectionLabel';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
-import { Skeleton } from '../components/ui/Skeleton';
-import { ProgressGlow } from '../components/ui/ProgressGlow';
-import { PrimaryButton } from '../components/ui/PrimaryButton';
-import { RADII, SERIF, SHADOWS, ThemeColors, TYPE } from '../constants/theme';
+import { SHADOWS, ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, flattenGarment, sendCategoryFeedback } from '../services/ai';
 import { GarmentLabel } from '../components/GarmentLabel';
 import { WardrobeStudio } from '../components/studio/WardrobeStudio';
+import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
+import { FloorShadow, GarmentImage } from '../components/studio/Garment';
+import { StudioBackdrop, useStudioTint } from '../components/studio/StudioBackdrop';
+import { font, INK, INK_FAINT, INK_SOFT, isCutout, studioTint, useReducedMotion } from '../components/studio/studio';
 import { decodeTraits } from '../domain/garmentTraits';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles, Wand2, Undo2 } from 'lucide-react-native';
+import { ImagePlus, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
@@ -298,7 +304,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const aiConsent = useAiConsent();
   const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const ink = isDark ? '#F4F5F7' : INK;
+  const danger = isDark ? colors.danger : '#C62828';
   const [activeFilter, setActiveFilter] = useState('Все');
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -307,7 +316,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const { jobs } = useTryOnJobs();
   const historyCount = jobs.filter(job => job.itemIds.includes(detailId || '')).length;
   const detail = items.find(item => item.id === detailId);
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const columns = width >= 720 ? 3 : 2;
 
   const [draftPhoto, setDraftPhoto] = useState<string | null>(null);
@@ -383,6 +392,20 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const [editStore, setEditStore] = useState('');
   const [editMaterial, setEditMaterial] = useState('');
   const [isEditModalVisible, setEditModalVisible] = useState(false);
+
+  // The draft's detailed fields stay folded under «Изменить» until asked for; opening them scrolls to the card.
+  const [draftDetailsOpen, setDraftDetailsOpen] = useState(false);
+  useEffect(() => { if (isModalVisible) setDraftDetailsOpen(false); }, [isModalVisible]);
+  const draftScroll = useRef<ScrollView>(null);
+  const draftCardY = useRef(0);
+  useEffect(() => {
+    if (!draftDetailsOpen) return;
+    const timer = setTimeout(() => draftScroll.current?.scrollTo({ y: Math.max(0, draftCardY.current - 12), animated: !reduced }), 120);
+    return () => clearTimeout(timer);
+  }, [draftDetailsOpen]);
+  const draftFloat = useFloat(reduced, isModalVisible);
+  const detailFloat = useFloat(reduced, Boolean(detail));
+  const draftStageHeight = Math.round(Math.min(460, Math.max(300, height * 0.5)));
 
   const filteredItems = useMemo(() => {
     if (activeFilter === 'Все') return items;
@@ -627,31 +650,28 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const renderChips = (options: string[], selected: string, onSelect: (value: string) => void) => options.length > 7 ? (
     <OptionPicker options={options} value={selected} onChange={onSelect} label={options === categoryOptions ? t('Тип вещи') : t('Цвет')} swatches={options === colorOptions ? Object.fromEntries(namedColors.map(color => [color.name, color.hex])) : undefined} />
   ) : (
-    <View style={[styles.modalChipsRow, { flexDirection: 'row', flexWrap: 'wrap' }]}>
-      {options.map((option) => {
-        const isActive = option === selected;
-        return (
-          <AppPressable
-            key={option}
-            accessibilityRole="button"
-            accessibilityState={{ selected: isActive }}
-            haptics
-            style={[styles.modalChip, isActive && styles.modalChipActive]}
-            onPress={() => onSelect(option)}
-          >
-            {namedColors.some(color => color.name === option) && <View style={{ width: 16, height: 16, borderRadius: 4, borderWidth: 1, borderColor: colors.border, backgroundColor: namedColors.find(color => color.name === option)?.hex }} />}
-            <Text style={[styles.modalChipText, isActive && styles.modalChipTextActive]}>{t(option)}</Text>
-          </AppPressable>
-        );
-      })}
+    <View style={styles.choiceRow}>
+      {options.map(option => <ChoicePill key={option} label={t(option)} active={option === selected} onPress={() => onSelect(option)} />)}
     </View>
   );
 
-  const renderFieldLabel = (label: string) => (
-    <View style={styles.fieldLabelWrap}>
-      <SectionLabel>{label}</SectionLabel>
+  const renderField = (label: string, control: ReactNode) => (
+    <View style={styles.field}>
+      <Text style={[font('medium'), styles.fieldLabel]}>{label}</Text>
+      {control}
     </View>
   );
+
+  // What the analysis read, set around the photo as glass tags; each keeps its own place.
+  const draftSwatch = draftColorHex || namedColors.find(color => color.name === draftColor)?.hex;
+  const draftTags = [
+    { key: 'category', label: draftCategory ? t(draftCategory) : '', at: { left: 14, top: 0.15 } },
+    { key: 'color', label: draftColor && draftColor !== 'Не определено' ? t(draftColor) : '', swatch: draftSwatch, at: { right: 14, top: 0.27 } },
+    { key: 'material', label: draftMaterial.trim(), at: { left: 22, top: 0.53 } },
+    { key: 'season', label: draftSeason && draftSeason !== 'Не определено' ? t(draftSeason) : '', at: { right: 26, top: 0.63 } }
+  ];
+  const saveDisabled = isAnalyzing || !draftCategory || !categoryConfirmed;
+  const closeDetail = () => { setDetailId(null); setFlatUndo(null); };
 
   return (
     <View style={styles.container}>
@@ -742,217 +762,337 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
 
       {helpOpen && <ProductHelp onClose={() => setHelpOpen(false)} />}
 
-      <Modal transparent animationType="slide" visible={Boolean(detail)} onRequestClose={() => { setDetailId(null); setFlatUndo(null); }}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.detailSheet}>
-            <View style={styles.detailToolbar}>
-              <View />
-              <IconButton icon={X} label={t('Закрыть')} onPress={() => { setDetailId(null); setFlatUndo(null); }} />
-            </View>
-            {detail && <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 24 }}>
-              {detail.imageUri && <Image source={{ uri: detail.imageUri }} style={styles.detailPhoto} resizeMode="contain" />}
-              <Text style={styles.detailTitle}>{detail.name}</Text>
-              {/* The facts as on the label sewn into the garment; unknown ones are left out. */}
-              <GarmentLabel rows={([['Категория', detail.category], ['Цвет', detail.color], ['Сезон', detail.season], ['Рисунок', detail.pattern]] as [string, string][])
-                .map(([name, value]): [string, string] => [t(name), value && value !== 'Не определено' && !value.startsWith('#') ? t(value) : ''])
-                .concat([[t('Размер'), detail.size || ''], [t('Материал'), detail.material || ''], [t('Магазин'), detail.store || '']])} />
-              {/* Four labelled actions instead of an edit link and three bare icons. */}
-              <View style={styles.detailActions}>
-                {[
-                  { icon: Pencil, label: 'Изменить', onPress: () => { setDetailId(null); handleEditItem(detail); } },
-                  { icon: ScanLine, label: 'Распознать', a11y: 'Распознать вещь заново', onPress: () => { setDetailId(null); reanalyzeExisting(detail); } },
-                  { icon: ImagePlus, label: 'Новое фото', a11y: 'Заменить фото', onPress: () => { setDetailId(null); handleRetakeExisting(detail.id); } },
-                  { icon: Trash2, label: 'Удалить', danger: true, onPress: () => handleDeleteItem(detail.id) },
-                ].map(({ icon: Icon, label, a11y, danger, onPress }) => (
-                  <AppPressable key={label} haptics accessibilityRole="button" accessibilityLabel={t(a11y || label)} onPress={onPress}
-                    style={styles.detailAction}>
-                    <Icon size={18} color={danger ? colors.danger : colors.text} strokeWidth={1.7} />
-                    <Text style={[styles.detailActionText, danger && { color: colors.danger }]} numberOfLines={1}>{t(label)}</Text>
-                  </AppPressable>
-                ))}
-              </View>
-              {flatUndo?.id === detail.id ? (
-                <PrimaryButton title={t('Вернуть прежнее фото')} icon={Undo2} variant="ghost"
-                  onPress={() => { putFlat(detail.id, flatUndo.imageUri); setFlatUndo(null); }} />
-              ) : (detail.sourceImageUri || detail.imageUri) && FLAT_SECTIONS.includes(detail.section) ? (
-                <PrimaryButton title={t(flatBusyId === detail.id ? 'Выравниваем фото…' : 'Выровнять фото')} icon={Wand2} variant="ghost"
-                  loading={flatBusyId === detail.id} disabled={Boolean(flatBusyId)} onPress={() => { void flattenExisting(detail); }} />
-              ) : null}
-              {flatBusyId === detail.id ? <Text style={styles.detailMeta}>{t('Около 15 секунд. Для примерки останется исходное фото.')}</Text> : null}
-              {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section) && <PrimaryButton title={t('Примерить на себе')} icon={ArrowUpRight} onPress={() => { setDetailId(null); onTryOn(detail); }} />}
-              {onStyleWith ? <PrimaryButton title={t('Подобрать образы с этой вещью')} icon={Sparkles} variant="ghost" onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
-              <AppPressable accessibilityRole="button" accessibilityLabel={t('История вещи: {count}', { count: historyCount })}
-                style={[styles.detailToolbar, { minHeight: 52, gap: 12, borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}
-                onPress={() => { setDetailId(null); onOpenHistory(detail); }}>
-                <History size={20} color={colors.accentGold} />
-                <Text style={{ flex: 1, color: colors.text, fontSize: 15 }}>{t('История примерок')}</Text>
-                <Text style={styles.detailMeta}>{historyCount}</Text><ChevronRight size={18} color={colors.muted} />
+      {/* The item's card: the piece floating in its own light, its label, what can be done with it. */}
+      <SheetModal visible={Boolean(detail)} onClose={closeDetail} height="92%">
+        {detail ? <>
+          {/* At night the piece's light is only a hint of its colour over the dark studio. */}
+          <LinearGradient colors={isDark ? ['#2A2D32', `${studioTint(detail) || '#22252A'}33`] : ['#FFFFFF', studioTint(detail) || '#F0F0EE']}
+            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[styles.detailStage, isDark && { backgroundColor: '#1C1F23' }]}>
+            <View style={styles.detailFloor}><FloorShadow width={180} opacity={0.24} /></View>
+            <Animated.View style={{ width: '100%', alignItems: 'center', transform: [{ translateY: detailFloat }] }}>
+              <GarmentImage item={detail} print style={styles.detailGarment} />
+            </Animated.View>
+            <Pill icon={X} size="icon" style={styles.detailClose} onPress={closeDetail} accessibilityLabel={t('Закрыть')} />
+          </LinearGradient>
+          <Text style={[font('semibold'), styles.detailTitle, { color: ink }]}>{detail.name}</Text>
+          {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section)
+            ? <Pill variant="primary" title={t('Примерить на себе')} icon={PersonStanding} onPress={() => { setDetailId(null); onTryOn(detail); }} /> : null}
+          {onStyleWith ? <Pill title={t('Подобрать образы с этой вещью')} icon={Layers} onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
+          {/* The facts as on the label sewn into the garment; unknown ones are left out. */}
+          <GarmentLabel rows={([['Категория', detail.category], ['Цвет', detail.color], ['Сезон', detail.season], ['Рисунок', detail.pattern]] as [string, string][])
+            .map(([name, value]): [string, string] => [t(name), value && value !== 'Не определено' && !value.startsWith('#') ? t(value) : ''])
+            .concat([[t('Размер'), detail.size || ''], [t('Материал'), detail.material || ''], [t('Магазин'), detail.store || '']])} />
+          <View style={styles.detailActions}>
+            {[
+              { icon: Pencil, label: 'Изменить', onPress: () => { setDetailId(null); handleEditItem(detail); } },
+              { icon: ScanLine, label: 'Распознать', a11y: 'Распознать вещь заново', onPress: () => { setDetailId(null); reanalyzeExisting(detail); } },
+              { icon: ImagePlus, label: 'Новое фото', a11y: 'Заменить фото', onPress: () => { setDetailId(null); handleRetakeExisting(detail.id); } },
+              { icon: Trash2, label: 'Удалить', danger: true, onPress: () => handleDeleteItem(detail.id) },
+            ].map(({ icon: Icon, label, a11y, danger: isDanger, onPress }) => (
+              <AppPressable key={label} haptics accessibilityRole="button" accessibilityLabel={t(a11y || label)} onPress={onPress} style={styles.detailAction}>
+                <Glass>
+                  <View style={styles.detailActionInner}>
+                    <Icon size={17} strokeWidth={1.8} color={isDanger ? danger : ink} />
+                    <Text style={[font('semibold'), styles.detailActionText, { color: isDanger ? danger : ink }]} numberOfLines={1}>{t(label)}</Text>
+                  </View>
+                </Glass>
               </AppPressable>
-            </ScrollView>}
+            ))}
           </View>
-        </View>
-        <OverlayOutlet />
-      </Modal>
+          {flatUndo?.id === detail.id ? (
+            <Pill title={t('Вернуть прежнее фото')} icon={Undo2} onPress={() => { putFlat(detail.id, flatUndo.imageUri); setFlatUndo(null); }} />
+          ) : (detail.sourceImageUri || detail.imageUri) && FLAT_SECTIONS.includes(detail.section) ? (
+            <Pill title={t(flatBusyId === detail.id ? 'Выравниваем фото…' : 'Выровнять фото')} icon={Wand2}
+              disabled={Boolean(flatBusyId)} onPress={() => { void flattenExisting(detail); }} />
+          ) : null}
+          {flatBusyId === detail.id ? <Text style={[font('regular'), styles.note]}>{t('Около 15 секунд. Для примерки останется исходное фото.')}</Text> : null}
+          <AppPressable accessibilityRole="button" accessibilityLabel={t('История вещи: {count}', { count: historyCount })}
+            onPress={() => { setDetailId(null); onOpenHistory(detail); }} style={{ borderRadius: 24 }}>
+            <Glass radius={24}>
+              <View style={styles.historyRow}>
+                <History size={19} strokeWidth={1.7} color={ink} />
+                <Text style={[font('medium'), styles.historyText, { color: ink }]}>{t('История примерок')}</Text>
+                <Text style={[font('regular'), styles.historyCount]}>{historyCount}</Text>
+                <ChevronRight size={18} color={INK_FAINT} />
+              </View>
+            </Glass>
+          </AppPressable>
+        </> : null}
+      </SheetModal>
 
+      {/* Adding a piece (or reading it again): the photo in the studio light, a beam passing over it while it is
+          read, what was found set around it, and below a glass card to name it and put it in the wardrobe. */}
       <Modal transparent animationType="slide" visible={isModalVisible} onRequestClose={closeDraft}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <DragHandle onDismiss={closeDraft} />
-            <View style={{ flex: 1 }}>
-              <FormScrollView
-                contentContainerStyle={styles.modalContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Text style={styles.modalTitle}>{t(draftExistingId ? 'Анализ вещи' : 'Новая вещь')}</Text>
-                {draftPhoto ? (
-                  <View style={styles.modalPhotoFrame}>
-                    <Image source={{ uri: draftPhoto }} style={styles.modalPhoto} resizeMode="contain" />
-                  </View>
-                ) : null}
-                {isAnalyzing ? (
-                  <View style={styles.progressWrap}>
-                    <ProgressGlow visible />
-                  </View>
-                ) : null}
-                {draftFlat.busy ? <Text style={styles.flatHint}>{t('Выравниваем фото…')}</Text> : null}
-                {draftFlat.flat && draftFlat.cutout ? (
-                  <View style={styles.flatRow}>
-                    {[[draftFlat.flat, 'Ровное фото'], [draftFlat.cutout, 'Исходное']].map(([uri, label]) => (
-                      <AppPressable key={label} haptics onPress={() => setDraftPhoto(uri)}
-                        style={[styles.flatChip, draftPhoto === uri && styles.flatChipActive]}>
-                        <Text style={[styles.retakePillText, draftPhoto === uri && styles.flatChipTextActive]}>{t(label)}</Text>
-                      </AppPressable>
-                    ))}
-                  </View>
-                ) : null}
-                <AppPressable haptics style={styles.retakePill} onPress={handleRetake}>
-                  <Text style={styles.retakePillText}>{t('Заменить фото')}</Text>
-                </AppPressable>
-                {renderFieldLabel(t('Название вещи'))}
-                <AtelierInput
-                  placeholder={t('Например, Белая футболка')}
-                  value={draftName}
-                  onChangeText={value => { manualFields.current.add('name'); setDraftName(value); }}
-                />
-                <PrimaryButton
-                  title={t('Распознать')}
-                  onPress={handleAnalyze}
-                  loading={isAnalyzing}
-                  style={styles.aiButton}
-                />
-                {isAnalyzing ? (
-                  <View style={styles.aiStatus}>
-                    <Text style={styles.aiStatusText}>{t('AI изучает вещь…')}</Text>
-                    <Skeleton width={150} height={11} />
-                    <Skeleton width={210} height={11} />
-                  </View>
-                ) : draftColor ? (
-                  <Text style={styles.aiHint}>{t('Цвет: {color}', { color: t(draftColor) })}</Text>
-                ) : null}
-                {!isAnalyzing && analysisError ? <Text style={styles.aiHint}>{analysisError}</Text> : null}
-                {!isAnalyzing && analysis && <View style={{ gap: 10 }}>
-                  <Text style={styles.aiStatusText}>{t(categoryConfirmed ? 'Вещь распознана' : 'Подтверди тип вещи')}</Text>
-                  {analysis.categoryCandidates?.length ? renderChips(analysis.categoryCandidates.map(candidate => candidate.category), categoryConfirmed ? draftCategory : '', handleDraftCategoryChange) : null}
-                  {analysis.warnings?.map(warning => <Text key={warning} style={styles.aiHint}>{warning}</Text>)}
-                </View>}
-                {renderFieldLabel(t('Категория'))}
-                {renderChips(categoryOptions, draftCategory, handleDraftCategoryChange)}
-                {renderFieldLabel(t('Цвет'))}
-                {renderChips(colorOptions, draftColor, handleDraftColorChange)}
-                {renderFieldLabel(t('Сезон'))}
-                {renderChips(seasonOptions, draftSeason, manual('season', setDraftSeason))}
-                {renderFieldLabel(t('Паттерн'))}
-                {renderChips(patternOptions, draftPattern, manual('pattern', setDraftPattern))}
-                {renderFieldLabel(t('Раздел'))}
-                {renderChips(sectionOptions, draftSection, manual('section', setDraftSection))}
-                {renderFieldLabel(t('Размер'))}
-                <AtelierInput placeholder={t('Например, M')} value={draftSize} onChangeText={setDraftSize} />
-                {renderFieldLabel(t('Бренд / магазин'))}
-                <AtelierInput placeholder={t('Например, Zara')} value={draftStore} onChangeText={setDraftStore} />
-                {renderFieldLabel(t('Материал'))}
-                <AtelierInput
-                  placeholder={t('Например, хлопок')}
-                  value={draftMaterial}
-                  onChangeText={setDraftMaterial}
-                />
-                <View style={styles.modalActions}>
-                  <PrimaryButton
-                    title={t('Сохранить')}
-                    onPress={() => handleSaveItem()}
-                    variant="gold"
-                    size="lg"
-                    disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
-                  />
-                  {!draftExistingId ? <PrimaryButton
-                    title={t('Сохранить и добавить ещё')}
-                    onPress={() => handleSaveItem(true)}
-                    variant="primary"
-                    disabled={isAnalyzing || !draftCategory || !categoryConfirmed}
-                  /> : null}
-                  <PrimaryButton title={t('Отмена')} onPress={closeDraft} variant="ghost" />
-                </View>
-              </FormScrollView>
+        <SafeAreaProvider>
+        <StudioBackdrop>
+          <StudioTint color={studioTint({ color: draftColorHex || draftColor })} focusY={0.36} />
+          <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
+          <FormScrollView ref={draftScroll} contentContainerStyle={styles.draftContent}>
+            <View style={styles.draftHeader}>
+              <Pill icon={X} size="icon" onPress={closeDraft} accessibilityLabel={t('Закрыть')} />
+              <Text style={[font('semibold'), styles.draftTitle, { color: ink }]} numberOfLines={1}>{t(draftExistingId ? 'Анализ вещи' : 'Новая вещь')}</Text>
+              <Pill icon={SwitchCamera} size="icon" onPress={handleRetake} disabled={isPicking} accessibilityLabel={t('Заменить фото')} />
             </View>
-            {isModalVisible && cropModal}
-          </View>
-        </View>
+
+            <View style={[styles.draftStage, { height: draftStageHeight }]}>
+              {draftPhoto ? (
+                <DraftPhoto uri={draftPhoto} float={draftFloat} maxWidth={Math.min(width * 0.7, 320)} maxHeight={draftStageHeight - 70} />
+              ) : null}
+              {isAnalyzing ? <ScanBeam height={draftStageHeight} reduced={reduced} /> : null}
+              {!isAnalyzing ? draftTags.map(({ key, label, swatch, at }, slot) => label ? (
+                <RevealTag key={key} label={label} swatch={swatch} delay={slot * 250} reduced={reduced} ink={ink}
+                  style={{ left: at.left, right: at.right, top: Math.round(at.top * draftStageHeight) }} />
+              ) : null) : null}
+              {isAnalyzing ? (
+                <Glass style={styles.draftStatus}>
+                  <View accessibilityLiveRegion="polite" style={styles.draftStatusInner}>
+                    <ActivityIndicator size="small" color={ink} />
+                    <Text style={[font('semibold'), { fontSize: 13, color: ink }]}>{t('Распознаём вещь…')}</Text>
+                  </View>
+                </Glass>
+              ) : null}
+            </View>
+
+            <View style={{ flex: 1 }} />
+            <View onLayout={event => { draftCardY.current = event.nativeEvent.layout.y; }}>
+              <Glass radius={30}>
+                <View style={styles.draftCard}>
+                  <View style={styles.nameRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[font('regular'), styles.nameLabel]}>{t('Название')}</Text>
+                      <TextInput style={[font('semibold'), styles.nameInput, { color: ink }]} value={draftName}
+                        placeholder={t('Например, Белая футболка')} placeholderTextColor={INK_FAINT} accessibilityLabel={t('Название вещи')}
+                        // A textarea on the web is two rows high unless told otherwise; native grows with the text.
+                        multiline numberOfLines={Platform.OS === 'web' ? 1 : undefined} scrollEnabled={false} maxLength={240} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss}
+                        onChangeText={value => { manualFields.current.add('name'); setDraftName(value); }} />
+                    </View>
+                    {draftSection ? (
+                      <View style={[styles.sectionBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.7)' }]}>
+                        <Text style={[font('semibold'), { fontSize: 12, color: ink }]} numberOfLines={1}>{t(draftSection)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {!isAnalyzing && analysisError ? (
+                    <View style={styles.cardBlock}>
+                      <Text style={[font('regular'), styles.note]}>{analysisError}</Text>
+                      {sourcePhoto ? <Pill size="sm" icon={ScanLine} title={t('Распознать')} onPress={handleAnalyze} style={{ alignSelf: 'flex-start' }} /> : null}
+                    </View>
+                  ) : null}
+                  {!isAnalyzing && analysis && !categoryConfirmed ? (
+                    <View style={styles.cardBlock}>
+                      <Text style={[font('semibold'), { fontSize: 14, color: ink }]}>{t('Подтверди тип вещи')}</Text>
+                      {analysis.categoryCandidates?.length ? renderChips(analysis.categoryCandidates.map(candidate => candidate.category), '', handleDraftCategoryChange) : null}
+                    </View>
+                  ) : null}
+                  {!isAnalyzing ? analysis?.warnings?.map(warning => <Text key={warning} style={[font('regular'), styles.note]}>{warning}</Text>) : null}
+
+                  {/* The card picture: the smoothed one or the original cut-out. */}
+                  {draftFlat.busy ? (
+                    <View style={[styles.flatTrack, styles.flatBusy, { backgroundColor: colors.surface }]}>
+                      <ActivityIndicator size="small" color={INK_SOFT} />
+                      <Text style={[font('medium'), styles.flatBusyText]}>{t('Выравниваем фото…')}</Text>
+                    </View>
+                  ) : draftFlat.flat && draftFlat.cutout ? (
+                    <View accessibilityRole="tablist" style={[styles.flatTrack, { backgroundColor: colors.surface }]}>
+                      {[[draftFlat.flat, 'Ровное фото'], [draftFlat.cutout, 'Исходное']].map(([uri, label]) => {
+                        const on = draftPhoto === uri;
+                        return (
+                          <AppPressable key={label} haptics accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => setDraftPhoto(uri)}
+                            style={[styles.flatTab, on && [styles.flatTabOn, { backgroundColor: isDark ? '#3A3D42' : '#FFFFFF' }]]}>
+                            {label === 'Ровное фото' ? <Wand2 size={15} strokeWidth={1.8} color={on ? ink : INK_SOFT} /> : null}
+                            <Text style={[font('semibold'), { fontSize: 13, color: on ? ink : INK_SOFT }]} numberOfLines={1}>{t(label)}</Text>
+                          </AppPressable>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+
+                  <View style={styles.draftActions}>
+                    <Pill variant="primary" title={t(draftExistingId ? 'Сохранить' : 'В гардероб')} style={{ flex: 1 }}
+                      onPress={() => handleSaveItem()} disabled={saveDisabled} />
+                    <Pill title={t(draftDetailsOpen ? 'Свернуть' : 'Изменить')} onPress={() => { Keyboard.dismiss(); setDraftDetailsOpen(open => !open); }} />
+                  </View>
+
+                  {draftDetailsOpen ? (
+                    <View style={styles.details}>
+                      <Pill size="sm" icon={ScanLine} title={t('Распознать')} onPress={handleAnalyze} disabled={isAnalyzing || !sourcePhoto} style={{ alignSelf: 'flex-start' }} />
+                      {renderField(t('Категория'), renderChips(categoryOptions, draftCategory, handleDraftCategoryChange))}
+                      {renderField(t('Цвет'), renderChips(colorOptions, draftColor, handleDraftColorChange))}
+                      {renderField(t('Сезон'), renderChips(seasonOptions, draftSeason, manual('season', setDraftSeason)))}
+                      {renderField(t('Паттерн'), renderChips(patternOptions, draftPattern, manual('pattern', setDraftPattern)))}
+                      {renderField(t('Раздел'), renderChips(sectionOptions, draftSection, manual('section', setDraftSection)))}
+                      {renderField(t('Размер'), <AtelierInput placeholder={t('Например, M')} value={draftSize} onChangeText={setDraftSize} />)}
+                      {renderField(t('Бренд / магазин'), <AtelierInput placeholder={t('Например, Zara')} value={draftStore} onChangeText={setDraftStore} />)}
+                      {renderField(t('Материал'), <AtelierInput placeholder={t('Например, хлопок')} value={draftMaterial} onChangeText={setDraftMaterial} />)}
+                      {!draftExistingId ? <Pill title={t('Сохранить и добавить ещё')} icon={Plus} onPress={() => handleSaveItem(true)} disabled={saveDisabled} style={{ marginTop: 6 }} /> : null}
+                    </View>
+                  ) : null}
+                </View>
+              </Glass>
+            </View>
+          </FormScrollView>
+          </SafeAreaView>
+          {isModalVisible && cropModal}
+        </StudioBackdrop>
+        </SafeAreaProvider>
         <OverlayOutlet />
       </Modal>
 
-      <Modal
-        transparent
-        animationType="slide"
-        visible={isEditModalVisible}
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <DragHandle onDismiss={() => setEditModalVisible(false)} />
-            <View style={{ flex: 1 }}>
-              <FormScrollView
-                contentContainerStyle={styles.modalContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Text style={styles.modalTitle}>{t('Редактировать параметры')}</Text>
-                {renderFieldLabel(t('Название вещи'))}
-                <AtelierInput
-                  placeholder={t('Например, Белая футболка')}
-                  value={editName}
-                  onChangeText={setEditName}
-                />
-                {renderFieldLabel(t('Категория'))}
-                {renderChips(categoryOptions, editCategory, handleEditCategoryChange)}
-                {renderFieldLabel(t('Цвет'))}
-                {renderChips(colorOptions, editColor, setEditColor)}
-                {renderFieldLabel(t('Сезон'))}
-                {renderChips(seasonOptions, editSeason, setEditSeason)}
-                {renderFieldLabel(t('Паттерн'))}
-                {renderChips(patternOptions, editPattern, setEditPattern)}
-                {renderFieldLabel(t('Раздел'))}
-                {renderChips(sectionOptions, editSection, setEditSection)}
-                {renderFieldLabel(t('Размер'))}
-                <AtelierInput placeholder={t('Например, M')} value={editSize} onChangeText={setEditSize} />
-                {renderFieldLabel(t('Бренд / магазин'))}
-                <AtelierInput placeholder={t('Например, Zara')} value={editStore} onChangeText={setEditStore} />
-                {renderFieldLabel(t('Материал'))}
-                <AtelierInput
-                  placeholder={t('Например, хлопок')}
-                  value={editMaterial}
-                  onChangeText={setEditMaterial}
-                />
-                <View style={styles.modalActions}>
-                  <PrimaryButton title={t('Сохранить')} onPress={handleSaveEdit} variant="gold" size="lg" />
-                  <PrimaryButton title={t('Отмена')} onPress={() => setEditModalVisible(false)} variant="ghost" />
-                </View>
-              </FormScrollView>
-            </View>
-          </View>
+      <SheetModal visible={isEditModalVisible} onClose={() => setEditModalVisible(false)} title={t('Редактировать параметры')} height="88%">
+        {renderField(t('Название вещи'), <AtelierInput placeholder={t('Например, Белая футболка')} value={editName} onChangeText={setEditName} />)}
+        {renderField(t('Категория'), renderChips(categoryOptions, editCategory, handleEditCategoryChange))}
+        {renderField(t('Цвет'), renderChips(colorOptions, editColor, setEditColor))}
+        {renderField(t('Сезон'), renderChips(seasonOptions, editSeason, setEditSeason))}
+        {renderField(t('Паттерн'), renderChips(patternOptions, editPattern, setEditPattern))}
+        {renderField(t('Раздел'), renderChips(sectionOptions, editSection, setEditSection))}
+        {renderField(t('Размер'), <AtelierInput placeholder={t('Например, M')} value={editSize} onChangeText={setEditSize} />)}
+        {renderField(t('Бренд / магазин'), <AtelierInput placeholder={t('Например, Zara')} value={editStore} onChangeText={setEditStore} />)}
+        {renderField(t('Материал'), <AtelierInput placeholder={t('Например, хлопок')} value={editMaterial} onChangeText={setEditMaterial} />)}
+        <View style={styles.draftActions}>
+          <Pill variant="primary" title={t('Сохранить')} style={{ flex: 1 }} onPress={handleSaveEdit} />
+          <Pill title={t('Отмена')} onPress={() => setEditModalVisible(false)} />
         </View>
-        <OverlayOutlet />
-      </Modal>
+      </SheetModal>
     </View>
   );
 }
+
+/** The piece floats a little in its light while shown; still when motion is reduced. */
+function useFloat(reduced: boolean, active: boolean) {
+  const float = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    float.setValue(0);
+    if (reduced || !active) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(float, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(float, { toValue: 0, duration: 3000, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [reduced, active, float]);
+  return float.interpolate({ inputRange: [0, 1], outputRange: [0, -9] });
+}
+
+/** Lights the draft's own studio in the colour read from the photo. */
+function StudioTint({ color, focusY }: { color: string | null; focusY: number }) {
+  useStudioTint(color, focusY);
+  return null;
+}
+
+/**
+ * A glass sheet over the blurred screen, as the studio's StudioSheet, that also carries the overlay outlet so
+ * dialogs and pickers opened from it show above it.
+ */
+function SheetModal({ visible, onClose, title, height, children }: { visible: boolean; onClose: () => void; title?: string; height: DimensionValue; children: ReactNode }) {
+  const t = useT();
+  const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <AppPressable feedback={false} accessibilityLabel={t('Закрыть')} onPress={onClose} style={StyleSheet.absoluteFill}>
+          <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        </AppPressable>
+        <View style={[sheetStyles.sheet, { height, backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]}>
+          <View style={[sheetStyles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
+          {title ? (
+            <View style={sheetStyles.header}>
+              <Text style={[font('semibold'), sheetStyles.title, { color: isDark ? '#F4F5F7' : INK }]} numberOfLines={2}>{title}</Text>
+              <Pill icon={X} size="icon" onPress={onClose} accessibilityLabel={t('Закрыть')} />
+            </View>
+          ) : null}
+          <FormScrollView contentContainerStyle={[sheetStyles.body, { paddingTop: title ? 16 : 12, paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+            {children}
+          </FormScrollView>
+        </View>
+      </View>
+      <OverlayOutlet />
+    </Modal>
+  );
+}
+
+const sheetStyles = StyleSheet.create({
+  sheet: { width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
+  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, marginTop: 14 },
+  title: { flex: 1, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
+  body: { gap: 14, paddingHorizontal: 20 }
+});
+
+/** The photo being read: a band of light with a bright line passes down over it; held still when motion is reduced. */
+function ScanBeam({ height, reduced }: { height: number; reduced: boolean }) {
+  const sweep = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduced) return;
+    sweep.setValue(0);
+    const loop = Animated.loop(Animated.timing(sweep, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [reduced, sweep]);
+  const motion = reduced ? { transform: [{ translateY: height * 0.3 }] } : {
+    opacity: sweep.interpolate({ inputRange: [0, 0.15, 0.85, 1], outputRange: [0, 1, 1, 0] }),
+    transform: [{ translateY: sweep.interpolate({ inputRange: [0, 1], outputRange: [-40, height - 50] }) }]
+  };
+  return (
+    <Animated.View pointerEvents="none" style={[stageStyles.beam, motion]}>
+      <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']} style={stageStyles.beamBand} />
+      <View style={stageStyles.beamLine} />
+    </Animated.View>
+  );
+}
+
+/** One thing the analysis found, set beside the photo: it rises into place after the ones before it. */
+function RevealTag({ label, swatch, delay, reduced, ink, style }: { label: string; swatch?: string; delay: number; reduced: boolean; ink: string;
+  style: { left?: number; right?: number; top: number } }) {
+  const shown = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  useEffect(() => {
+    if (reduced) { shown.setValue(1); return; }
+    Animated.timing(shown, { toValue: 1, duration: 600, delay, easing: Easing.bezier(0.2, 0.8, 0.2, 1), useNativeDriver: true }).start();
+  }, []);
+  return (
+    <Animated.View pointerEvents="none" style={[stageStyles.tag, style, { opacity: shown, transform: [
+      { translateY: shown.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+      { scale: shown.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }] }]}>
+      <Glass>
+        <View style={[stageStyles.tagInner, swatch ? { paddingLeft: 8 } : null]}>
+          {swatch ? <View style={[stageStyles.tagSwatch, { backgroundColor: swatch }]} /> : null}
+          <Text style={[font('semibold'), stageStyles.tagText, { color: ink }]} numberOfLines={1}>{label}</Text>
+        </View>
+      </Glass>
+    </Animated.View>
+  );
+}
+
+/** The draft photo at its own proportions: a cut-out stands bare, a photo with its ground as a rounded print. */
+function DraftPhoto({ uri, maxWidth, maxHeight, float }: { uri: string; maxWidth: number; maxHeight: number; float: Animated.AnimatedInterpolation<number> }) {
+  const [ratio, setRatio] = useState(0.8);
+  useEffect(() => {
+    let alive = true;
+    Image.getSize(uri, (w, h) => { if (alive && w > 0 && h > 0) setRatio(w / h); }, () => {});
+    return () => { alive = false; };
+  }, [uri]);
+  const width = Math.min(maxWidth, maxHeight * ratio);
+  const cutout = isCutout(uri);
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Animated.Image source={{ uri }} resizeMode={cutout ? 'contain' : 'cover'}
+        style={{ width, height: width / ratio, borderRadius: cutout ? 0 : 28, transform: [{ translateY: float }] }} />
+      <View style={{ marginTop: -10 }}><FloorShadow width={width * 0.7} opacity={0.22} /></View>
+    </View>
+  );
+}
+
+const stageStyles = StyleSheet.create({
+  beam: { position: 'absolute', left: 0, right: 0, top: 0, height: 70 },
+  beamBand: { position: 'absolute', left: 30, right: 30, top: 0, height: 70 },
+  beamLine: { position: 'absolute', left: 40, right: 40, top: 34, height: 1.5, backgroundColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#FFFFFF', shadowOpacity: 0.9, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
+  tag: { position: 'absolute', maxWidth: '50%' },
+  tagInner: { height: 34, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tagSwatch: { width: 18, height: 18, borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(18,20,23,0.2)' },
+  tagText: { fontSize: 13, flexShrink: 1 }
+});
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
@@ -967,346 +1107,65 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 4, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
   collectionMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 12 },
-  collectionLabel: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: 0 },
   collectionCount: { color: c.muted, fontSize: 13 },
-  detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  detailToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
-  detailPhoto: { width: '100%', height: 320, borderRadius: 4, backgroundColor: c.stage },
-  detailTitle: { fontFamily: SERIF, fontSize: 26, lineHeight: 32, color: c.text },
-  detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
-  detailActions: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  // Quiet actions under the label: an icon and a word each, no boxes around them.
-  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
-  detailActionText: { fontSize: 12, fontWeight: '400', color: c.text },
-  filterRow: {
-    paddingBottom: 6,
-    marginBottom: 0,
-    paddingRight: 12
-  },
-  filterRowAndroid: {
-    paddingBottom: 6,
-    marginBottom: 0
-  },
-  filterScroll: {
-    minHeight: 40,
-    maxHeight: 40
-  },
-  uploadCard: {
-    backgroundColor: c.card,
-    borderRadius: RADII.xl,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 14,
-    ...SHADOWS.card
-  },
-  uploadGradient: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: RADII.xl - 1,
-    pointerEvents: 'none'
-  },
-  uploadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14
-  },
-  uploadPlusCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  uploadPlus: {
-    color: c.textOnGold,
-    fontSize: 26,
-    lineHeight: 30,
-    fontWeight: '600'
-  },
-  uploadTextBlock: {
-    flex: 1,
-    gap: 3
-  },
-  uploadTitle: {
-    fontFamily: SERIF,
-    fontSize: 17,
-    letterSpacing: -0.1,
-    color: c.text
-  },
-  uploadText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  itemsWrap: {
-    gap: 24,
-    paddingBottom: 24
-  },
-  itemCard: {
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: RADII.lg,
-    padding: 16,
-    gap: 10,
-    ...SHADOWS.card
-  },
-  photoBlock: {
-    gap: 10
-  },
-  photoFrame: {
-    borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    backgroundColor: c.surface,
-    overflow: 'hidden'
-  },
-  photo: {
-    width: '100%',
-    height: 190
-  },
-  photoActions: {
-    flexDirection: 'row',
-    gap: 8
-  },
-  retakeButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: c.chip,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  retakeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: c.text
-  },
-  deleteButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: c.dangerSoft,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  deleteText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: c.danger
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10
-  },
-  itemName: {
-    flex: 1,
-    fontFamily: SERIF,
-    color: c.text,
-    fontSize: 16,
-    letterSpacing: -0.1
-  },
-  editButton: {
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  editButtonText: {
-    color: c.accentGold,
-    fontSize: 12,
-    fontWeight: '700'
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7
-  },
-  colorSwatch: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: c.goldHairline
-  },
-  cardFooterActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10
-  },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 4,
-    paddingHorizontal: 11,
-    paddingVertical: 5
-  },
-  metaChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: c.text
-  },
-  itemDetails: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7
-  },
-  tag: {
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4
-  },
-  tagText: {
-    fontSize: 11.5,
-    color: c.muted
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: c.overlay,
-    justifyContent: 'flex-end'
-  },
-  modalCard: {
-    backgroundColor: c.card,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: c.goldHairline,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 16,
-    height: '85%'
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: c.border,
-    marginBottom: 12
-  },
-  modalContent: {
-    paddingBottom: 24
-  },
-  modalTitle: {
-    fontFamily: SERIF,
-    fontSize: 20,
-    letterSpacing: -0.1,
-    color: c.text,
-    marginBottom: 14
-  },
-  modalPhotoFrame: {
-    borderRadius: RADII.md,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    backgroundColor: c.surface,
-    overflow: 'hidden'
-  },
-  modalPhoto: {
-    width: '100%',
-    height: 210
-  },
-  progressWrap: {
-    marginTop: 12
-  },
-  flatRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  flatChip: { borderWidth: 1, borderColor: c.goldHairline, borderRadius: 4, paddingHorizontal: 14, paddingVertical: 8 },
-  flatChipActive: { backgroundColor: c.accentGold, borderColor: c.accentGold },
-  flatChipTextActive: { color: c.buttonPrimaryText },
-  flatHint: { marginTop: 8, fontSize: 12, color: c.muted },
-  retakePill: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    borderRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginTop: 12
-  },
-  retakePillText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: c.accentGold
-  },
-  fieldLabelWrap: {
-    marginTop: 18
-  },
+  filterRow: { paddingBottom: 6, marginBottom: 0, paddingRight: 12 },
+  filterRowAndroid: { paddingBottom: 6, marginBottom: 0 },
+  filterScroll: { minHeight: 40, maxHeight: 40 },
+  itemsWrap: { gap: 24, paddingBottom: 24 },
+
+  // The item's card
+  detailStage: { height: 340, borderRadius: 30, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  detailGarment: { width: '100%', height: 270 },
+  detailFloor: { position: 'absolute', left: 0, right: 0, bottom: 22, alignItems: 'center' },
+  detailClose: { position: 'absolute', top: 12, right: 12 },
+  detailTitle: { fontSize: 26, lineHeight: 32, letterSpacing: -0.6, marginTop: 4 },
+  detailActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  detailAction: { flexGrow: 1, flexBasis: '46%', borderRadius: 999 },
+  detailActionInner: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 14 },
+  detailActionText: { fontSize: 14 },
+  historyRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
+  historyText: { flex: 1, fontSize: 15 },
+  historyCount: { fontSize: 13, color: INK_SOFT },
+  note: { fontSize: 13, lineHeight: 18, color: INK_SOFT },
+
+  // Adding a piece
+  draftContent: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  draftHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 4 },
+  draftTitle: { flex: 1, textAlign: 'center', fontSize: 15 },
+  draftStage: { marginTop: 12, marginHorizontal: -16, paddingTop: 30, alignItems: 'center', overflow: 'hidden' },
+  draftStatus: { position: 'absolute', bottom: 6, alignSelf: 'center' },
+  draftStatusInner: { height: 38, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  draftCard: { padding: 16, gap: 12 },
+  nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  nameLabel: { fontSize: 12, color: INK_SOFT },
+  nameInput: { fontSize: 22, lineHeight: 28, letterSpacing: -0.5, marginTop: 2, padding: 0, minHeight: 30, textAlignVertical: 'top' },
+  sectionBadge: { marginTop: 4, height: 30, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', maxWidth: 140 },
+  cardBlock: { gap: 10 },
+  flatTrack: { flexDirection: 'row', borderRadius: 999, padding: 3 },
+  flatBusy: { height: 40, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  flatBusyText: { fontSize: 13, color: INK_SOFT },
+  flatTab: { flex: 1, height: 34, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  flatTabOn: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  draftActions: { flexDirection: 'row', gap: 8 },
+  details: { gap: 4, paddingTop: 6 },
+
+  // Fields, in the draft and in editing
+  field: { gap: 8, marginTop: 10 },
+  fieldLabel: { fontSize: 13, color: c.muted },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modalInput: {
+    ...font('regular'),
     backgroundColor: c.surface,
-    borderRadius: RADII.md,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: c.border,
-    paddingHorizontal: 14,
+    borderColor: 'transparent',
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 48,
     fontSize: 15,
     color: c.text
   },
   modalInputFocused: {
-    borderColor: c.accentGold,
-    backgroundColor: c.card
-  },
-  aiButton: {
-    marginTop: 16
-  },
-  aiStatus: {
-    marginTop: 12,
-    gap: 8
-  },
-  aiStatusText: {
-    ...TYPE.caption,
-    color: c.muted
-  },
-  aiHint: {
-    ...TYPE.caption,
-    color: c.accentGold,
-    marginTop: 10
-  },
-  // Equal spacing between the save, save-and-add and cancel buttons.
-  modalActions: {
-    marginTop: 24,
-    gap: 10
-  },
-  modalChipsRow: {
-    gap: 8,
-    paddingBottom: 6
-  },
-  modalChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 4,
-    paddingHorizontal: 13,
-    paddingVertical: 8
-  },
-  modalChipActive: {
-    backgroundColor: c.accentGoldSoft,
-    borderColor: c.goldHairline
-  },
-  modalChipText: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  modalChipTextActive: {
-    color: c.accentGold,
-    fontWeight: '700'
+    borderColor: c.muted
   }
 });
