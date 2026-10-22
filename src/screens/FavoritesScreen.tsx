@@ -1,6 +1,6 @@
 import { ArrowUpRight, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
 import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppDialog } from '../components/AppDialog';
 import { ThemeColors } from '../constants/theme';
@@ -106,7 +106,11 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
   const shown = useMemo(() => (filter === 'tried' ? looks.filter(look => reanchorTryOnUri(look.tryOnImageUri)) : looks), [filter, looks]);
   const columnWidth = gridWidth > 0 ? Math.floor((gridWidth - GAP) / 2) : 0;
   const columns = [0, 1].map(col => shown.map((look, index) => ({ look, index })).filter(({ index }) => index % 2 === col));
-  const open = looks.find(look => look.id === openId) || null;
+  const current = looks.find(look => look.id === openId) || null;
+  // The sheet keeps the look it showed while it slides out (also after the look was deleted or the list emptied).
+  const lastOpen = useRef<GeneratedLook | null>(null);
+  if (current) lastOpen.current = current;
+  const open = current || lastOpen.current;
 
   const handleRemove = useCallback(
     (id: string) => {
@@ -125,21 +129,6 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
     />
   );
 
-  if (!looks.length) {
-    return (
-      <View style={styles.container}>
-        {header}
-        <EmptyState
-          emoji=""
-          title={t('Пока нет избранных образов')}
-          hint={t('Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.')}
-          actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
-          onAction={onGoToBuilder}
-        />
-      </View>
-    );
-  }
-
   const openItems = open ? (open.itemIds.map(id => itemsById[id]).filter(Boolean) as WardrobeItem[]) : [];
   const openTryOn = open ? reanchorTryOnUri(open.tryOnImageUri) : undefined;
   const meta = open
@@ -150,6 +139,15 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
     <View style={styles.container}>
       {header}
 
+      {!looks.length ? (
+        <EmptyState
+          emoji=""
+          title={t('Пока нет избранных образов')}
+          hint={t('Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.')}
+          actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
+          onAction={onGoToBuilder}
+        />
+      ) : <>
       <View style={styles.filters}>
         {(['all', 'tried'] as Filter[]).map(value => (
           <AppPressable key={value} accessibilityRole="button" accessibilityState={{ selected: filter === value }} hitSlop={8} onPress={() => setFilter(value)}>
@@ -173,8 +171,9 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
           </View>
         )}
       </ScrollView>
+      </>}
 
-      <StudioSheet visible={Boolean(open) && !previewUri} title={open ? lookTitle(open, t) : ''} onClose={() => setOpenId(null)}>
+      <StudioSheet visible={Boolean(current)} title={open ? lookTitle(open, t) : ''} onClose={() => setOpenId(null)}>
         {open ? (
           <>
             <Text style={[font('regular'), styles.meta]}>{meta.join(', ')}</Text>
