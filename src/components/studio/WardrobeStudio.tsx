@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, FlatList, Image, ImageStyle, Modal, StyleProp, ViewStyle, PanResponder, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, FlatList, Modal, PanResponder, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
-import { CircleHelp, Layers, LayoutGrid, PersonStanding, Plus, Search, Shirt, X } from 'lucide-react-native';
+import { CircleHelp, Layers, LayoutGrid, PersonStanding, Plus, Search, X } from 'lucide-react-native';
 import { WardrobeItem } from '../../data/mock';
 import { useT } from '../../constants/i18n';
 import { useTheme } from '../../constants/ThemeContext';
 import { AppPressable } from '../AppPressable';
 import { Glass, Pill } from './Glass';
 import { useStudioTint } from './StudioBackdrop';
-import { font, INK, INK_FAINT, INK_SOFT, isCutout, studioTint, useReducedMotion } from './studio';
+import { FloorShadow, GarmentImage } from './Garment';
+import { font, INK, INK_FAINT, INK_SOFT, studioTint, useReducedMotion } from './studio';
 
 type Props = {
   items: WardrobeItem[];
@@ -22,35 +22,6 @@ type Props = {
   onHelp?: () => void;
   addDisabled?: boolean;
 };
-
-/** The soft floor shadow under a floating piece. */
-function FloorShadow({ width }: { width: number }) {
-  return (
-    <Svg width={width} height={34}>
-      <Defs>
-        <RadialGradient id="floor" cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0" stopColor="#121417" stopOpacity={0.32} />
-          <Stop offset="1" stopColor="#121417" stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Ellipse cx={width / 2} cy={17} rx={width / 2} ry={17} fill="url(#floor)" />
-    </Svg>
-  );
-}
-
-function GarmentImage({ item, style, blur, print }: { item?: WardrobeItem; style: StyleProp<ImageStyle>; blur?: number; print?: boolean }) {
-  if (!item?.imageUri) return <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}><Shirt size={48} strokeWidth={1} color={INK_FAINT} /></View>;
-  // A photo with its own ground becomes a rounded print; a cut-out floats bare.
-  if (print && !isCutout(item.imageUri)) {
-    return (
-      <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Image source={{ uri: item.imageUri }} resizeMode="cover" blurRadius={blur}
-          style={{ width: '84%', height: '92%', borderRadius: 28 }} />
-      </View>
-    );
-  }
-  return <Image source={{ uri: item.imageUri }} style={style} resizeMode="contain" blurRadius={blur} />;
-}
 
 /**
  * The wardrobe as a photo studio: one piece at a time in the key light, its neighbours soft at the sides;

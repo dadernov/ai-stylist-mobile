@@ -882,4 +882,10 @@ export const en: Record<string, string> = {
   "Поделиться": "Share",
   "Погода и основа образа": "Weather and look anchor",
   "Сохранить и добавить ещё": "Save and add another",
+  "Примерить образ": "Try on the look",
+  "Следующий образ": "Next look",
+  "Подробнее": "Details",
+  "Образы вокруг «{name}»": "Looks built around “{name}”",
+  "Верни отложенные варианты или выбери другой повод.": "Bring back the looks you set aside or pick another occasion.",
+  "Добавь вещи или выбери другой повод и стиль.": "Add pieces or pick another occasion and style.",
 };

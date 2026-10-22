@@ -39,22 +39,24 @@ function Sheen({ width }: { width: number }) {
 }
 
 type PillProps = { title?: string; icon?: LucideIcon; onPress?: () => void; disabled?: boolean; style?: StyleProp<ViewStyle>;
-  variant?: 'primary' | 'glass'; size?: 'md' | 'sm' | 'icon'; accessibilityLabel?: string; iconColor?: string };
+  variant?: 'primary' | 'glass'; size?: 'md' | 'sm' | 'icon'; accessibilityLabel?: string; iconColor?: string;
+  /** Fills the icon with its own colour, e.g. a saved heart. */ iconFill?: boolean;
+  accessibilityState?: { selected?: boolean; disabled?: boolean } };
 
 /** The studio's buttons: a black pill for the one main action, glass pills for the rest. */
-export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'glass', size = 'md', accessibilityLabel, iconColor }: PillProps) {
+export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'glass', size = 'md', accessibilityLabel, iconColor, iconFill, accessibilityState }: PillProps) {
   const { isDark } = useTheme();
   const height = size === 'md' ? 50 : size === 'sm' ? 38 : 44;
   const primary = variant === 'primary';
   const ink = primary ? (isDark ? INK : '#FFFFFF') : (isDark ? '#FFFFFF' : INK);
   const content = (
     <View style={{ height, minWidth: height, paddingHorizontal: size === 'icon' || !title ? 0 : size === 'sm' ? 14 : 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-      {Icon ? <Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} /> : null}
+      {Icon ? <Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} fill={iconFill ? iconColor || ink : 'none'} /> : null}
       {title ? <Text style={[font('semibold'), { color: ink, fontSize: size === 'sm' ? 13 : 15 }]} numberOfLines={1}>{title}</Text> : null}
     </View>
   );
   return (
-    <AppPressable haptics accessibilityRole="button" accessibilityLabel={accessibilityLabel || title} disabled={disabled} onPress={onPress}
+    <AppPressable haptics accessibilityRole="button" accessibilityLabel={accessibilityLabel || title} accessibilityState={accessibilityState} disabled={disabled} onPress={onPress}
       style={[{ borderRadius: 999, opacity: disabled ? 0.45 : 1 }, style]}>
       {primary ? (
         <PrimarySurface dark={isDark}>{content}</PrimarySurface>

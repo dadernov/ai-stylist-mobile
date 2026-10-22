@@ -18,7 +18,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/outfits.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/closet-sync.cjs && node tests/modal-safe-area.cjs && node tests/overlay-outlets.cjs"
+    "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/outfits.cjs && node tests/look-layout.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/closet-sync.cjs && node tests/modal-safe-area.cjs && node tests/overlay-outlets.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",
