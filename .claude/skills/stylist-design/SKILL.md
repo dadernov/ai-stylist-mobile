@@ -1,43 +1,49 @@
 ---
 name: stylist-design
-description: The AI Stylist app's own design rules (React Native). Load before changing any screen, component, copy or style in src/ or App.tsx, alongside frontend-design.
+description: The AI Stylist app's own design rules («Студия», React Native). Load before changing any screen, component, copy or style in src/ or App.tsx, alongside frontend-design.
 ---
 
-# AI Stylist design
+# AI Stylist design — «Студия»
 
-The subject is a person's own wardrobe: they open the closet, decide what to wear, see it on themselves.
-The clothes bring the colour; the interface is white, black and a light grey stage under the photos.
+The subject is a person's own wardrobe. Each garment is shown the way a fashion photographer would: alone on a
+seamless studio backdrop, in one soft key light, floating slightly above its own shadow. Minimal, calm, with
+motion that explains what changed. The approved mock-ups live on the Superdesign canvas (`.superdesign/resume.json`).
 
 ## Tokens (src/constants/theme.ts — never invent values)
-- Colour: `background` #FFFFFF, `text` #000000, `muted` #6B6B6B, `border` #E5E5E5, `stage` #F2F2F2 (under
-  garment photos, both themes), `danger` #D0021B. Dark theme mirrors these. No cream, no gradients, no accent hue.
-- Type: titles in Tenor Sans (`LABEL_FACE`, aliases SERIF/DISPLAY), one weight, no letterSpacing tweaks:
-  screen 30/36, item 26/32, look 22/28. Interface text: system/Onest, 15 body, 13 secondary, 12 small.
-  Weight 400 by default; 600 only where a word must stand out. Sentence case everywhere — no caps labels.
-- Radii 4 (photos 0); sheets 16–28. No shadows except floating windows.
+- Backdrop: `StudioBackdrop` — radial #FFFFFF → #F2F2F0 → #E4E4E1, with the key light tinted by the piece in focus
+  (`studioTint(item)`, a pale version of the garment's colour, faded in over ~1 s). Dark theme: #121417 → #1C1F23.
+- Ink #121417 (text, primary buttons), secondary #6E737B, faint #9A9EA4, danger #C62828.
+- Glass: `Glass` (expo-blur, white 55 %, 1 px white inner edge) for secondary buttons, chips, sheets, the tab bar.
+- Type: Manrope only. Screen title 34/38 semibold, −1 tracking; item/look title 26–34 semibold; body 14/20;
+  secondary 13; small 12. Sentence case everywhere.
+- Shapes: pills (999) for buttons and chips; 24–34 radius for photo frames and sheets; garments have no frame.
+- Shadows: only under floating garments (soft, blurred floor shadow) and the floating tab bar.
 
 ## The one memorable thing
-A garment's facts are shown as the label sewn into it: `GarmentLabel` — thin black frame, name/value rows on
-hairlines. Do not add other bold devices next to it; keep everything else quiet.
+The studio stage: the piece in focus floats in its own tinted light, neighbours blurred at the sides; switching
+pieces slides one out with a blur and brings the next in, the light changing colour with it. Do not add other
+bold devices next to it.
 
 ## Patterns
-- Choices and filters are text tabs with an underline (`Chip`, the fitting room's tabs), not filled pills.
-- Lists are rows on hairlines, not boxed cards; never a card inside a card.
-- Empty states: left-aligned title, one line saying what to do, one button. No icon in a circle.
-- Garment tiles: photo on the stage, the name under it, size if known. Nothing else.
+- Primary action: black pill with the sheen sweep; secondary: glass pill. One primary per screen.
+- Choices: pills (black when chosen, glass otherwise). Section filters: plain words, the chosen one semibold.
+- Floating glass tab bar: the active tab is a black pill with icon and label, others icon only.
+- Lists on glass panels with hairline separators; never a card inside a card.
+- Empty states: title, one line saying what to do, one button.
 
 ## Banned (they read as generated)
-- A label above every heading ("Личная коллекция", "Из твоего гардероба").
-- Strings joined with middle dots ("Футболка · Белый · Круглый год") — use a label table or plain commas.
-- Numbered markers ("ВАРИАНТ 01", "04") unless the content is a real sequence.
-- Sparkles/✨ or "AI" to mean smart; arrows "→" appended to link or button text; emoji in the UI.
-- Big number with a small label as decoration; identical cards with the same shadow.
-- Filler subtitles that restate the title.
+- Labels above every heading; dot-joined meta strings (two facts may sit side by side with a small dot gap);
+  numbered markers unless a real sequence; sparkles/✨ or "AI" as decoration; arrows in button text; emoji.
+- Big number with a small label as decoration; identical shadowed cards; gradient washes other than the key light.
 
 ## Copy
-Plain verbs, active voice, the button says what happens ("Распознать", "Выровнять фото", "Примерить").
+Plain verbs, active voice, the button says what happens ("Примерить", "В гардероб", "Переодеть").
 Errors say what happened and how to fix it. No exclamation marks, no "умный", "магия".
 
+## Motion
+Motion answers an action (switching a piece, opening a sheet, trying on) or shows waiting (the light beam over a
+picture being made). Respect reduced motion: no float or auto effects when it is on.
+
 ## Check
-Screenshot every changed screen at 390 px wide (scratchpad pw/shots.js against Metro web), light and dark,
-and compare with the rules above before committing.
+Screenshot every changed screen at 390 px wide (scratchpad pw/shots.js against Metro web) and compare with the
+Superdesign mock-up before committing.

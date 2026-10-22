@@ -36,6 +36,7 @@ import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, flattenGarment, sendCategoryFeedback } from '../services/ai';
 import { GarmentLabel } from '../components/GarmentLabel';
+import { WardrobeStudio } from '../components/studio/WardrobeStudio';
 import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
@@ -656,6 +657,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     <View style={styles.container}>
       {!isModalVisible && cropModal}
       <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} />
+      {items.length ? (
+        // The wardrobe as a studio: one piece at a time in the key light (components/studio/WardrobeStudio).
+        <WardrobeStudio items={items} sections={sectionOptions} onOpen={item => setDetailId(item.id)} onAdd={openPhotoSources}
+          addDisabled={isPicking || photoSourceOpen} onTryOn={onTryOn} onStyleWith={onStyleWith}
+          onHelp={showHelp ? () => { Keyboard.dismiss(); setHelpOpen(true); } : undefined} />
+      ) : (
+      <View style={{ flex: 1 }}>
       <View style={styles.collectionHeader}>
         <View style={{ flex: 1 }}><ScreenHeader title={t('Гардероб')} /></View>
         <View style={styles.helpSlot}>
@@ -728,6 +736,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
           />
         }
       />
+
+      </View>
+      )}
 
       {helpOpen && <ProductHelp onClose={() => setHelpOpen(false)} />}
 

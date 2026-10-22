@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useFonts, Onest_700Bold, Onest_800ExtraBold, Onest_900Black } from '@expo-google-fonts/onest';
 import { TenorSans_400Regular } from '@expo-google-fonts/tenor-sans';
+import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
+import { StudioBackdrop } from './src/components/studio/StudioBackdrop';
+import { Glass } from './src/components/studio/Glass';
+import { font, INK } from './src/components/studio/studio';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -57,9 +61,10 @@ const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'profile', icon: UserRound, label: 'Профиль' }
 ];
 
-// Геометрия плавающего таб-бара.
-const TAB_BAR_RADIUS = 32;
-const TAB_BAR_HEIGHT = 56;
+// The floating glass tab bar: its height and the gap under it.
+const TAB_BAR_RADIUS = 31;
+const TAB_BAR_HEIGHT = 62;
+const TAB_BAR_GAP = 12;
 const TAB_INNER_PAD = 8;
 
 const textWithDefaults = Text as unknown as { defaultProps?: { allowFontScaling?: boolean } };
@@ -295,22 +300,6 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
-  // Плавающий индикатор активной вкладки.
-  const [tabRowWidth, setTabRowWidth] = useState(0);
-  const indicatorX = useRef(new Animated.Value(TAB_INNER_PAD)).current;
-  const activeIndex = Math.max(0, TABS.findIndex((tab) => tab.key === activeTab));
-  const segmentWidth = tabRowWidth > 0 ? (tabRowWidth - TAB_INNER_PAD * 2) / TABS.length : 0;
-
-  useEffect(() => {
-    if (segmentWidth <= 0) return;
-    Animated.spring(indicatorX, {
-      toValue: TAB_INNER_PAD + activeIndex * segmentWidth,
-      speed: 18,
-      bounciness: 7,
-      useNativeDriver: true
-    }).start();
-  }, [activeIndex, segmentWidth, indicatorX]);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -678,29 +667,21 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     </SafeAreaView>;
   }
 
-  // The tab bar is docked to the bottom edge; the home indicator area is part of it.
-  const tabBarBottom = 0;
-  const tabBarSpace = TAB_BAR_HEIGHT + insets.bottom;
+  // Screens leave this much room at the bottom so the floating bar never covers their last row.
+  const tabBarSpace = TAB_BAR_HEIGHT + TAB_BAR_GAP + Math.max(insets.bottom, 14) + 8;
 
   return (
+    <StudioBackdrop>
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
       {/* Try-ons run above every screen; the folded window sits over the fitting room's own button. */}
       <GenerationDockProvider items={items} modelUri={modelUri || avatarUri} bottom={tabBarSpace + 76}>
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 
-      <View style={[styles.tabBarWrap, { bottom: 0, paddingBottom: insets.bottom }]} pointerEvents="box-none">
-        <View style={styles.tabBarClip}>
-          <View
-            style={styles.tabRow}
-            onLayout={(event) => setTabRowWidth(event.nativeEvent.layout.width)}
-          >
-            {segmentWidth > 0 ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.tabIndicator, { width: segmentWidth, transform: [{ translateX: indicatorX }] }]}
-              />
-            ) : null}
+      {/* The floating glass tab bar: the active tab is a black pill with its label, the others icons only. */}
+      <View style={[styles.tabBarWrap, { bottom: Math.max(insets.bottom, 14) }]} pointerEvents="box-none">
+        <Glass radius={TAB_BAR_RADIUS} intensity={50} style={styles.tabBarClip}>
+          <View style={styles.tabRow}>
             {TABS.map((tab) => {
               const isActive = tab.key === activeTab;
               const TabIcon = tab.icon;
@@ -708,19 +689,19 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
                 <AppPressable
                   key={tab.key}
                   haptics
-                  style={styles.tabItem}
+                  style={[styles.tabItem, isActive && styles.tabItemActive]}
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.label)}
                   accessibilityState={{ selected: isActive }}
                   onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(undefined); setWardrobeDetailId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
-                  <TabIcon size={22} strokeWidth={isActive ? 1.9 : 1.4} color={isActive ? colors.text : colors.muted} />
-                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t(tab.label)}</Text>
+                  <TabIcon size={isActive ? 19 : 22} strokeWidth={1.8} color={isActive ? '#FFFFFF' : '#4A4F57'} />
+                  {isActive ? <Text style={styles.tabLabelActive} numberOfLines={1}>{t(tab.label)}</Text> : null}
                 </AppPressable>
               );
             })}
           </View>
-        </View>
+        </Glass>
       </View>
 
       {toastMessage ? (
@@ -751,12 +732,13 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       </GenerationDockProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </SafeAreaView>
+    </StudioBackdrop>
   );
 }
 
 export default function App() {
   // The display serif of every title; shown before it loads, the titles would jump.
-  const [fontsReady, fontError] = useFonts({ Onest_700Bold, Onest_800ExtraBold, Onest_900Black, TenorSans_400Regular });
+  const [fontsReady, fontError] = useFonts({ Onest_700Bold, Onest_800ExtraBold, Onest_900Black, TenorSans_400Regular, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold });
   const scheme = useColorScheme();
   if (!fontsReady && !fontError) return <View style={{ flex: 1, backgroundColor: scheme === 'dark' ? '#000000' : '#FFFFFF' }} />;
   return (
@@ -771,9 +753,10 @@ export default function App() {
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  // The studio backdrop (StudioBackdrop) shows through every screen.
   container: {
     flex: 1,
-    backgroundColor: c.background
+    backgroundColor: 'transparent'
   },
   content: {
     flex: 1,
@@ -905,53 +888,43 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   // Docked, flat, a hairline above: the storefront kind of tab bar.
   tabBarWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    backgroundColor: c.card,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: c.border
+    left: 20,
+    right: 20,
+    alignItems: 'center'
   },
   tabBarClip: {
     width: '100%',
-    maxWidth: 600,
-    alignSelf: 'center',
-    backgroundColor: c.card
+    maxWidth: 520,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 }
   },
   tabRow: {
     flexDirection: 'row',
     height: TAB_BAR_HEIGHT,
     paddingHorizontal: TAB_INNER_PAD,
-    alignItems: 'center'
-  },
-  // No moving pill behind the active tab: its icon and label turn black instead.
-  tabIndicator: {
-    display: 'none'
+    alignItems: 'center',
+    justifyContent: 'space-around'
   },
   tabItem: {
-    flex: 1,
-    height: '100%',
+    height: 46,
+    minWidth: 46,
+    borderRadius: 23,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    borderRadius: 4,
-    overflow: Platform.OS === 'android' ? 'hidden' : 'visible'
+    gap: 7
   },
-  tabIcon: {
-    fontSize: 18,
-    opacity: 0.72
-  },
-  tabIconActive: {
-    opacity: 1
-  },
-  tabLabel: {
-    fontSize: 10,
-    color: c.muted,
-    fontWeight: '500',
-    letterSpacing: 0.2
+  tabItemActive: {
+    backgroundColor: INK,
+    paddingHorizontal: 16
   },
   tabLabelActive: {
-    color: c.text,
-    fontWeight: '600'
+    ...font('semibold'),
+    color: '#FFFFFF',
+    fontSize: 13
   },
   // --- Тост ---
   toast: {

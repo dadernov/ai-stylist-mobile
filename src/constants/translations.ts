@@ -7,6 +7,11 @@ import { auditZh } from './translations.audit';
 export const zh: Record<string, string> = {
   ...auditZh,
   '«{name}»': '“{name}”',
+  'Открыть {name}': '打开{name}',
+  '{n} из {count}': '{n} / {count}',
+  'С чем носить': '怎么搭配',
+  'Ничего не нашлось. Попробуй другое слово.': '没有找到。换个词试试。',
+  'Всё': '全部',
   'Распознать': '识别',
   'Распознать вещь заново': '重新识别单品',
   'Размер {size}': '尺码 {size}',
