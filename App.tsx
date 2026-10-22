@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useFonts, Onest_700Bold, Onest_800ExtraBold, Onest_900Black } from '@expo-google-fonts/onest';
+import { TenorSans_400Regular } from '@expo-google-fonts/tenor-sans';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,7 +32,7 @@ import { PrimaryButton } from './src/components/ui/PrimaryButton';
 import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
-import { Shirt, ScanLine, Sparkles, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
+import { Shirt, ScanLine, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
@@ -51,7 +52,7 @@ const PROFILED_SECTIONS = new Set(['Верх', 'Низ', 'Обувь', 'Верх
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
   { key: 'builder', icon: ScanLine, label: 'Примерка' },
-  { key: 'recommendations', icon: Sparkles, label: 'Идеи' },
+  { key: 'recommendations', icon: Layers, label: 'Идеи' },
   { key: 'favorites', icon: Heart, label: 'Избранное' },
   { key: 'profile', icon: UserRound, label: 'Профиль' }
 ];
@@ -755,7 +756,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
 
 export default function App() {
   // The display serif of every title; shown before it loads, the titles would jump.
-  const [fontsReady, fontError] = useFonts({ Onest_700Bold, Onest_800ExtraBold, Onest_900Black });
+  const [fontsReady, fontError] = useFonts({ Onest_700Bold, Onest_800ExtraBold, Onest_900Black, TenorSans_400Regular });
   const scheme = useColorScheme();
   if (!fontsReady && !fontError) return <View style={{ flex: 1, backgroundColor: scheme === 'dark' ? '#000000' : '#FFFFFF' }} />;
   return (

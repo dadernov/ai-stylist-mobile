@@ -28,7 +28,7 @@ export function LanguageChooser() {
           {TITLE[selected]}
         </Text>
         <Text style={[styles.subtitle, { color: colors.muted }]}>
-          {LANGUAGES.filter(item => item.code !== selected).map(item => TITLE[item.code]).join(' · ')}
+          {LANGUAGES.filter(item => item.code !== selected).map(item => TITLE[item.code]).join(', ')}
         </Text>
         <View style={styles.options} accessibilityRole="radiogroup">
           {LANGUAGES.map(item => {

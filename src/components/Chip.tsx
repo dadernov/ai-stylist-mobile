@@ -26,7 +26,7 @@ export function Chip({ label, active = false, onPress, icon }: ChipProps) {
 
   return (
     <AppPressable haptics style={styles.chip} onPress={onPress}>
-      {/* Слой активного состояния: плавно проявляется поверх базового фона. */}
+      {/* Выбранный пункт подчёркнут, как раздел в навигации магазина; черта плавно проявляется. */}
       <Animated.View style={[styles.activeLayer, { opacity: activeProgress }]} />
       <View style={styles.content}>
         {icon ? <Text style={styles.icon}>{icon}</Text> : null}
@@ -37,20 +37,18 @@ export function Chip({ label, active = false, onPress, icon }: ChipProps) {
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  // A text tab, not a filled pill: choices read as a store's sections, the chosen one underlined.
   chip: {
-    backgroundColor: c.chip,
-    borderRadius: 4,
-    height: 34,
-    paddingHorizontal: 14,
+    height: 36,
+    paddingHorizontal: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 6
+    marginRight: 16
   },
   activeLayer: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    position: 'absolute', left: 0, right: 0, bottom: 2, height: 1.5,
     pointerEvents: 'none',
-    backgroundColor: c.buttonPrimaryBg,
-    borderRadius: 4
+    backgroundColor: c.text
   },
   content: {
     flexDirection: 'row',
@@ -64,9 +62,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     includeFontPadding: false
   },
   label: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: '500',
+    color: c.muted,
+    fontSize: 15,
+    fontWeight: '400',
     letterSpacing: 0,
     textAlign: 'center',
     lineHeight: 20,
@@ -74,7 +72,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     ...(Platform.OS === 'android' ? { textAlignVertical: 'center' as const } : null)
   },
   labelActive: {
-    fontWeight: '600',
-    color: c.buttonPrimaryText
+    color: c.text
   }
 });

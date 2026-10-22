@@ -35,6 +35,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, flattenGarment, sendCategoryFeedback } from '../services/ai';
+import { GarmentLabel } from '../components/GarmentLabel';
 import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ArrowUpRight, ScanLine, CircleHelp, History, ChevronRight, Sparkles, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
@@ -656,7 +657,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       {!isModalVisible && cropModal}
       <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} />
       <View style={styles.collectionHeader}>
-        <View style={{ flex: 1 }}><ScreenHeader eyebrow={t('Личная коллекция')} title={t('Гардероб')} /></View>
+        <View style={{ flex: 1 }}><ScreenHeader title={t('Гардероб')} /></View>
         <View style={styles.helpSlot}>
           {showHelp && <IconButton icon={CircleHelp} label={t('Открыть справку')} variant="quiet" onPress={() => { Keyboard.dismiss(); setHelpOpen(true); }} />}
         </View>
@@ -689,8 +690,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       </ScrollView>
 
       <View style={styles.collectionMeta}>
-        <Text style={styles.collectionLabel}>{t(activeFilter === 'Все' ? 'Все вещи' : activeFilter)}</Text>
-        <Text style={styles.collectionCount}>{filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).length}</Text>
+        <Text style={styles.collectionCount}>{t('Вещей: {count}', { count: filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).length })}</Text>
       </View>
 
       <FlatList
@@ -699,7 +699,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         keyboardShouldPersistTaps="handled"
         onScrollBeginDrag={Keyboard.dismiss}
         numColumns={columns}
-        columnWrapperStyle={{ gap: 8 }}
+        columnWrapperStyle={{ gap: 4 }}
         data={filteredItems.filter(item => `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
@@ -735,26 +735,26 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         <View style={styles.modalBackdrop}>
           <View style={styles.detailSheet}>
             <View style={styles.detailToolbar}>
-              <Text style={styles.collectionLabel}>{t('Детали вещи')}</Text>
+              <View />
               <IconButton icon={X} label={t('Закрыть')} onPress={() => { setDetailId(null); setFlatUndo(null); }} />
             </View>
             {detail && <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 24 }}>
               {detail.imageUri && <Image source={{ uri: detail.imageUri }} style={styles.detailPhoto} resizeMode="contain" />}
-              <View style={{ gap: 6 }}>
-                <Text style={styles.detailTitle}>{detail.name}</Text>
-                <Text style={styles.detailMeta}>{[detail.category, detail.color, detail.season, detail.pattern].filter(Boolean).map(value => t(value)).join(' · ')}</Text>
-                {(detail.size || detail.store || detail.material) && <Text style={styles.detailMeta}>{[detail.size, detail.store, detail.material].filter(Boolean).join(' · ')}</Text>}
-              </View>
+              <Text style={styles.detailTitle}>{detail.name}</Text>
+              {/* The facts as on the label sewn into the garment; unknown ones are left out. */}
+              <GarmentLabel rows={([['Категория', detail.category], ['Цвет', detail.color], ['Сезон', detail.season], ['Рисунок', detail.pattern]] as [string, string][])
+                .map(([name, value]): [string, string] => [t(name), value && value !== 'Не определено' && !value.startsWith('#') ? t(value) : ''])
+                .concat([[t('Размер'), detail.size || ''], [t('Материал'), detail.material || ''], [t('Магазин'), detail.store || '']])} />
               {/* Four labelled actions instead of an edit link and three bare icons. */}
               <View style={styles.detailActions}>
                 {[
                   { icon: Pencil, label: 'Изменить', onPress: () => { setDetailId(null); handleEditItem(detail); } },
-                  { icon: ScanLine, label: 'AI-анализ', a11y: 'Повторить анализ', onPress: () => { setDetailId(null); reanalyzeExisting(detail); } },
+                  { icon: ScanLine, label: 'Распознать', a11y: 'Распознать вещь заново', onPress: () => { setDetailId(null); reanalyzeExisting(detail); } },
                   { icon: ImagePlus, label: 'Новое фото', a11y: 'Заменить фото', onPress: () => { setDetailId(null); handleRetakeExisting(detail.id); } },
                   { icon: Trash2, label: 'Удалить', danger: true, onPress: () => handleDeleteItem(detail.id) },
                 ].map(({ icon: Icon, label, a11y, danger, onPress }) => (
                   <AppPressable key={label} haptics accessibilityRole="button" accessibilityLabel={t(a11y || label)} onPress={onPress}
-                    style={[styles.detailAction, danger && { borderColor: colors.dangerSoft, backgroundColor: colors.dangerSoft }]}>
+                    style={styles.detailAction}>
                     <Icon size={18} color={danger ? colors.danger : colors.text} strokeWidth={1.7} />
                     <Text style={[styles.detailActionText, danger && { color: colors.danger }]} numberOfLines={1}>{t(label)}</Text>
                   </AppPressable>
@@ -824,7 +824,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                   onChangeText={value => { manualFields.current.add('name'); setDraftName(value); }}
                 />
                 <PrimaryButton
-                  title={t('AI-анализ')}
+                  title={t('Распознать')}
                   onPress={handleAnalyze}
                   loading={isAnalyzing}
                   style={styles.aiButton}
@@ -955,17 +955,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   addButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: c.buttonPrimaryBg, marginBottom: 18, ...SHADOWS.button },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 4, backgroundColor: c.surface, paddingHorizontal: 14, height: 46, marginBottom: 16 },
   searchInput: { flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },
-  collectionMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
+  collectionMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 12 },
   collectionLabel: { color: c.text, fontSize: 13, fontWeight: '700', letterSpacing: 0 },
-  collectionCount: { color: c.muted, fontSize: 12 },
+  collectionCount: { color: c.muted, fontSize: 13 },
   detailSheet: { backgroundColor: c.card, height: '90%', maxWidth: 600, width: '100%', alignSelf: 'center', padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   detailToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
   detailPhoto: { width: '100%', height: 320, borderRadius: 4, backgroundColor: c.stage },
-  detailTitle: { fontFamily: SERIF, fontSize: 24, lineHeight: 29, letterSpacing: -0.3, color: c.text },
+  detailTitle: { fontFamily: SERIF, fontSize: 26, lineHeight: 32, color: c.text },
   detailMeta: { color: c.muted, fontSize: 13, lineHeight: 21 },
   detailActions: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 4, borderWidth: 1, borderColor: c.border, backgroundColor: c.card },
-  detailActionText: { fontSize: 12, fontWeight: '600', color: c.text },
+  // Quiet actions under the label: an icon and a word each, no boxes around them.
+  detailAction: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 },
+  detailActionText: { fontSize: 12, fontWeight: '400', color: c.text },
   filterRow: {
     paddingBottom: 6,
     marginBottom: 0,

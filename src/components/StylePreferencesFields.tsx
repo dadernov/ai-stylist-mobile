@@ -37,11 +37,12 @@ export function StylePreferencesFields({ gender, beautyAdvice, onGenderChange, o
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrap: { gap: 14 },
-  label: { color: c.text, fontSize: 16, fontWeight: '600' },
-  options: { gap: 8 },
-  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 14, borderWidth: 1, borderColor: c.border, borderRadius: 4 },
-  active: { backgroundColor: c.accentGoldSoft, borderColor: c.accentGold },
-  text: { color: c.text, fontSize: 14, lineHeight: 20 },
+  label: { color: c.muted, fontSize: 13 },
+  // A plain list on hairlines, the chosen row marked by its radio alone: no boxed cards.
+  options: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
+  option: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border },
+  active: {},
+  text: { color: c.text, fontSize: 15, lineHeight: 20 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14 }
 });

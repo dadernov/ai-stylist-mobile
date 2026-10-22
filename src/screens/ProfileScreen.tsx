@@ -114,7 +114,6 @@ export function ProfileScreen({
   return (
     <View style={styles.container}>
       <ScreenHeader
-        eyebrow={t('Личный кабинет')}
         title={t('Профиль')}
       />
 
@@ -158,18 +157,7 @@ export function ProfileScreen({
               <View style={styles.profileInfo}>
                 <Text style={styles.userName}>{t(displayName)}</Text>
                 <Text style={styles.userMeta}>{contact || t('Контакт не указан')}</Text>
-              </View>
-            </View>
-            <View style={styles.statsDivider} />
-            <View style={styles.statsRow}>
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>{String(favoritesCount)}</Text>
-                <Text style={styles.statLabel}>{t('Избранные образы')}</Text>
-              </View>
-              <View style={styles.statsSeparator} />
-              <View style={styles.statCell}>
-                <Text style={styles.statText} numberOfLines={1}>{t(authMethod)}</Text>
-                <Text style={styles.statLabel}>{t('Способ входа')}</Text>
+                <Text style={styles.userMeta} numberOfLines={1}>{t('Вход: {method}', { method: t(authMethod).toLocaleLowerCase() })}</Text>
               </View>
             </View>
           </View>
@@ -275,13 +263,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     gap: SPACING.md,
     paddingBottom: 28
   },
+  // The account as a plain row at the top of the screen, not a card inside the screen.
   profileCard: {
-    backgroundColor: c.card,
-    borderRadius: RADII.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: SPACING.lg,
-    ...SHADOWS.card
+    paddingBottom: SPACING.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border
   },
   profileTopRow: {
     flexDirection: 'row',

@@ -79,13 +79,13 @@ export const COLORS = lightColors;
 
 // --- Дизайн-константы ---
 
-// Гротеск для заголовков (Onest, с хорошей кириллицей), грузится в App.tsx. Начертание
-// зашито в имя гарнитуры, поэтому fontWeight к ней не добавляется. Имя SERIF осталось
-// от прежней антиквы, чтобы не трогать все экраны.
-export const SERIF = 'Onest_700Bold';
-export const SERIF_BOLD = 'Onest_800ExtraBold';
-// Самое жирное начертание — для заголовков экранов: их видно сразу.
-export const DISPLAY = 'Onest_900Black';
+// Заголовки — Tenor Sans: широкий спокойный шрифт модной этикетки, с кириллицей; одно
+// начертание, поэтому fontWeight к нему не добавляется. Интерфейс — системный шрифт и Onest.
+// Имена SERIF/SERIF_BOLD/DISPLAY остались от прежних шрифтов, чтобы не трогать все экраны.
+export const LABEL_FACE = 'TenorSans_400Regular';
+export const SERIF = LABEL_FACE;
+export const SERIF_BOLD = LABEL_FACE;
+export const DISPLAY = LABEL_FACE;
 
 // Почти прямые углы, как у fashion-витрин: фото и кнопки — 4 px, только листы снизу скруглены сильнее.
 export const RADII = { sm: 4, md: 4, lg: 4, xl: 16, pill: 999 } as const;
@@ -121,12 +121,12 @@ export const SHADOWS: Record<'card' | 'floating' | 'button', ViewStyle> = {
 
 // Типографика. Цвет задаётся на месте использования из токенов темы.
 export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', TextStyle> = {
-  // Заголовок экрана: самый жирный гротеск, крупно.
+  // Заголовок экрана: шрифт этикетки, крупно и спокойно.
   display: {
-    fontFamily: SERIF_BOLD,
-    fontSize: 26,
-    letterSpacing: -0.4,
-    lineHeight: 31
+    fontFamily: LABEL_FACE,
+    fontSize: 30,
+    letterSpacing: 0,
+    lineHeight: 36
   },
   // Заголовок карточки/секции.
   title: {
@@ -134,7 +134,7 @@ export const TYPE: Record<'display' | 'title' | 'eyebrow' | 'body' | 'caption', 
     fontWeight: '700',
     letterSpacing: 0
   },
-  // Надзаголовок: мелкий капс с разрядкой.
+  // Подпись поля или группы: мелко и спокойно, без капса.
   eyebrow: {
     fontSize: 13,
     fontWeight: '500',

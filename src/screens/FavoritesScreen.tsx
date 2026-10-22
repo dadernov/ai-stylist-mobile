@@ -1,4 +1,4 @@
-import { ArrowUpRight, Palette, Scissors, Sparkles, Trash2 } from 'lucide-react-native';
+import { ArrowUpRight, Palette, Scissors, Trash2 } from 'lucide-react-native';
 import { FlatList, Image, Modal, StyleSheet, Text, View } from 'react-native';
 import { useAppDialog } from '../components/AppDialog';
 import { memo, useCallback, useState } from 'react';
@@ -53,10 +53,8 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
   const t = useT();
   const lookItems = look.itemIds.map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[];
   const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
-  const metaParts = [t(look.style), t(look.event), look.weather].filter(Boolean);
-  const meta = look.tryOnUpdatedAt
-    ? [...metaParts, formatDate(look.tryOnUpdatedAt)].join(' · ')
-    : metaParts.join(' · ');
+  const metaParts = [t(look.event), t(look.style).toLocaleLowerCase(), look.weather].filter(Boolean);
+  const meta = (look.tryOnUpdatedAt ? [...metaParts, formatDate(look.tryOnUpdatedAt)] : metaParts).join(', ');
   return (
     <FadeInView delay={Math.min(index, 6) * 60}>
       <View style={styles.card}>
@@ -70,7 +68,6 @@ const FavoriteLookCard = memo(function FavoriteLookCard({ look, index, itemsById
           <Text style={styles.cardMeta}>{meta}</Text>
           {tryOnUri ? (
             <View style={styles.tryOnBadge}>
-              <Sparkles size={12} strokeWidth={1.8} color={colors.accentGold} />
               <Text style={styles.tryOnBadgeText}>{t('Примерка')}</Text>
             </View>
           ) : null}
@@ -147,9 +144,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
     <View style={styles.container}>
       <LinearGradient colors={[colors.heroTo, colors.heroFrom] as const} style={styles.heroWash} pointerEvents="none" />
       <ScreenHeader
-        eyebrow={t('Любимое')}
-        title={t('Избранные образы')}
-        subtitle={t('Сохраняй лучшие варианты, чтобы быстро их находить.')}
+        title={t('Избранное')}
       />
 
       <FlatList
@@ -167,7 +162,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
           <EmptyState
             emoji="🤍"
             title={t('Пока нет избранных образов')}
-            hint={t('Сохраняй удачные образы из конструктора — они появятся здесь.')}
+            hint={t('Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.')}
             actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
             onAction={onGoToBuilder}
           />

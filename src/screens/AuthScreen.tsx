@@ -57,7 +57,6 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
       <LinearGradient colors={[colors.heroTo, colors.heroFrom] as const} style={StyleSheet.absoluteFill} pointerEvents="none" />
 
       <ScreenHeader
-        eyebrow={t('Добро пожаловать')}
         title={t(mode === 'register' ? 'Регистрация' : 'Вход')}
         subtitle={t(returning
           ? 'Вход по SMS больше не используется. Заведи логин и пароль — гардероб и образы останутся на месте.'

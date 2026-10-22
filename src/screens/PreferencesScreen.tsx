@@ -13,7 +13,7 @@ export function PreferencesScreen({ onComplete }: { onComplete: (preferences: St
   const [beautyAdvice, setBeautyAdvice] = useState(false);
   return <ScrollView contentContainerStyle={styles.screen}>
     <View style={styles.content}>
-      <ScreenHeader eyebrow={t('Знакомство')} title={t('Твои предпочтения')} />
+      <ScreenHeader title={t('Твои предпочтения')} />
       <StylePreferencesFields gender={gender} beautyAdvice={beautyAdvice} onGenderChange={setGender} onBeautyChange={setBeautyAdvice} />
       <PrimaryButton title={t('Продолжить')} icon={ArrowRight} disabled={!gender} onPress={() => gender && onComplete({ gender, beautyAdvice })} />
     </View>

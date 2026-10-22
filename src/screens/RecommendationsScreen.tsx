@@ -17,6 +17,7 @@ import { WardrobeItem } from '../data/mock';
 import { Gender } from '../types/profile';
 import { buildLooks, evaluateLook, EVENTS, getOutfitAdvice, getOutfitSwaps, lookCore, OutfitContext, Precipitation, STYLES, wardrobeGaps } from '../domain/outfits';
 import { MatchSummary } from '../components/MatchSummary';
+import { isLegwear as isTights } from '../domain/legwear';
 import { useWeather } from '../components/useWeather';
 import { describeWeatherCode } from '../services/weather';
 import { useStylistLooks } from '../services/stylistLooks';
@@ -88,7 +89,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const thinking = stylist.status === 'loading';
   const visible = thinking ? [] : looks.filter(look => !hidden.includes(look.id));
   return <FormScrollView contentContainerStyle={styles.content}>
-    <ScreenHeader eyebrow={t('Из твоего гардероба')} title={t('Что надеть')} />
+    <ScreenHeader title={t('Что надеть')} />
     <View style={styles.controls}>
       <Text style={styles.label}>{t('Событие')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} keyboardShouldPersistTaps="handled">
@@ -104,7 +105,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
           <Text style={styles.label}>{t('Погода и основа образа')}</Text>
           <Text style={styles.muted} numberOfLines={1}>{[temperature === null ? t('Погода не указана.').replace(/\.$/, '') : `${temperature}°C`,
         precipitation === 'rain' ? t('дождь') : precipitation === 'snow' ? t('снег') : t('без осадков'),
-        anchor ? anchor.name : t('Без привязки к вещи')].join(' · ')}</Text>
+        anchor ? anchor.name : t('Без привязки к вещи').toLocaleLowerCase()].join(', ')}</Text>
         </View>
         {tuning ? <ChevronUp size={16} color={c.muted} /> : <ChevronDown size={16} color={c.muted} />}
       </AppPressable>
@@ -138,10 +139,10 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <Lightbulb size={18} color={c.accentGold} />
       <View style={{ flex: 1, gap: 8 }}>
         <Text style={styles.body}>{t('Для точного подбора под «{event}» не хватает: {items}.', { event: t(event).toLocaleLowerCase(), items: gaps.slice(0, 4).join(', ') })}</Text>
-        <AppPressable accessibilityRole="button" onPress={onWardrobe}><Text style={[styles.label, { color: c.accentGold }]}>{t('Добавить вещи')} →</Text></AppPressable>
+        <AppPressable accessibilityRole="button" onPress={onWardrobe}><Text style={[styles.label, { color: c.text, textDecorationLine: 'underline' }]}>{t('Добавить вещи')}</Text></AppPressable>
       </View>
     </View> : null}
-    <View style={styles.sectionHeading}><Text style={styles.heading}>{t('Твои сочетания')}</Text><Text style={styles.count}>{String(visible.length).padStart(2, '0')}</Text></View>
+    <View style={styles.sectionHeading} />
     {thinking ? <View style={styles.thinking}><ActivityIndicator color={c.muted} /><Text style={styles.muted}>{t('Стилист подбирает образы…')}</Text></View> : null}
     {!visible.length && !thinking && <View style={styles.empty}>
       <Text style={styles.heading}>{t(!items.length ? 'Начнём с гардероба' : hidden.length ? 'Все варианты просмотрены' : 'Пока нет подходящих вещей')}</Text>
@@ -179,10 +180,13 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
   // The stylist's own words hold while the look is as it put it together; after a swap the rules explain it.
   const asComposed = look.source === 'stylist' && ids.join(',') === look.itemIds.join(',');
   const tips = asComposed ? [...(look.why ? [look.why] : []), ...(look.stylingTips || [])] : advice.tips;
-  const title = asComposed && look.title ? look.title : selection.filter(item => ['Верх', 'Низ'].includes(item.section)).map(item => t(item.category)).join(' + ') || t('Образ {number}', { number: index + 1 });
+  // A rule-made look is named by its pieces, top first: «Свитшот с вышивкой и голубые джинсы».
+  const named = selection.filter(item => ['Верх', 'Низ'].includes(item.section) && !isTights(item)).map(item => item.name.trim()).filter(Boolean);
+  const title = asComposed && look.title ? look.title
+    : named.length ? named.map((name, i) => i ? name.charAt(0).toLocaleLowerCase() + name.slice(1) : name).join(` ${t('и')} `) : t('Образ {number}', { number: index + 1 });
   return <View style={styles.look}>
     <View style={styles.lookHeading}>
-      <View style={{ flex: 1, gap: 5 }}><Text style={styles.number}>{t('ВАРИАНТ {number}', { number: String(index + 1).padStart(2, '0') })}</Text><Text style={styles.lookTitle}>{title}</Text></View>
+      <View style={{ flex: 1 }}><Text style={styles.lookTitle}>{title}</Text></View>
       <IconButton icon={saved ? Check : Heart} label={t(saved ? 'Сохранено в избранном' : 'В избранное')} onPress={() => !saved && (told('favorite'), onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode }))} />
     </View>
     <LookPreview items={selection} swappingId={replaceId} canSwap={item => item.id !== anchorId}
@@ -191,7 +195,7 @@ function Recommendation({ look, index, items, anchorId, beautyAdvice, precipitat
       {alternatives.length ? <OptionPicker options={alternatives.map(item => item.id)} labels={Object.fromEntries(alternatives.map(item => [item.id, item.name]))} value="" label={t('Выбрать замену')} onChange={id => replace(selectedForSwap.id, id)} /> : <Text style={styles.muted}>{t('Других вещей в этой категории нет.')}</Text>}
     </View>}
     <MatchSummary percent={match.percent} criteria={match.criteria} detailed={expanded} />
-    {palette.length ? <Text style={styles.muted}>{palette.map(color => t(color)).join(' · ')}</Text> : null}
+    {palette.length ? <Text style={styles.muted}>{palette.map(color => t(color)).join(', ')}</Text> : null}
     {tips.slice(0, 1).map(tip => <Text key={tip} style={styles.body}>{tip}</Text>)}
     {advice.warnings.slice(0, expanded ? undefined : 1).map(warning => <View key={warning} style={styles.warning}><Text style={styles.body}>{warning}</Text></View>)}
     {swaps.map(swap => <AppPressable key={swap.from.id} accessibilityRole="button" onPress={() => replace(swap.from.id, swap.to.id)} style={styles.swap}>
@@ -215,17 +219,16 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   gaps: { flexDirection: 'row', gap: 10, borderRadius: 4, padding: 12, marginTop: 16 },
   controlRow: { flexDirection: 'row', gap: 12 },
   temperature: { height: 48, borderRadius: 4, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  label: { color: c.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0 },
+  label: { color: c.muted, fontSize: 13, fontWeight: '400', letterSpacing: 0 },
   muted: { color: c.muted, fontSize: 13, lineHeight: 19 },
   body: { color: c.text, fontSize: 14, lineHeight: 21, flexShrink: 1 },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 20 },
-  heading: { color: c.text, fontFamily: SERIF, fontSize: 18, letterSpacing: 0.4 },
+  sectionHeading: { height: 12 },
+  heading: { color: c.text, fontFamily: SERIF, fontSize: 20, lineHeight: 26 },
   count: { color: c.muted, fontFamily: SERIF, fontSize: 16 },
   empty: { gap: 20, paddingVertical: 24 },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 24 },
   look: { gap: 14, paddingBottom: 24, marginBottom: 12, borderBottomWidth: 1, borderColor: c.border },
-  number: { color: c.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0 },
-  lookTitle: { color: c.text, fontFamily: SERIF, fontSize: 20, lineHeight: 25, letterSpacing: -0.2 },
+  lookTitle: { color: c.text, fontFamily: SERIF, fontSize: 22, lineHeight: 28 },
   lookHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 12 },
   replacing: { gap: 8, padding: 12, borderRadius: 4, backgroundColor: c.surface },
   warning: { paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: c.danger },

@@ -7,13 +7,6 @@ import { ThemeColors } from '../constants/theme';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 
-const colorSwatches: Record<string, string> = {
-  Белый: '#FFFFFF', Молочный: '#F5F4E9', Черный: '#262626', Серый: '#9A9D9B',
-  Бежевый: '#CDBBA1', Синий: '#344F78', 'Синий деним': '#537A9B', Голубой: '#ABCDDF',
-  Зеленый: '#62826A', Оливковый: '#858465', Хаки: '#777C5F', Красный: '#B54749',
-  Розовый: '#DCA7B6', Бордовый: '#733548', Коричневый: '#886A55', Желтый: '#DEC677'
-};
-
 export const GarmentTile = memo(function GarmentTile({ item, selected, disabled, status, onPress }: {
   item: WardrobeItem;
   selected?: boolean;
@@ -27,7 +20,6 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(Boolean(item.imageUri));
   useEffect(() => { setFailed(false); setLoading(Boolean(item.imageUri)); }, [item.imageUri]);
-  const swatch = /^#[\da-f]{6}$/i.test(item.color) ? item.color : colorSwatches[item.color];
   const SelectionIcon = selected ? Check : Plus;
   return (
     <AppPressable haptics onPress={onPress} disabled={disabled} accessibilityRole={selected === undefined ? 'button' : 'checkbox'}
@@ -47,13 +39,10 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
         </View>}
         {status && <View style={styles.status}><Text style={styles.statusText}>{status}</Text></View>}
       </View>
+      {/* The name says what it is; category and colour live on the item's label (its card), not under every photo. */}
       <View style={styles.caption}>
         <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.category} numberOfLines={1}>{t(item.category)}</Text>
-        <View style={styles.details}>
-          {swatch && <View style={[styles.swatch, { backgroundColor: swatch }]} />}
-          <Text style={styles.detail} numberOfLines={1}>{[item.color.startsWith('#') ? '' : t(item.color), item.size].filter(Boolean).join(' · ')}</Text>
-        </View>
+        {item.size ? <Text style={styles.detail} numberOfLines={1}>{t('Размер {size}', { size: item.size })}</Text> : null}
       </View>
     </AppPressable>
   );
@@ -64,7 +53,7 @@ const STAGE_INK = '#000000';
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   // A storefront card: a 3:4 photo on a light stage with square corners, the text left-aligned under it.
-  tile: { width: '100%', gap: 8 },
+  tile: { width: '100%', gap: 6 },
   photoStage: { width: '100%', aspectRatio: 0.75, backgroundColor: c.stage, borderRadius: 0, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
   photoSelected: { borderColor: STAGE_INK },
   photo: { width: '100%', height: '100%', borderWidth: 12, borderColor: 'transparent' },
@@ -75,10 +64,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   badgeSelected: { backgroundColor: STAGE_INK },
   status: { position: 'absolute', left: 6, bottom: 6, right: 6, backgroundColor: c.card, padding: 6, borderRadius: 4 },
   statusText: { color: c.muted, fontSize: 10, textAlign: 'center' },
-  caption: { gap: 2, paddingHorizontal: 2, paddingBottom: 6 },
-  category: { color: c.muted, fontSize: 12, fontWeight: '400' },
-  name: { color: c.text, fontSize: 14, lineHeight: 18, fontWeight: '600', minHeight: 18 },
-  details: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 16 },
-  detail: { color: c.muted, fontSize: 11, flexShrink: 1 },
-  swatch: { width: 10, height: 10, borderRadius: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: c.muted }
+  caption: { gap: 1, paddingHorizontal: 2, paddingBottom: 10 },
+  name: { color: c.text, fontSize: 14, lineHeight: 19, fontWeight: '400', minHeight: 19 },
+  detail: { color: c.muted, fontSize: 12, lineHeight: 16 }
 });

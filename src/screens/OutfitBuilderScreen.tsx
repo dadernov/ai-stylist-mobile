@@ -616,7 +616,6 @@ export function OutfitBuilderScreen({
       />
       <View style={styles.pageHeader}>
         <ScreenHeader
-          eyebrow={t('Твой стиль')}
           title={t('Примерочная')}
         />
 
@@ -794,7 +793,7 @@ export function OutfitBuilderScreen({
       </FormScrollView>
       {activeTab === 'fitting' && fittingCta ? (
         <View style={styles.floatingCta} pointerEvents="box-none">
-          <PrimaryButton title={t('К примерке · {count}', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} size="lg" />
+          <PrimaryButton title={t('К примерке ({count})', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} size="lg" />
         </View>
       ) : null}
 
@@ -864,20 +863,20 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   pageHeader: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   // A pill track; the open tab is a filled pill sliding along it.
+  // The fitting room's parts as text tabs on a hairline, the chosen one underlined, like the filters.
   segment: {
     flexDirection: 'row',
-    backgroundColor: c.surface,
-    borderRadius: 4,
-    padding: 4,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
     marginBottom: SPACING.lg
   },
   segmentThumb: {
     position: 'absolute',
-    top: 4,
-    bottom: 4,
+    bottom: -0.5,
+    height: 1.5,
     left: 4,
-    borderRadius: 4,
-    backgroundColor: c.buttonPrimaryBg
+    backgroundColor: c.text
   },
   segmentTab: {
     flex: 1,
@@ -890,14 +889,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center'
   },
   segmentText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '400',
     color: c.muted,
     letterSpacing: 0
   },
   segmentTextActive: {
-    color: c.buttonPrimaryText,
-    fontWeight: '700'
+    color: c.text
   },
   chipsRow: {
     paddingBottom: 6,
