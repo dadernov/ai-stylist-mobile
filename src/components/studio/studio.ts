@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, TextStyle } from 'react-native';
 import { WardrobeItem } from '../../data/mock';
+import { darkColors } from '../../constants/theme';
 
 /** «Студия»: Manrope at the weights the screens use, by family name (custom fonts ignore fontWeight). */
 export const MANROPE = { regular: 'Manrope_400Regular', medium: 'Manrope_500Medium', semibold: 'Manrope_600SemiBold', bold: 'Manrope_700Bold' };
@@ -9,6 +10,15 @@ export const font = (weight: keyof typeof MANROPE = 'regular'): TextStyle => ({ 
 export const INK = '#121417';
 export const INK_SOFT = '#6E737B';
 export const INK_FAINT = '#9A9EA4';
+/** Ink on the dark studio and dark sheets. */
+export const INK_ON_DARK = '#F4F5F7';
+/** Secondary text that stays legible on whichever studio it sits on (INK_SOFT is too dark on the night one). */
+export const inkSoft = (isDark: boolean) => (isDark ? darkColors.muted : INK_SOFT);
+/** Glass without the blur: its tint and light edge, for many small surfaces at once (a blur each is costly). */
+export const glassFill = (isDark: boolean) => (isDark ? 'rgba(40,43,48,0.55)' : 'rgba(255,255,255,0.55)');
+export const glassEdge = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.75)');
+/** The hairline between rows on a glass panel or a sheet. */
+export const hairline = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)');
 
 // The key light takes a pale version of the piece's colour: by its stored hex when the profile has one,
 // else by its colour name.

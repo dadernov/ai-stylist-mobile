@@ -1,7 +1,6 @@
 import {
   ActivityIndicator,
   Animated,
-  DimensionValue,
   Easing,
   FlatList,
   Image,
@@ -16,9 +15,8 @@ import {
   useWindowDimensions
 } from 'react-native';
 import { ReactNode, useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { usePhotoPicker } from '../components/usePhotoPicker';
 import { PhotoSourcePicker, PhotoSource } from '../components/PhotoSourcePicker';
 import { useAppDialog } from '../components/AppDialog';
@@ -42,7 +40,8 @@ import { WardrobeStudio } from '../components/studio/WardrobeStudio';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
 import { FloorShadow, GarmentImage } from '../components/studio/Garment';
 import { StudioBackdrop, useStudioTint } from '../components/studio/StudioBackdrop';
-import { font, INK, INK_FAINT, INK_SOFT, isCutout, studioTint, useReducedMotion } from '../components/studio/studio';
+import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from '../components/studio/studio';
+import { StudioSheet } from '../components/studio/StudioSheet';
 import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
@@ -306,8 +305,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const t = useT();
   const { colors, isDark } = useTheme();
   const reduced = useReducedMotion();
-  const ink = isDark ? '#F4F5F7' : INK;
-  const danger = isDark ? colors.danger : '#C62828';
+  const ink = isDark ? INK_ON_DARK : INK;
+  const soft = inkSoft(isDark);
+  const danger = colors.danger;
   const [activeFilter, setActiveFilter] = useState('Все');
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -575,6 +575,15 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     setEditModalVisible(true);
   }, []);
 
+  // The edit form differs from the saved piece: a stray tap over the studio must not throw the changes away.
+  const editing = items.find(item => item.id === editItemId);
+  const editDirty = Boolean(editing) && [
+    [editName, editing?.name || ''], [editCategory, editing?.category || categoryOptions[0]], [editColor, editing?.color || colorOptions[0]],
+    [editSeason, editing?.season || seasonOptions[0]], [editPattern, editing?.pattern || patternOptions[0]],
+    [editSection, editing?.section || sectionOptions[0]], [editSize, editing?.size || ''], [editStore, editing?.store || ''],
+    [editMaterial, editing?.material || '']
+  ].some(([now, saved]) => now !== saved);
+
   const handleSaveEdit = () => {
     if (!editItemId) return;
     onItemsChange(
@@ -763,7 +772,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       {helpOpen && <ProductHelp onClose={() => setHelpOpen(false)} />}
 
       {/* The item's card: the piece floating in its own light, its label, what can be done with it. */}
-      <SheetModal visible={Boolean(detail)} onClose={closeDetail} height="92%">
+      <StudioSheet visible={Boolean(detail)} onClose={closeDetail} height="92%">
         {detail ? <>
           {/* At night the piece's light is only a hint of its colour over the dark studio. */}
           <LinearGradient colors={isDark ? ['#2A2D32', `${studioTint(detail) || '#22252A'}33`] : ['#FFFFFF', studioTint(detail) || '#F0F0EE']}
@@ -818,7 +827,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             </Glass>
           </AppPressable>
         </> : null}
-      </SheetModal>
+      </StudioSheet>
 
       {/* Adding a piece (or reading it again): the photo in the studio light, a beam passing over it while it is
           read, what was found set around it, and below a glass card to name it and put it in the wardrobe. */}
@@ -890,7 +899,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                   {/* The card picture: the smoothed one or the original cut-out. */}
                   {draftFlat.busy ? (
                     <View style={[styles.flatTrack, styles.flatBusy, { backgroundColor: colors.surface }]}>
-                      <ActivityIndicator size="small" color={INK_SOFT} />
+                      <ActivityIndicator size="small" color={soft} />
                       <Text style={[font('medium'), styles.flatBusyText]}>{t('Выравниваем фото…')}</Text>
                     </View>
                   ) : draftFlat.flat && draftFlat.cutout ? (
@@ -900,8 +909,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                         return (
                           <AppPressable key={label} haptics accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => setDraftPhoto(uri)}
                             style={[styles.flatTab, on && [styles.flatTabOn, { backgroundColor: isDark ? '#3A3D42' : '#FFFFFF' }]]}>
-                            {label === 'Ровное фото' ? <Wand2 size={15} strokeWidth={1.8} color={on ? ink : INK_SOFT} /> : null}
-                            <Text style={[font('semibold'), { fontSize: 13, color: on ? ink : INK_SOFT }]} numberOfLines={1}>{t(label)}</Text>
+                            {label === 'Ровное фото' ? <Wand2 size={15} strokeWidth={1.8} color={on ? ink : soft} /> : null}
+                            <Text style={[font('semibold'), { fontSize: 13, color: on ? ink : soft }]} numberOfLines={1}>{t(label)}</Text>
                           </AppPressable>
                         );
                       })}
@@ -939,7 +948,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         <OverlayOutlet />
       </Modal>
 
-      <SheetModal visible={isEditModalVisible} onClose={() => setEditModalVisible(false)} title={t('Редактировать параметры')} height="88%">
+      <StudioSheet visible={isEditModalVisible} onClose={() => setEditModalVisible(false)} title={t('Редактировать параметры')} height="88%"
+        dismissOnBackdrop={!editDirty}>
         {renderField(t('Название вещи'), <AtelierInput placeholder={t('Например, Белая футболка')} value={editName} onChangeText={setEditName} />)}
         {renderField(t('Категория'), renderChips(categoryOptions, editCategory, handleEditCategoryChange))}
         {renderField(t('Цвет'), renderChips(colorOptions, editColor, setEditColor))}
@@ -953,7 +963,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
           <Pill variant="primary" title={t('Сохранить')} style={{ flex: 1 }} onPress={handleSaveEdit} />
           <Pill title={t('Отмена')} onPress={() => setEditModalVisible(false)} />
         </View>
-      </SheetModal>
+      </StudioSheet>
     </View>
   );
 }
@@ -979,46 +989,6 @@ function StudioTint({ color, focusY }: { color: string | null; focusY: number })
   useStudioTint(color, focusY);
   return null;
 }
-
-/**
- * A glass sheet over the blurred screen, as the studio's StudioSheet, that also carries the overlay outlet so
- * dialogs and pickers opened from it show above it.
- */
-function SheetModal({ visible, onClose, title, height, children }: { visible: boolean; onClose: () => void; title?: string; height: DimensionValue; children: ReactNode }) {
-  const t = useT();
-  const { isDark } = useTheme();
-  const insets = useSafeAreaInsets();
-  return (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <AppPressable feedback={false} accessibilityLabel={t('Закрыть')} onPress={onClose} style={StyleSheet.absoluteFill}>
-          <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-        </AppPressable>
-        <View style={[sheetStyles.sheet, { height, backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]}>
-          <View style={[sheetStyles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
-          {title ? (
-            <View style={sheetStyles.header}>
-              <Text style={[font('semibold'), sheetStyles.title, { color: isDark ? '#F4F5F7' : INK }]} numberOfLines={2}>{title}</Text>
-              <Pill icon={X} size="icon" onPress={onClose} accessibilityLabel={t('Закрыть')} />
-            </View>
-          ) : null}
-          <FormScrollView contentContainerStyle={[sheetStyles.body, { paddingTop: title ? 16 : 12, paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            {children}
-          </FormScrollView>
-        </View>
-      </View>
-      <OverlayOutlet />
-    </Modal>
-  );
-}
-
-const sheetStyles = StyleSheet.create({
-  sheet: { width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
-  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, marginTop: 14 },
-  title: { flex: 1, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
-  body: { gap: 14, paddingHorizontal: 20 }
-});
 
 /** The photo being read: a band of light with a bright line passes down over it; held still when motion is reduced. */
 function ScanBeam({ height, reduced }: { height: number; reduced: boolean }) {
@@ -1125,8 +1095,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   detailActionText: { fontSize: 14 },
   historyRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   historyText: { flex: 1, fontSize: 15 },
-  historyCount: { fontSize: 13, color: INK_SOFT },
-  note: { fontSize: 13, lineHeight: 18, color: INK_SOFT },
+  historyCount: { fontSize: 13, color: c.muted },
+  note: { fontSize: 13, lineHeight: 18, color: c.muted },
 
   // Adding a piece
   draftContent: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, width: '100%', maxWidth: 600, alignSelf: 'center' },
@@ -1137,13 +1107,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   draftStatusInner: { height: 38, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
   draftCard: { padding: 16, gap: 12 },
   nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  nameLabel: { fontSize: 12, color: INK_SOFT },
+  nameLabel: { fontSize: 12, color: c.muted },
   nameInput: { fontSize: 22, lineHeight: 28, letterSpacing: -0.5, marginTop: 2, padding: 0, minHeight: 30, textAlignVertical: 'top' },
   sectionBadge: { marginTop: 4, height: 30, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', maxWidth: 140 },
   cardBlock: { gap: 10 },
   flatTrack: { flexDirection: 'row', borderRadius: 999, padding: 3 },
   flatBusy: { height: 40, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  flatBusyText: { fontSize: 13, color: INK_SOFT },
+  flatBusyText: { fontSize: 13, color: c.muted },
   flatTab: { flex: 1, height: 34, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   flatTabOn: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   draftActions: { flexDirection: 'row', gap: 8 },

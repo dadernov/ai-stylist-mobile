@@ -87,7 +87,7 @@ export const en: Record<string, string> = {
   "Распознать": "Recognise",
   "Распознать вещь заново": "Recognise the item again",
   "Размер {size}": "Size {size}",
-  "Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.": "Save a look with the heart in Ideas or after a try-on, and it will be here.",
+  "Сохрани образ сердцем в «Идеях», и он будет здесь.": "Save a look with the heart in Ideas, and it will be here.",
   "К примерке ({count})": "Try on ({count})",
   "Вход: {method}": "Sign-in: {method}",
   "и": "and",

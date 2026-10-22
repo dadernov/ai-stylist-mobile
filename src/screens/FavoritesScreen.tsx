@@ -143,7 +143,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
         <EmptyState
           emoji=""
           title={t('Пока нет избранных образов')}
-          hint={t('Сохрани образ сердцем в «Идеях» или после примерки, и он будет здесь.')}
+          hint={t('Сохрани образ сердцем в «Идеях», и он будет здесь.')}
           actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
           onAction={onGoToBuilder}
         />
@@ -232,14 +232,14 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
             </View>
           </>
         ) : null}
+        {/* The try-on full screen opens from inside the sheet: on iOS a window opened beside an open sheet never shows. */}
+        <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
+          <View style={styles.previewBackdrop}>
+            {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}
+            <Pill title={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewUri(null)} />
+          </View>
+        </Modal>
       </StudioSheet>
-
-      <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
-        <View style={styles.previewBackdrop}>
-          {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}
-          <Pill title={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewUri(null)} />
-        </View>
-      </Modal>
     </View>
   );
 }

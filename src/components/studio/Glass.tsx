@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { LucideIcon } from 'lucide-react-native';
 import { useTheme } from '../../constants/ThemeContext';
 import { AppPressable } from '../AppPressable';
-import { font, INK, useReducedMotion } from './studio';
+import { font, glassEdge, glassFill, INK, useReducedMotion } from './studio';
 
 /** Frosted glass: the studio shows through, softened; a thin light edge keeps its shape on light ground. */
 export function Glass({ children, style, radius = 999, intensity = 40 }: { children?: ReactNode; style?: StyleProp<ViewStyle>; radius?: number; intensity?: number }) {
@@ -12,8 +12,8 @@ export function Glass({ children, style, radius = 999, intensity = 40 }: { child
   return (
     <View style={[{ borderRadius: radius, overflow: 'hidden' }, style]}>
       <BlurView intensity={intensity} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, backgroundColor: isDark ? 'rgba(40,43,48,0.55)' : 'rgba(255,255,255,0.55)',
-        borderWidth: StyleSheet.hairlineWidth * 2, borderColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.75)' }]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, backgroundColor: glassFill(isDark),
+        borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark) }]} />
       {children}
     </View>
   );

@@ -17,6 +17,7 @@ import { PhotoAdvice } from './PhotoAdvice';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Glass, Pill } from './studio/Glass';
 import { font, INK, INK_SOFT, isCutout, useReducedMotion } from './studio/studio';
+import { StudioSheet } from './studio/StudioSheet';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
@@ -406,59 +407,42 @@ function PickTile({ item, selected, disabled, status, onPress }: { item: Wardrob
 function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Props, 'items' | 'modelUri' | 'onSave'> & { visible: boolean; onClose: () => void }) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { isDark } = useTheme();
   const [name, setName] = useState('');
   const [history, setHistory] = useState<TryOnHistoryItem[]>([]);
   const [selected, setSelected] = useState<TryOnHistoryItem>();
   const [saved, setSaved] = useState(false);
   const latest = selected || history[0];
-  return <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-    <View style={styles.backdrop}>
-      <View style={[styles.sheet, { backgroundColor: isDark ? '#181A1E' : '#FAFAF9' }]}>
-        <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
-        <View style={styles.row}>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={styles.sheetTitle}>{t('Примерка')}</Text>
-            <Text style={styles.muted} numberOfLines={1}>{items.map(item => item.name).join(' + ')}</Text>
-          </View>
-          <Pill size="icon" icon={X} accessibilityLabel={t('Закрыть примерку')} onPress={onClose} />
-        </View>
-        {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
-        {/* Closing the generation window closes this sheet too: the next look is picked on the main screen,
-            with the running one in the small window in the corner. */}
-        <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri} onLeave={onClose}
-          updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
-            const entry = { ...payload, id: String(payload.updatedAt) };
-            setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
-            setSelected(entry);
-            setSaved(false);
-          }} onSelectHistory={entry => {
-            setSelected(entry); setSaved(false);
-            setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
-              .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
-          }}
-          sheetContent={<TextInput style={styles.nameInput} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
-          sheetFooter={<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
-            onSave({
-              id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
-              itemIds: items.map(item => item.id), createdAt: Date.now(),
-              tryOnImageUri: latest?.imageUri, tryOnWarning: latest?.warning, tryOnUpdatedAt: latest?.updatedAt,
-              tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
-            });
-            setSaved(true);
-          }} />} />
-      </View>
-    </View>
-    <OverlayOutlet />
-  </Modal>;
+  return <StudioSheet visible={visible} title={t('Примерка')} subtitle={items.map(item => item.name).join(' + ')} onClose={onClose}
+    closeLabel={t('Закрыть примерку')} height="92%" scroll={false}>
+    {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
+    {/* Closing the generation window closes this sheet too: the next look is picked on the main screen,
+        with the running one in the small window in the corner. */}
+    <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri} onLeave={onClose}
+      updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
+        const entry = { ...payload, id: String(payload.updatedAt) };
+        setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
+        setSelected(entry);
+        setSaved(false);
+      }} onSelectHistory={entry => {
+        setSelected(entry); setSaved(false);
+        setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
+          .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
+      }}
+      sheetContent={<TextInput style={styles.nameInput} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
+      sheetFooter={<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
+        onSave({
+          id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
+          itemIds: items.map(item => item.id), createdAt: Date.now(),
+          tryOnImageUri: latest?.imageUri, tryOnWarning: latest?.warning, tryOnUpdatedAt: latest?.updatedAt,
+          tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
+        });
+        setSaved(true);
+      }} />} />
+  </StudioSheet>;
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   content: { gap: 16, paddingBottom: 20 },
-  backdrop: { flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end' },
-  sheet: { height: '92%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, paddingBottom: 20, gap: 12 },
-  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10 },
-  sheetTitle: { ...font('semibold'), color: c.text, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
   heading: { ...font('semibold'), color: c.text, fontSize: 15, lineHeight: 20 },
   muted: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },

@@ -1,4 +1,4 @@
-import { Animated, Image, Keyboard, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
+import { Animated, Image, Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chip } from '../components/Chip';
 import { LookPreview } from '../components/LookPreview';
@@ -15,7 +15,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
 import { SPACING, ThemeColors } from '../constants/theme';
 import { Glass, Pill } from '../components/studio/Glass';
-import { font, INK_SOFT } from '../components/studio/studio';
+import { font } from '../components/studio/studio';
+import { StudioSheet } from '../components/studio/StudioSheet';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT, translate } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
@@ -778,42 +779,30 @@ export function OutfitBuilderScreen({
         </View>
       ) : null}
 
-      <Modal transparent animationType="slide" visible={isEditModalVisible} onRequestClose={() => setEditModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={{ flex: 1 }}>
-              <FormScrollView contentContainerStyle={styles.modalContent}>
-                <Text style={styles.modalTitle}>{t('Редактировать лук')}</Text>
-                <Text style={styles.modalLabel}>{t('Название')}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('Название')}
-                  placeholderTextColor={themeColors.muted}
-                  value={editName}
-                  onChangeText={setEditName}
-                  multiline
-                  scrollEnabled={false}
-                  returnKeyType="done"
-                  submitBehavior="blurAndSubmit"
-                  onSubmitEditing={Keyboard.dismiss}
-                />
-                {renderPicker('Верх', tops, editTop, setEditTop)}
-                {renderPicker('Низ', bottoms, editBottom, setEditBottom)}
-                {renderPicker('Обувь', shoes, editShoes, setEditShoes)}
-                {renderPicker('Верхняя одежда', outer, editOuter, setEditOuter)}
-                {renderPicker('Сумка', bags, editBag, setEditBag)}
-                <PrimaryButton title={t('Сохранить')} onPress={handleSaveEditedLook} variant="gold" style={styles.modalSave} />
-                <PrimaryButton
-                  title={t('Отмена')}
-                  onPress={() => setEditModalVisible(false)}
-                  variant="ghost"
-                  style={styles.modalClose}
-                />
-              </FormScrollView>
-            </View>
-          </View>
+      <StudioSheet visible={isEditModalVisible} title={t('Редактировать лук')} onClose={() => setEditModalVisible(false)} height="88%">
+        <Text style={styles.modalLabel}>{t('Название')}</Text>
+        <TextInput
+          style={styles.modalInput}
+          placeholder={t('Название')}
+          placeholderTextColor={themeColors.muted}
+          value={editName}
+          onChangeText={setEditName}
+          multiline
+          scrollEnabled={false}
+          returnKeyType="done"
+          submitBehavior="blurAndSubmit"
+          onSubmitEditing={Keyboard.dismiss}
+        />
+        {renderPicker('Верх', tops, editTop, setEditTop)}
+        {renderPicker('Низ', bottoms, editBottom, setEditBottom)}
+        {renderPicker('Обувь', shoes, editShoes, setEditShoes)}
+        {renderPicker('Верхняя одежда', outer, editOuter, setEditOuter)}
+        {renderPicker('Сумка', bags, editBag, setEditBag)}
+        <View style={styles.modalActions}>
+          <Pill variant="primary" title={t('Сохранить')} style={{ flex: 1 }} onPress={handleSaveEditedLook} />
+          <Pill title={t('Отмена')} onPress={() => setEditModalVisible(false)} />
         </View>
-      </Modal>
+      </StudioSheet>
     </View>
   );
 }
@@ -846,7 +835,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   generatingWrap: { gap: SPACING.sm, marginTop: 4, marginBottom: SPACING.lg },
   generatingText: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted, textAlign: 'center' },
   generateHint: { ...font('regular'), fontSize: 13, lineHeight: 18, color: c.muted, textAlign: 'center', marginBottom: SPACING.lg },
-  slotCard: { backgroundColor: c.surface, borderRadius: 22, padding: SPACING.md, marginBottom: SPACING.md },
+  slotCard: { backgroundColor: c.surface, borderRadius: 22, padding: SPACING.md },
   slotHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.sm },
   slotEmojiCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.card, alignItems: 'center', justifyContent: 'center' },
   slotInitial: { ...font('semibold'), fontSize: 16, color: c.text },
@@ -876,16 +865,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   // Inside the look's glass panel: hairline-separated, never a card in a card.
   reasonBlock: { marginTop: 6, paddingTop: SPACING.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, gap: 4 },
   reasonTitle: { ...font('semibold'), fontSize: 13, lineHeight: 18, color: c.text },
-  reasonText: { ...font('regular'), fontSize: 13, lineHeight: 19, color: INK_SOFT },
+  reasonText: { ...font('regular'), fontSize: 13, lineHeight: 19, color: c.muted },
   beautyBlock: { marginTop: 6, paddingTop: SPACING.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, gap: 4 },
   beautyTitle: { ...font('semibold'), fontSize: 13, lineHeight: 18, color: c.text },
   beautyText: { ...font('regular'), fontSize: 13, lineHeight: 19, color: c.muted },
-  modalBackdrop: { flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: c.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: SPACING.lg, height: '85%' },
-  modalContent: { paddingBottom: SPACING.xl },
-  modalTitle: { ...font('semibold'), fontSize: 22, lineHeight: 28, letterSpacing: -0.6, color: c.text, marginBottom: SPACING.lg },
-  modalLabel: { ...font('semibold'), fontSize: 13, color: c.text, marginBottom: SPACING.sm },
-  modalInput: { ...font('regular'), backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: SPACING.md, paddingVertical: 12, fontSize: 14, color: c.text, marginBottom: SPACING.sm },
-  modalSave: { marginTop: SPACING.md },
-  modalClose: { marginTop: SPACING.sm }
+  modalLabel: { ...font('semibold'), fontSize: 13, color: c.text, marginBottom: -6 },
+  modalInput: { ...font('regular'), backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: SPACING.md, paddingVertical: 12, fontSize: 14, color: c.text },
+  modalActions: { flexDirection: 'row', gap: 8, marginTop: 4 }
 });
