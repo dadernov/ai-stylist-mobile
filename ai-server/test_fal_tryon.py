@@ -8,6 +8,7 @@ hand-off — is the real code.
 import json
 import os
 import tempfile
+import time
 import unittest
 from io import BytesIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -413,6 +414,61 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['error'], fal_tryon.BALANCE_ERROR)
         self.protect.assert_not_awaited()
+
+    async def test_a_photo_that_cannot_be_protected_is_refused_before_paying(self):
+        with patch.object(app, '_prepare_identity_source', side_effect=ValueError('Для защищённой примерки нужно фото одного человека')):
+            result = await self.look()
+        self.assertIn('одного человека', result['error'])
+        self.generate.assert_not_awaited()
+
+    async def test_the_photo_is_parsed_while_the_editor_works(self):
+        order = []
+
+        def prepare(content, photo=None, faces_only=False, cached=False):
+            order.append('faces' if faces_only else 'parse')
+            return 'photo' if faces_only else 'prepared'
+
+        async def generate(*args, **kwargs):
+            order.append('generate')
+            await asyncio.sleep(0.05)
+            return self.generate.return_value
+        with patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app.fal_tryon, 'generate', side_effect=generate), \
+             patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
+            result = await self.look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(order, ['faces', 'generate', 'parse'])
+        self.assertEqual(face_only.call_args.args[1], 'prepared')
+
+    async def test_a_photo_whose_parsing_fails_during_the_call_says_why(self):
+        def prepare(content, photo=None, faces_only=False, cached=False):
+            if faces_only:
+                return 'photo'
+            raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
+        with patch.object(app, '_prepare_identity_source', side_effect=prepare):
+            result = await self.look()
+        self.assertIn('отделить человека', result['error'])
+        self.assertNotIn('outputUrl', result)
+        self.assertEqual(self.generate.await_count, 1)
+
+    async def test_heavy_photo_work_of_two_looks_goes_one_at_a_time(self):
+        app._CPU_STAGES = None
+        running, most = [0], [0]
+
+        def restore(*args, **kwargs):
+            running[0] += 1
+            most[0] = max(most[0], running[0])
+            time.sleep(0.05)
+            running[0] -= 1
+            return 'data:image/png;base64,face'
+        try:
+            with patch.dict(os.environ, {'AI_TRYON_CPU_STAGES': '1'}), \
+                 patch.object(app, '_face_only_output_url', side_effect=restore):
+                results = await asyncio.gather(self.look(request='request_000000000001'), self.look(request='request_000000000002'))
+        finally:
+            app._CPU_STAGES = None
+        self.assertEqual([result['status'] for result in results], ['succeeded', 'succeeded'])
+        self.assertEqual(most[0], 1)
 
     async def test_by_default_only_the_face_comes_from_the_photo(self):
         # Pasting the photo's floor back around a re-rendered body leaves seams;
