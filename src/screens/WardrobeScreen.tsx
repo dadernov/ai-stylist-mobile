@@ -35,6 +35,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, FlatAnalysis, flattenGarment, sendCategoryFeedback } from '../services/ai';
+import { categoryFitsSection, mergeFlatReading } from '../domain/flatReading';
 import { GarmentLabel } from '../components/GarmentLabel';
 import { WardrobeStudio } from '../components/studio/WardrobeStudio';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
@@ -326,6 +327,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const [draftStore, setDraftStore] = useState('');
   const [draftMaterial, setDraftMaterial] = useState('');
   const [draftSection, setDraftSection] = useState(sectionOptions[0]);
+  // The section as it is now, for a reading that arrives later (the flat picture's) than the render that asked for it.
+  const draftSectionRef = useRef(draftSection);
+  draftSectionRef.current = draftSection;
   const [draftName, setDraftName] = useState('');
   const [draftColor, setDraftColor] = useState('');
   const [draftColorHex, setDraftColorHex] = useState('');
@@ -363,7 +367,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     setFlatBusyId(item.id);
     try {
       // Only the picture changes: what the item was saved as stays the person's.
-      const flat = await flattenGarment(photo);
+      const flat = await flattenGarment(photo, item.section);
       if (item.imageUri) setFlatUndo({ id: item.id, imageUri: item.imageUri });
       forgetFlat(item.id);
       putFlat(item.id, flat.image);
@@ -515,7 +519,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       .filter((name) => name && name !== 'Не определено');
     const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
     if (!manualFields.current.has('color')) setDraftPalette(uniquePalette);
-    if (result.category && !manualFields.current.has('category')) {
+    const manualSection = manualFields.current.has('section') ? draftSectionRef.current : null;
+    if (result.category && !manualFields.current.has('category')
+      && categoryFitsSection(result.category, getSectionByCategory(result.category), manualSection)) {
       setDraftCategory(result.category);
       setCategoryConfirmed(!result.needsReview);
       if (!manualFields.current.has('section')) setDraftSection(getSectionByCategory(result.category));
@@ -553,10 +559,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
           setDraftFlat({ flat: flat.image, cutout, busy: false });
           setDraftPhoto(flat.image);
           // The flat and the photo read together are the surer reading; the analysis id stays the photo's.
-          const reading = flat.analysis;
-          if (reading) {
-            setAnalysis(previous => previous ? { ...previous, ...reading } : previous);
-            applyReading(reading);
+          // The photo's own reasons for a review (a background it could not remove) and its colour, when the
+          // flat has none, stay (domain/flatReading).
+          if (flat.analysis) {
+            const merged = mergeFlatReading(result, flat.analysis);
+            setAnalysis(merged);
+            applyReading(merged);
           }
         }).catch(() => { if (analysisRequestRef.current === requestId) setDraftFlat({ flat: null, cutout, busy: false }); });
       }
