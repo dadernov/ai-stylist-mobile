@@ -165,6 +165,97 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('seed', sent)
         self.assertEqual((sent['image_size'], len(sent['image_urls'])), ('auto_2K', 3))
 
+    def streamed(self, events, stream_status=200, result=None, statuses=({'status': 'COMPLETED'},), close_early=0):
+        """A fal queue whose status stream sends `events`; plain polls answer `statuses`."""
+        calls, opened = [], []
+        statuses = list(statuses)
+
+        def handler(request):
+            calls.append((request.method, request.url.path))
+            if request.method == 'POST':
+                return httpx.Response(200, json={
+                    'request_id': 'req-1', 'status_url': 'https://queue.fal.run/app/requests/req-1/status',
+                    'response_url': 'https://queue.fal.run/app/requests/req-1', 'cancel_url': 'https://queue.fal.run/app/requests/req-1/cancel'})
+            if request.url.path.endswith('/status/stream'):
+                opened.append(1)
+                if stream_status != 200:
+                    return httpx.Response(stream_status, text='no stream')
+                sent = events[:1] if len(opened) <= close_early else events
+                body = ''.join(f'data: {json.dumps(event)}\n\n' for event in sent)
+                return httpx.Response(200, text=body, headers={'content-type': 'text/event-stream'})
+            if request.url.path.endswith('/status'):
+                return httpx.Response(200, json=statuses.pop(0) if len(statuses) > 1 else statuses[0])
+            return httpx.Response(200, json=result or {'images': [{'url': 'https://fal.media/out.png'}]})
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler)), calls, opened
+
+    async def test_the_status_stream_reports_the_finished_image_without_polling(self):
+        client, calls, _ = self.streamed([{'status': 'IN_QUEUE'}, {'status': 'IN_PROGRESS'}, {'status': 'COMPLETED'}])
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual([call for call in calls if call[1].endswith('/status')], [], 'no status polls')
+        self.assertIn(('GET', '/app/requests/req-1/status/stream'), calls)
+
+    async def test_a_model_error_on_the_stream_is_a_failure(self):
+        client, _, _ = self.streamed([{'status': 'COMPLETED', 'error': 'CUDA out of memory', 'error_type': 'runner'}])
+        result = await self.run_look(client)
+        self.assertIn('runner', result['error'])
+        self.assertNotIn('outputUrl', result)
+
+    async def test_without_the_stream_the_status_is_polled(self):
+        client, calls, _ = self.streamed([], stream_status=405)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertTrue(any(call[1].endswith('/status') for call in calls))
+
+    async def test_a_stream_that_breaks_off_is_opened_again(self):
+        client, calls, opened = self.streamed([{'status': 'IN_PROGRESS'}, {'status': 'COMPLETED'}], close_early=1)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(len(opened), 2)
+        self.assertEqual([call for call in calls if call[1].endswith('/status')], [])
+
+    async def test_a_stream_that_never_completes_falls_back_to_polling(self):
+        client, calls, opened = self.streamed([{'status': 'IN_QUEUE'}], close_early=99)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(len(opened), 3)
+        self.assertTrue(any(call[1].endswith('/status') for call in calls))
+
+    async def test_polling_can_be_brought_back(self):
+        client, calls, opened = self.streamed([{'status': 'COMPLETED'}])
+        with patch.dict(os.environ, {'TRYON_FAL_STATUS_STREAM': 'off'}):
+            result = await self.run_look(client)
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(opened, [])
+
+    async def test_a_request_that_runs_too_long_on_the_stream_is_cancelled(self):
+        async def stuck(*args, **kwargs):
+            return {'started_at': 1.0, 'last_state': 'IN_PROGRESS', 'final': None, 'timeout': True}
+        client, calls, _ = self.streamed([{'status': 'IN_PROGRESS'}])
+        with patch.object(fal_tryon, '_follow_status', side_effect=stuck):
+            result = await self.run_look(client)
+        self.assertTrue(result.get('timeout'), result)
+        self.assertIn(('PUT', '/app/requests/req-1/cancel'), calls)
+
+    async def test_the_stream_keeps_the_run_limit(self):
+        # A model still running past its limit ends the wait on the stream itself.
+        class Slow(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b'data: {"status": "IN_PROGRESS"}\n\n'
+                await asyncio.sleep(5)
+                yield b'data: {"status": "COMPLETED"}\n\n'
+
+        def handler(request):
+            if request.url.path.endswith('/status/stream'):
+                return httpx.Response(200, stream=Slow(), headers={'content-type': 'text/event-stream'})
+            return httpx.Response(200, json={})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        started = asyncio.get_running_loop().time()
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 0.2, 600)
+        self.assertTrue(followed.get('timeout'))
+        self.assertEqual(followed['last_state'], 'IN_PROGRESS')
+        self.assertLess(asyncio.get_running_loop().time() - started, 2)
+
     async def test_bria_gets_its_own_fields_and_a_single_image(self):
         client, calls = queue([{'status': 'COMPLETED'}], {'image': {'url': 'https://fal.media/bria.png'}})
         result = await self.run_look(client, model='bria-tryon')
