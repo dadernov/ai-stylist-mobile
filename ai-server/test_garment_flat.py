@@ -171,22 +171,39 @@ class FlatViews(unittest.TestCase):
         image = Image.new('RGB', (16, 16), colour)
         return image, image.convert('RGBA')
 
+    # The stubbed vectors give logits of 100 x their values: (0, hoodie, jacket, 0).
+    red, blue = (255, 0, 0), (0, 0, 255)
+
     def test_scores_are_averaged_and_each_view_reported(self):
-        red, blue = (255, 0, 0), (0, 0, 255)
-        unit = lambda *v: np.array(v, np.float32) / np.linalg.norm(v)
-        # The photo leans jacket over hoodie; the flat is clearly a hoodie.
-        classifier = self.classifier({red: unit(0, .30, .32, .2), blue: unit(0, .40, .20, .2)})
-        alone = classifier.predict(*self.view(red))
-        self.assertEqual(alone['category'], 'Куртка')
+        photo, flat = np.array([0, .300, .310, 0], np.float32), np.array([0, .315, .300, 0], np.float32)
+        # The photo leans jacket (sure enough alone); the flat leans hoodie a little more.
+        classifier = self.classifier({self.red: photo, self.blue: flat})
+        alone = classifier.predict(*self.view(self.red))
+        self.assertEqual((alone['category'], alone['needsReview']), ('Куртка', False))
         self.assertNotIn('views', alone)
-        both = classifier.predict(*self.view(red), extra=[self.view(blue)])
+        both = classifier.predict(*self.view(self.red), extra=[self.view(self.blue)])
         self.assertEqual(both['category'], 'Худи')
         self.assertEqual([view['category'] for view in both['views']], ['Куртка', 'Худи'])
         self.assertEqual(both['views'][0]['similarity'], 1.0)
-        self.assertAlmostEqual(both['views'][1]['similarity'], float(unit(0, .30, .32, .2) @ unit(0, .40, .20, .2)), places=3)
+        self.assertAlmostEqual(both['views'][1]['similarity'], float(photo @ flat), places=3)
+        # Photo and flat disagree, so the combined answer asks to be checked.
+        self.assertTrue(both['needsReview'])
         # The feedback embedding stays the photo's own.
         np.testing.assert_allclose(both['embedding'], alone['embedding'])
 
+    def test_a_view_that_does_not_overturn_a_sure_answer_keeps_it_sure(self):
+        # The photo is sure of the hoodie (p 0.88); the flat is undecided, a shade towards the jacket.
+        classifier = self.classifier({self.red: np.array([0, .30, .28, 0], np.float32), self.blue: np.array([0, .297, .303, 0], np.float32)})
+        alone = classifier.predict(*self.view(self.red))
+        self.assertEqual((alone['category'], alone['needsReview']), ('Худи', False))
+        both = classifier.predict(*self.view(self.red), extra=[self.view(self.blue)])
+        self.assertEqual(both['category'], 'Худи')
+        self.assertLess(both['categoryCandidates'][0]['score'], ca.CONFIDENCE_MIN)
+        self.assertFalse(both['needsReview'])
+        # Unsure alone, unsure together.
+        unsure = self.classifier({self.red: np.array([0, .300, .295, 0], np.float32), self.blue: np.array([0, .297, .303, 0], np.float32)})
+        self.assertTrue(unsure.predict(*self.view(self.red))['needsReview'])
+        self.assertTrue(unsure.predict(*self.view(self.red), extra=[self.view(self.blue)])['needsReview'])
 
 if __name__ == '__main__':
     unittest.main()

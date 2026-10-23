@@ -1303,9 +1303,11 @@ FLAT_PROMPT = ('Product photo of exactly this garment alone, neatly laid out fla
 
 # The flat picture must show the very garment of the photo: the generator may change it (another
 # collar, a whole outfit, a different piece). Its cut-out is compared with the photo's own, as the
-# classifier sees both (SigLIP image vectors): measured on real home photos and their flats
-# (FLAT_REPORT.md), the same garment never fell below this while a different garment of the same
-# kind often stays above it, so it only catches a flat that drew something else.
+# classifier sees both (SigLIP image vectors). On 58 real home photos and their Seedream flats the
+# same garment scored 0.789-0.96 (mean 0.927), other garments 0.62 on average: at 0.70 no flat of
+# the same garment is refused, a garment of another part of the body passes 4% of the time (and the
+# zone check below catches those), one of the same kind 16%. A refusal wastes a paid flat, so the
+# bar keeps a 0.09 margin under the lowest real pair rather than chasing look-alikes.
 FLAT_MIN_SIMILARITY = _env_float('AI_FLAT_MIN_SIMILARITY', 0.70)
 FLAT_MAX_SIDE = 1000
 FLAT_DIFFERENT = "Ровное фото вышло непохожим на вещь, оставили исходное."

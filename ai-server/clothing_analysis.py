@@ -368,6 +368,8 @@ class ClothingClassifier:
         """
         vectors = self._view_vectors(original, foreground)
         similarities, subject_scores, full_scores = self._view_scores(vectors)
+        indices = [index for index, entry in enumerate(CATEGORIES) if not section_hint or entry[1] == section_hint]
+        first_sure = None
         views = []
         if extra:
             all_similarities, all_subjects = [similarities], [subject_scores]
@@ -379,17 +381,24 @@ class ClothingClassifier:
                 views.append({"category": own, "similarity": round(float(vectors[0] @ view_vectors[0]), 4)})
             first = CATEGORIES[int(np.argmax(similarities[:len(CATEGORIES)]))][0]
             views.insert(0, {"category": first, "similarity": 1.0})
+            own = ranked(similarities[indices])
+            if own[0][1] >= CONFIDENCE_MIN and own[0][1] - own[1][1] >= CONFIDENCE_GAP:
+                first_sure = CATEGORIES[indices[own[0][0]]][0]
             # Averaged logits: one view's strong opinion counts, but two views that agree count more.
             similarities = np.mean(all_similarities, axis=0)
             subject_scores = np.mean(all_subjects, axis=0)
 
-        indices = [index for index, entry in enumerate(CATEGORIES) if not section_hint or entry[1] == section_hint]
         choices = ranked(similarities[indices])
         candidates = [{"category": CATEGORIES[indices[index]][0], "section": CATEGORIES[indices[index]][1], "score": round(score, 3)}
                       for index, score in choices[:3]]
         top = candidates[0]
         runner_up = candidates[1]["score"] if len(candidates) > 1 else 0.0
         uncertain = top["score"] < CONFIDENCE_MIN or top["score"] - runner_up < CONFIDENCE_GAP
+        if first_sure == top["category"]:
+            # Another view that agrees does not make an answer the photo was sure of unsure: averaged with a
+            # less decided flat, the margin shrinks, and on 58 real photos that alone asked for 5 more
+            # confirmations of right answers without flagging a single wrong one (FLAT_REPORT.md).
+            uncertain = False
 
         pattern_choices = ranked(subject_scores[len(CATEGORIES):len(CATEGORIES) + len(PATTERNS)])
         pattern_index, pattern_score = pattern_choices[0]
