@@ -86,6 +86,7 @@ class GarmentFlat(FlatCase):
                                         'На фото человек: проверь цвет и тип вещи. Для точного анализа лучше отдельное фото одежды.'])
         result = await self.call(classifier=SimpleNamespace(predict=predict), section='Верх')
         self.assertEqual(seen, {'original': (600, 800), 'hint': 'Верх', 'extra': [((1024, 1024), 'RGBA')]})
+        self.assertIs(result['checked'], True)
         analysis = result['analysis']
         self.assertEqual((analysis['category'], analysis['needsReview'], analysis['pattern']), ('Худи', True, 'Однотонный'))
         self.assertEqual(analysis['categoryCandidates'][0]['category'], 'Худи')
@@ -140,6 +141,8 @@ class GarmentFlat(FlatCase):
         result = await self.call(classifier=SimpleNamespace(predict=broken))
         self.picture(result['image'])
         self.assertNotIn('analysis', result)
+        # Shown, but the app is told nobody checked it is the same garment.
+        self.assertIs(result['checked'], False)
 
     async def test_a_photo_rembg_cannot_cut_is_read_whole(self):
         seen = {}
@@ -167,6 +170,7 @@ class GarmentFlatResilience(FlatCase):
             result = await self.call(prediction())
         self.picture(result['image'])
         self.assertNotIn('analysis', result)
+        self.assertIs(result['checked'], True)
         self.assertFalse(app._ANALYSIS_LOCK.locked())
 
     async def test_a_failed_cut_out_returns_the_flat_as_it_came(self):
@@ -175,6 +179,7 @@ class GarmentFlatResilience(FlatCase):
         result = await self.call(prediction(), rembg=remove)
         self.assertTrue(result['image'].startswith('data:image/jpeg;base64,'))
         self.assertNotIn('analysis', result)
+        self.assertIs(result['checked'], False)
         self.assertFalse(app._ANALYSIS_LOCK.locked())
 
     async def test_the_flat_waits_for_the_models_then_reads_it(self):
@@ -209,6 +214,27 @@ class GarmentFlatResilience(FlatCase):
             app._ANALYSIS_LOCK.release()
         self.assertTrue(result['image'].startswith('data:image/jpeg;base64,'))
         self.assertNotIn('analysis', result)
+        self.assertIs(result['checked'], False)
+
+    async def test_an_analyze_cache_hit_keeps_the_photo_cut_out_fresh(self):
+        calls = []
+        def remove(content, image):
+            calls.append(image.size)
+            return fake_rembg()(content, image)
+        classifier = SimpleNamespace(predict=lambda *args, **kwargs: prediction())
+        with patch.object(app.access, 'throttle'), patch.object(app, '_remove_background_rgba', side_effect=remove), \
+                patch.object(app, 'get_classifier', return_value=classifier), patch.object(app.feedback, 'remember_analysis'):
+            app.analyze(photo_upload(), '', 'masha')
+            # Three other photos push it to the front of the queue's end...
+            for shade in range(3):
+                other = BytesIO(); Image.new("RGB", (300, 400), (60 * shade, 90, 200 - 60 * shade)).save(other, "JPEG")
+                app._remember_photo_cut(other.getvalue(), Image.new('RGB', (2, 2)), Image.new('RGBA', (2, 2)))
+                if shade == 1:
+                    # ...but the same photo analysed again (an /analyze cache hit) is the latest again.
+                    app.analyze(photo_upload(), '', 'masha')
+        self.assertEqual(calls, [(600, 800)])
+        await self.call(prediction(), rembg=remove)
+        self.assertEqual(calls, [(600, 800), (1024, 1024)])
 
     async def test_the_photo_analyze_cut_out_is_not_cut_again(self):
         calls = []

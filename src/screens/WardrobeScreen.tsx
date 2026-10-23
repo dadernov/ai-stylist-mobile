@@ -368,6 +368,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     try {
       // Only the picture changes: what the item was saved as stays the person's.
       const flat = await flattenGarment(photo, item.section);
+      // Not compared with the photo (the server's recognition was down or busy): it never replaces a card unseen.
+      if (!flat.checked) { Alert.alert(t('Не удалось выровнять фото'), t('Не получилось проверить, что на ровном фото та же вещь, поэтому оставили прежнее. Попробуй позже.')); return; }
       if (item.imageUri) setFlatUndo({ id: item.id, imageUri: item.imageUri });
       forgetFlat(item.id);
       putFlat(item.id, flat.image);
@@ -553,16 +555,21 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         setDraftFlat({ flat: null, cutout, busy: true });
         flattenGarment(photoUri, sectionHint).then(flat => {
           // Saved already: only its picture changes, never what it was saved as.
+          // An unchecked flat (not compared with the photo) never goes onto a saved card, and in the draft it is only
+          // offered: the person picks it or not.
           const saved = flatTargets.current.get(requestId);
-          if (saved) { flatTargets.current.delete(requestId); putFlat(saved, flat.image); return; }
+          if (saved) { flatTargets.current.delete(requestId); if (flat.checked) putFlat(saved, flat.image); return; }
           if (analysisRequestRef.current !== requestId) return;
           setDraftFlat({ flat: flat.image, cutout, busy: false });
-          setDraftPhoto(flat.image);
+          if (flat.checked) setDraftPhoto(flat.image);
           // The flat and the photo read together are the surer reading; the analysis id stays the photo's.
           // The photo's own reasons for a review (a background it could not remove) and its colour, when the
           // flat has none, stay (domain/flatReading).
           if (flat.analysis) {
-            const merged = mergeFlatReading(result, flat.analysis);
+            // A section set by hand meanwhile keeps its kind of things: the flat's category, season and traits stay out.
+            const manualSection = manualFields.current.has('section') ? draftSectionRef.current : null;
+            const fits = categoryFitsSection(flat.analysis.category || '', getSectionByCategory(flat.analysis.category || ''), manualSection);
+            const merged = mergeFlatReading(result, flat.analysis, { keepPhotoCategory: !fits });
             setAnalysis(merged);
             applyReading(merged);
           }

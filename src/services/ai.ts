@@ -8,6 +8,7 @@ import { GarmentProfile, GarmentTraits, WardrobeItem } from '../data/mock';
 import { fetchJson } from './http';
 import { decodeGarmentProfile, decodeStyleVec } from '../domain/garmentTraits';
 import { translate } from '../constants/i18n';
+import { readFlatResponse } from '../domain/flatReading';
 
 export type AiResult = {
   /** Names this analysis when the item is saved, so the category chosen teaches the model (sendCategoryFeedback). */
@@ -216,6 +217,8 @@ export type FlatGarment = {
   image: string;
   /** Absent from an older server, or when recognition was unavailable. */
   analysis?: FlatAnalysis;
+  /** False when the server could not check the flat shows the photo's garment: never put on a card by itself. */
+  checked: boolean;
 };
 
 /** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo.
@@ -225,10 +228,7 @@ export async function flattenGarment(uri: string, sectionHint?: string): Promise
   await appendPhoto(form, 'file', uri);
   // The analysis keeps to the section the item is being added to, as /analyze does.
   if (sectionHint) form.append('section_hint', sectionHint);
-  const result = await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000);
-  if (typeof result?.image !== 'string') throw new Error('no image');
-  const analysis = result.analysis && typeof result.analysis === 'object' && typeof result.analysis.category === 'string' ? result.analysis : undefined;
-  return { image: result.image, analysis };
+  return readFlatResponse(await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000));
 }
 
 /** The traits of an item added before /analyze returned them: read once, then kept with the item. */

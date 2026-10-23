@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }, fileName: filename }).outputText, filename);
-const { mergeFlatReading, categoryFitsSection } = require(path.join(__dirname, '../src/domain/flatReading.ts'));
+const { mergeFlatReading, categoryFitsSection, readFlatResponse } = require(path.join(__dirname, '../src/domain/flatReading.ts'));
 
 const photo = {
   analysisId: 'a1', bgRemovedBase64: 'data:image/png;base64,cut', backgroundRemoved: true,
@@ -46,5 +46,26 @@ assert.equal(categoryFitsSection('Худи', 'Верх', null), true);
 assert.equal(categoryFitsSection('Худи', 'Верх', 'Верхняя одежда'), false);
 assert.equal(categoryFitsSection('Куртка', 'Верхняя одежда', 'Верхняя одежда'), true);
 assert.equal(categoryFitsSection('', 'Верх', null), false);
+
+// A flat category skipped for a hand-set section takes its season and traits with it; colour and pattern still come.
+const photoTraits = { ...photo, season: 'Демисезон', traits: { sleeves: 'long', opening: 'front' }, categoryCandidates: [{ category: 'Куртка', section: 'Верхняя одежда', score: 0.6 }] };
+merged = mergeFlatReading(photoTraits, { ...flat, season: 'Круглый год', traits: { sleeves: 'long', opening: 'none' }, pattern: 'Полоска' }, { keepPhotoCategory: true });
+assert.equal(merged.category, 'Куртка');
+assert.equal(merged.section, 'Верхняя одежда');
+assert.equal(merged.season, 'Демисезон');
+assert.deepEqual(merged.traits, { sleeves: 'long', opening: 'front' });
+assert.equal(merged.categoryCandidates[0].category, 'Куртка');
+assert.equal(merged.needsReview, true);
+assert.equal(merged.pattern, 'Полоска');
+assert.equal(merged.dominantColor, '#2a3a5a');
+// ...and the photo's doubt about its category stays, since nothing answered it.
+assert.ok(merged.warnings.some(w => w.startsWith('Тип вещи')));
+
+// The server's answer: an older one has no "checked" and counts as checked, as before.
+assert.deepEqual(readFlatResponse({ image: 'data:image/png;base64,x' }), { image: 'data:image/png;base64,x', analysis: undefined, checked: true });
+assert.equal(readFlatResponse({ image: 'x', checked: false }).checked, false);
+assert.equal(readFlatResponse({ image: 'x', checked: true, analysis: { category: 'Худи' } }).analysis.category, 'Худи');
+assert.equal(readFlatResponse({ image: 'x', analysis: { category: 7 } }).analysis, undefined);
+assert.throws(() => readFlatResponse({}));
 
 console.log('PASS: the flat reading merges into the draft without losing the photo\'s own reasons or a hand-set section');

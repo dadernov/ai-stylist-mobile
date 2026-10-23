@@ -1407,7 +1407,7 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
         flat_rgba, flat_cover = _garment_foreground(buffer.getvalue(), flat)
     except Exception as exc:
         print(f"Garment flat UNCHECKED, sent uncut: the cut-out failed ({type(exc).__name__}: {str(exc)[:120]})", flush=True)
-        return {"image": _flat_jpeg(flat)}
+        return {"image": _flat_jpeg(flat), "checked": False}
     if not 0.02 < flat_cover < 0.98:
         print(f"Garment flat: no cut-out (cover {flat_cover:.3f})", flush=True)
         raise HTTPException(502, FLAT_NO_CUTOUT)
@@ -1415,7 +1415,7 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
         picture = _flat_cutout_picture(flat_rgba)
     except Exception as exc:
         print(f"Garment flat UNCHECKED, sent uncut: the crop failed ({type(exc).__name__})", flush=True)
-        return {"image": _flat_jpeg(flat)}
+        return {"image": _flat_jpeg(flat), "checked": False}
     try:
         original, original_rgba = _photo_cut(content)
         result = get_classifier().predict(original, original_rgba, section_hint or None, extra=[(flat, flat_rgba)])
@@ -1423,7 +1423,7 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
     except Exception as exc:
         # Refusing a paid flat for our own outage would be worse than showing it unchecked.
         print(f"Garment flat UNCHECKED, sent without analysis: recognition failed ({type(exc).__name__}: {str(exc)[:120]})", flush=True)
-        return {"image": picture}
+        return {"image": picture, "checked": False}
     if flat_view["similarity"] < FLAT_MIN_SIMILARITY or _garment_zone(photo_view["category"]) != _garment_zone(flat_view["category"]):
         print(f"Garment flat rejected: similarity {flat_view['similarity']:.3f}, {photo_view['category']} -> {flat_view['category']}", flush=True)
         raise HTTPException(422, FLAT_DIFFERENT)
@@ -1435,9 +1435,9 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
                          "warnings": [warning for warning in result.get("warnings", []) if not warning.startswith("На фото человек")]})
     except Exception as exc:
         print(f"Garment flat checked, sent without analysis: {type(exc).__name__}: {str(exc)[:120]}", flush=True)
-        return {"image": picture}
+        return {"image": picture, "checked": True}
     print(f"Garment flat: similarity {flat_view['similarity']:.3f}, {photo_view['category']} / {flat_view['category']} -> {result['category']}", flush=True)
-    return {"image": picture, "analysis": analysis}
+    return {"image": picture, "analysis": analysis, "checked": True}
 
 
 async def _take_models(timeout: float):
@@ -1467,7 +1467,9 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     "image" is a PNG cut-out of the flat (at most 800 px); "analysis" is the category,
     colour and pattern read from the flat and the photo together. A flat that does not
     show the photo's garment is refused (422), so the app keeps the photo's own cut-out.
-    section_hint narrows the category as in /analyze.
+    "checked" says whether the flat was compared with the photo at all: when our own recognition
+    failed or stayed busy, the picture still comes (it is paid for) but unchecked, and the app
+    must not put it on a card by itself. section_hint narrows the category as in /analyze.
     """
     started = time.monotonic()
     access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
@@ -1496,7 +1498,7 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     wait = max(1.0, min(FLAT_MODEL_WAIT, FLAT_ANSWER_BY - (time.monotonic() - started)))
     if not await _take_models(wait):
         print(f"Garment flat UNCHECKED, sent uncut: the models stayed busy for {wait:.0f} s", flush=True)
-        return {"image": _flat_jpeg(image)}
+        return {"image": _flat_jpeg(image), "checked": False}
     # Shielded: a request dropped meanwhile must not cancel the work before it starts, or the lock stays taken.
     return await asyncio.shield(asyncio.to_thread(_holding_models, _flat_card, content, image, section_hint))
 
@@ -1658,6 +1660,10 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
     try:
         key = hashlib.sha256(content + section_hint.encode()).hexdigest()
         if key in _ANALYSIS_CACHE:
+            # Read again, so its flat picture follows: its cut-out is the one to keep.
+            photo_key = hashlib.sha256(content).hexdigest()
+            if photo_key in _PHOTO_CUTS:
+                _PHOTO_CUTS.move_to_end(photo_key)
             return _ANALYSIS_CACHE[key]
         try:
             original, analysis_content = _prepare_image_for_analysis(content)
