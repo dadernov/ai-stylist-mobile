@@ -92,7 +92,9 @@ def load_head(path=None):
         if _head is not None and _head[0] == path:
             return _head[1]
         head = None
-        if path.exists():
+        if not path.exists():
+            print(f"Colour head {path.name} missing; colours named the old way", flush=True)
+        else:
             try:
                 with np.load(path, allow_pickle=False) as data:
                     if [str(name) for name in data["names"]] == NAMES and data["W"].shape[1] == len(NAMES):
@@ -116,7 +118,7 @@ def name_colour(embedding, foreground: Image.Image):
         return {}
     weights, bias = head
     embedding = np.asarray(embedding, np.float32)
-    if embedding.shape != (weights.shape[0],):
+    if embedding.shape != (weights.shape[0],) or not np.isfinite(embedding).all():
         return {}
     logits = embedding @ weights + bias
     head_probabilities = np.exp(logits - logits.max())
