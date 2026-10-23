@@ -166,6 +166,20 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('seed', sent)
         self.assertEqual((sent['image_size'], len(sent['image_urls'])), ('auto_2K', 3))
 
+    async def test_seedreams_image_comes_inside_its_result(self):
+        inline = 'data:image/jpeg;base64,' + 'A' * 64
+        client, calls = queue([{'status': 'COMPLETED'}], {'images': [{'url': inline, 'content_type': 'image/jpeg'}]})
+        result = await self.run_look(client, model='seedream-5-lite')
+        self.assertTrue(json.loads(calls[0][2])['sync_mode'])
+        self.assertEqual(result['outputUrl'], inline)
+        with patch.dict(os.environ, {'TRYON_FAL_INLINE': 'off'}):
+            client, calls = queue([{'status': 'COMPLETED'}], {'images': [{'url': 'https://fal.media/out.jpg'}]})
+            await self.run_look(client, model='seedream-5-lite')
+        self.assertNotIn('sync_mode', json.loads(calls[0][2]))
+        client, calls = queue([{'status': 'COMPLETED'}], {'image': {'url': 'https://fal.media/bria.png'}})
+        await self.run_look(client, model='bria-tryon')
+        self.assertNotIn('sync_mode', json.loads(calls[0][2]), 'only Seedream is asked for it')
+
     def streamed(self, events, stream_status=200, result=None, statuses=({'status': 'COMPLETED'},), close_early=0):
         """A fal queue whose status stream sends `events`; plain polls answer `statuses`."""
         calls, opened = [], []

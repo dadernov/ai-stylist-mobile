@@ -192,9 +192,22 @@ def payload(model, person_url, garment_urls, prompt, seed, frame_size=None):
         body['image_size'] = size
     if model.family == 'seedream':
         body['max_images'] = 1
+        if inline_result():
+            body['sync_mode'] = True
     else:
         body['output_format'] = 'png'
     return body
+
+
+def inline_result():
+    """Seedream's image comes inside its result as a data URI (`sync_mode`), TRYON_FAL_INLINE=off for a file URL.
+
+    The file was a second request to fal's CDN on a fresh connection after the
+    result, 0.4-0.6 s before its first byte; inline, the same image comes with
+    the result. fal then keeps neither a public file of the look nor the
+    output in its request history.
+    """
+    return os.getenv('TRYON_FAL_INLINE', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
 
 
 def _image_url(output):
