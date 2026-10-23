@@ -1,6 +1,8 @@
 """/garment-flat: the flat picture comes back as a transparent cut-out with what it and the photo show together,
 and a flat that shows another garment is refused. fal and rembg are mocked; the classifier is too, except in
 FlatViews, where predict runs over stubbed image vectors."""
+import asyncio
+import threading
 import unittest
 from io import BytesIO
 from types import SimpleNamespace
@@ -42,7 +44,11 @@ def prediction(own='Футболка', other='Футболка', similarity=0.93
             'views': [{'category': own, 'similarity': 1.0}, {'category': other, 'similarity': similarity}], **extra}
 
 
-class GarmentFlat(unittest.IsolatedAsyncioTestCase):
+class FlatCase(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        app._PHOTO_CUTS.clear()
+        app._ANALYSIS_CACHE.clear()
+
     async def call(self, predicted=None, rembg=None, classifier=None, flat=None, section=''):
         flat = flat or Image.new('RGB', (1024, 1024), (200, 60, 60))
         classifier = classifier or SimpleNamespace(predict=lambda *args, **kwargs: predicted)
@@ -57,11 +63,14 @@ class GarmentFlat(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data_url.startswith('data:image/png;base64,'))
         return Image.open(BytesIO(app._data_url_to_bytes(data_url)[0]))
 
+
+class GarmentFlat(FlatCase):
+
     async def test_the_flat_comes_back_as_a_transparent_cut_out_cropped_to_the_garment(self):
         result = await self.call(prediction())
         image = self.picture(result['image'])
         self.assertEqual(image.mode, 'RGBA')
-        # 600 x 800 garment, 4% margin each side (32 px), then at most 1000 px.
+        # 600 x 800 garment, 4% margin each side (32 px), then at most 800 px.
         self.assertLessEqual(max(image.size), app.FLAT_MAX_SIDE)
         self.assertAlmostEqual(image.width / image.height, 664 / 864, places=2)
         alpha = np.asarray(image.getchannel('A'))
@@ -123,7 +132,7 @@ class GarmentFlat(unittest.IsolatedAsyncioTestCase):
             await self.call(prediction(), rembg=whole)
         self.assertEqual(raised.exception.status_code, 502)
         self.assertEqual(raised.exception.detail, app.FLAT_NO_CUTOUT)
-        self.assertFalse(app._FLAT_LOCK.locked())
+        self.assertFalse(app._ANALYSIS_LOCK.locked())
 
     async def test_without_the_classifier_the_picture_still_comes(self):
         def broken(*args, **kwargs):
@@ -141,6 +150,86 @@ class GarmentFlat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen['alpha'], (255, 255))
 
 
+class GarmentFlatResilience(FlatCase):
+    """The flat is paid for before any of this runs: our own failures never lose it."""
+
+    async def test_faint_matting_at_the_edge_is_not_cropped_into_the_picture(self):
+        def remove(content, image):
+            rgba = cut_out(image, (212, 112, 812, 912) if image.size == (1024, 1024) else (100, 100, 500, 700))
+            if image.size == (1024, 1024):
+                alpha = rgba.getchannel('A'); alpha.paste(20, (0, 0, 1024, 60)); rgba.putalpha(alpha)
+            return rgba, b''
+        image = self.picture((await self.call(prediction(), rembg=remove))['image'])
+        self.assertAlmostEqual(image.width / image.height, 664 / 864, places=2)
+
+    async def test_a_failure_after_the_check_returns_the_picture_without_the_analysis(self):
+        with patch.object(app, 'extract_palette', side_effect=RuntimeError('boom')):
+            result = await self.call(prediction())
+        self.picture(result['image'])
+        self.assertNotIn('analysis', result)
+        self.assertFalse(app._ANALYSIS_LOCK.locked())
+
+    async def test_a_failed_cut_out_returns_the_flat_as_it_came(self):
+        def remove(content, image):
+            raise MemoryError('rembg')
+        result = await self.call(prediction(), rembg=remove)
+        self.assertTrue(result['image'].startswith('data:image/jpeg;base64,'))
+        self.assertNotIn('analysis', result)
+        self.assertFalse(app._ANALYSIS_LOCK.locked())
+
+    async def test_the_flat_waits_for_the_models_then_reads_it(self):
+        app._ANALYSIS_LOCK.acquire()
+        threading.Timer(0.4, app._ANALYSIS_LOCK.release).start()
+        result = await self.call(prediction())
+        self.assertIn('analysis', result)
+        self.assertFalse(app._ANALYSIS_LOCK.locked())
+
+    async def test_a_request_dropped_mid_way_still_gives_the_models_back(self):
+        import time
+        started = threading.Event()
+        def slow_card(*args):
+            started.set(); time.sleep(0.3); return {'image': 'x'}
+        with patch.object(app, '_flat_card', side_effect=slow_card):
+            task = asyncio.ensure_future(self.call(prediction()))
+            while not started.is_set():
+                await asyncio.sleep(0.01)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(app._ANALYSIS_LOCK.locked())
+            await asyncio.sleep(0.5)
+        self.assertFalse(app._ANALYSIS_LOCK.locked())
+
+    async def test_models_busy_too_long_send_the_flat_back_uncut(self):
+        app._ANALYSIS_LOCK.acquire()
+        try:
+            with patch.object(app, 'FLAT_MODEL_WAIT', 0.3):
+                result = await self.call(prediction())
+        finally:
+            app._ANALYSIS_LOCK.release()
+        self.assertTrue(result['image'].startswith('data:image/jpeg;base64,'))
+        self.assertNotIn('analysis', result)
+
+    async def test_the_photo_analyze_cut_out_is_not_cut_again(self):
+        calls = []
+        def remove(content, image):
+            calls.append(image.size)
+            return fake_rembg()(content, image)
+        classifier = SimpleNamespace(predict=lambda *args, **kwargs: prediction())
+        with patch.object(app.access, 'throttle'), patch.object(app, '_remove_background_rgba', side_effect=remove), \
+                patch.object(app, 'get_classifier', return_value=classifier), patch.object(app.feedback, 'remember_analysis'):
+            app.analyze(photo_upload(), '', 'masha')
+        self.assertEqual(calls, [(600, 800)])
+        result = await self.call(prediction(), rembg=remove)
+        self.assertIn('analysis', result)
+        # Only the flat is cut out; the photo's cut-out is /analyze's.
+        self.assertEqual(calls, [(600, 800), (1024, 1024)])
+        # Evicted, it is made again.
+        app._PHOTO_CUTS.clear()
+        await self.call(prediction(), rembg=remove)
+        self.assertEqual(calls[2:], [(1024, 1024), (600, 800)])
+
+
 class GarmentZones(unittest.TestCase):
     def test_zones(self):
         self.assertEqual({app._garment_zone(c) for c in ('Футболка', 'Худи', 'Пиджак', 'Пуховик', 'Жилет')}, {'top'})
@@ -156,15 +245,22 @@ class FlatViews(unittest.TestCase):
         classifier.size = 8
         classifier.head = None
         rows = len(ca._subjects())
-        features = np.zeros((rows, 4), np.float32)
-        tee, hoodie, jacket = (ca.CATEGORIES.index(next(e for e in ca.CATEGORIES if e[0] == name)) for name in ('Футболка', 'Худи', 'Куртка'))
-        features[tee, 0] = features[hoodie, 1] = features[jacket, 2] = 1
+        features = np.zeros((rows, 6), np.float32)
+        index = {entry[0]: number for number, entry in enumerate(ca.CATEGORIES)}
+        for column, name in enumerate(('Футболка', 'Худи', 'Куртка'), start=0):
+            features[index[name], column] = 1
+        features[index['Платье'], 4] = features[index['Юбка'], 5] = 1
         features[len(ca.CATEGORIES), 3] = 1  # plain
         features[-1, 3] = 1  # a product alone
         classifier.features = features
         # A view is told by its colour: red is the photo, blue the flat.
-        classifier._embed = lambda images: np.array([vectors[image.convert('RGB').getpixel((4, 4))] for image in images])
-        classifier.traits = lambda image, category='': {'sleeves': 'long'}
+        vectors = {colour: np.pad(np.asarray(vector, np.float32), (0, 6 - len(vector))) for colour, vector in vectors.items()}
+        classifier.embedded = []
+        def embed(images):
+            classifier.embedded += [image.convert('RGB').getpixel((4, 4)) for image in images]
+            return np.array([vectors[image.convert('RGB').getpixel((4, 4))] for image in images])
+        classifier._embed = embed
+        classifier.traits = lambda image, category='', frame_vector=None: {'sleeves': 'long'}
         return classifier
 
     def view(self, colour):
@@ -186,6 +282,7 @@ class FlatViews(unittest.TestCase):
         self.assertEqual([view['category'] for view in both['views']], ['Куртка', 'Худи'])
         self.assertEqual(both['views'][0]['similarity'], 1.0)
         self.assertAlmostEqual(both['views'][1]['similarity'], float(photo @ flat), places=3)
+        self.assertEqual([view['sure'] for view in both['views']], [True, True])
         # Photo and flat disagree, so the combined answer asks to be checked.
         self.assertTrue(both['needsReview'])
         # The feedback embedding stays the photo's own.
@@ -204,6 +301,34 @@ class FlatViews(unittest.TestCase):
         unsure = self.classifier({self.red: np.array([0, .300, .295, 0], np.float32), self.blue: np.array([0, .297, .303, 0], np.float32)})
         self.assertTrue(unsure.predict(*self.view(self.red))['needsReview'])
         self.assertTrue(unsure.predict(*self.view(self.red), extra=[self.view(self.blue)])['needsReview'])
+
+    def test_a_flat_sure_of_something_else_keeps_the_answer_in_question(self):
+        # The photo is sure of the hoodie (p 0.88), the flat as sure of the jacket (p 0.86): averaged, the hoodie
+        # stays on top, but by a hair, and one view contradicting the other is worth a look.
+        classifier = self.classifier({self.red: np.array([0, .30, .28, 0], np.float32), self.blue: np.array([0, .282, .30, 0], np.float32)})
+        both = classifier.predict(*self.view(self.red), extra=[self.view(self.blue)])
+        self.assertEqual(both['category'], 'Худи')
+        self.assertEqual([(view['category'], view['sure']) for view in both['views']], [('Худи', True), ('Куртка', True)])
+        self.assertTrue(both['needsReview'])
+
+    def test_with_a_section_hint_each_view_is_read_within_it(self):
+        # A worn skirt: the photo alone reads a dress, the flat a skirt. Added to the bottoms, both read as
+        # skirts, so the views agree on the zone and the paid flat is not refused.
+        classifier = self.classifier({self.red: np.array([0, 0, 0, 0, .31, .30], np.float32), self.blue: np.array([0, 0, 0, 0, .28, .31], np.float32)})
+        free = classifier.predict(*self.view(self.red), extra=[self.view(self.blue)])
+        self.assertEqual([view['category'] for view in free['views']], ['Платье', 'Юбка'])
+        hinted = classifier.predict(*self.view(self.red), 'Низ', extra=[self.view(self.blue)])
+        self.assertEqual([view['category'] for view in hinted['views']], ['Юбка', 'Юбка'])
+        self.assertEqual(hinted['category'], 'Юбка')
+
+    def test_a_photo_read_again_is_not_embedded_again(self):
+        classifier = self.classifier({self.red: [0, .30, .28, 0], self.blue: [0, .29, .30, 0]})
+        classifier.predict(*self.view(self.red))
+        self.assertEqual(classifier.embedded, [self.red, self.red])
+        classifier.predict(*self.view(self.red), extra=[self.view(self.blue)])
+        # Only the flat's two views are new; the traits reuse the photo's frame vector.
+        self.assertEqual(classifier.embedded, [self.red, self.red, self.blue, self.blue])
+
 
 if __name__ == '__main__':
     unittest.main()

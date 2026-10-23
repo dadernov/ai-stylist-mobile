@@ -88,7 +88,7 @@ class AnalysisTests(unittest.TestCase):
     def test_busy(self):
         app._ANALYSIS_LOCK.acquire()
         try:
-            with self.assertRaises(HTTPException) as raised:
+            with patch.object(app, 'ANALYSIS_WAIT', 0.2), self.assertRaises(HTTPException) as raised:
                 app.analyze(self.upload(b'x'), '')
             self.assertEqual(raised.exception.status_code, 503)
         finally:

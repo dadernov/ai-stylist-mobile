@@ -1,6 +1,7 @@
 import base64
 import asyncio
 import hashlib
+from collections import OrderedDict
 import json
 from io import BytesIO
 import math
@@ -171,8 +172,14 @@ async def _publish_queue_place(device, job_id, position):
             'done': [], 'pending': [], 'stage': 'queue', 'position': position, 'total': 1}})
     except Exception as exc:
         print(f'Try-on queue progress unavailable: {type(exc).__name__}', flush=True)
+# One lock for every recognition on this box's models (rembg + SigLIP): /analyze and the flat card picture.
+# On one CPU two at once only make both slow and push the box into swap.
 _ANALYSIS_LOCK = threading.Lock()
 _ANALYSIS_CACHE = {}
+# The photos /analyze has just cut out, by their bytes: /garment-flat reads the same photo right after.
+# A few full-size images; one evicted is simply cut out again.
+_PHOTO_CUTS = OrderedDict()
+_PHOTO_CUTS_SIZE = 3
 _REMBG_LOCK = threading.Lock()
 _rembg_session = None
 
@@ -1309,13 +1316,23 @@ FLAT_PROMPT = ('Product photo of exactly this garment alone, neatly laid out fla
 # zone check below catches those), one of the same kind 16%. A refusal wastes a paid flat, so the
 # bar keeps a 0.09 margin under the lowest real pair rather than chasing look-alikes.
 FLAT_MIN_SIMILARITY = _env_float('AI_FLAT_MIN_SIMILARITY', 0.70)
-FLAT_MAX_SIDE = 1000
+# 800 px is 2.5 px per point on the 320-point card; a full-colour PNG there is a third smaller than at
+# 1000 px (median 476 KB against 657 KB on 40 real flats). A 256-colour PNG would be 88 KB but blotches
+# smooth fabric at zoom, so the colours stay whole (FLAT_REPORT.md).
+FLAT_MAX_SIDE = 800
 FLAT_DIFFERENT = "Ровное фото вышло непохожим на вещь, оставили исходное."
 FLAT_NO_CUTOUT = "Не удалось вырезать вещь на ровном фото, оставили исходное."
-_FLAT_LOCK = threading.Lock()
+PHOTO_UNREADABLE = "Не удалось открыть фото. Выбери JPEG, PNG или WebP до 25 мегапикселей."
+# /analyze waits this long for the models while a flat is being read (a few seconds each).
+ANALYSIS_WAIT = _env_float('AI_ANALYSIS_WAIT', 20.0)
+# A flat waits for the models at most this long, and never past FLAT_ANSWER_BY seconds since the request
+# came, so the app (150 s) hears back; past it the flat goes back as it came, uncut and unchecked.
+FLAT_MODEL_WAIT = _env_float('AI_FLAT_MODEL_WAIT', 60.0)
+FLAT_ANSWER_BY = 115.0
 _ONE_PIECE = {"Платье", "Сарафан", "Комбинезон"}
 _CATEGORY_SECTION = {entry[0]: entry[1] for entry in CATEGORIES}
-# Analysis fields the flat picture answers; traits, the person check and the feedback id stay /analyze's.
+# What the flat and the photo answer together. The traits come along for the combined category, still
+# read from the photo itself as a try-on reads them; the person check and the feedback id stay /analyze's.
 _FLAT_ANALYSIS_FIELDS = ("category", "section", "categoryCandidates", "needsReview", "pattern", "season", "traits", "analysisSource")
 
 
@@ -1327,6 +1344,27 @@ def _garment_zone(category):
     return "top" if section in ("Верх", "Верхняя одежда") else section
 
 
+def _remember_photo_cut(content: bytes, original: Image.Image, foreground: Image.Image):
+    key = hashlib.sha256(content).hexdigest()
+    _PHOTO_CUTS[key] = (original, foreground)
+    _PHOTO_CUTS.move_to_end(key)
+    while len(_PHOTO_CUTS) > _PHOTO_CUTS_SIZE:
+        _PHOTO_CUTS.popitem(last=False)
+
+
+def _photo_cut(content: bytes):
+    """The photo and the cut-out /analyze read it with: kept from /analyze, or made again the same way."""
+    cached = _PHOTO_CUTS.get(hashlib.sha256(content).hexdigest())
+    if cached:
+        return cached
+    original, analysis_content = _prepare_image_for_analysis(content)
+    foreground, cover = _garment_foreground(analysis_content, original)
+    if cover <= 0.02:
+        foreground = original.convert("RGBA")
+    _remember_photo_cut(content, original, foreground)
+    return original, foreground
+
+
 def _garment_foreground(content: bytes, image: Image.Image):
     """The garment cut out by rembg and how much of the frame it covers."""
     rgba, _ = _remove_background_rgba(content, image)
@@ -1335,47 +1373,89 @@ def _garment_foreground(content: bytes, image: Image.Image):
     return rgba, float((np.asarray(rgba.getchannel("A")) > 180).mean())
 
 
+def _flat_jpeg(flat: Image.Image):
+    """The flat as it came (the card shows it as a print): when it could not be cut out and checked."""
+    image = flat.convert("RGB")
+    image.thumbnail((1280, 1280))
+    buffer = BytesIO()
+    image.save(buffer, "JPEG", quality=90)
+    return 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode()
+
+
+def _flat_cutout_picture(flat_rgba: Image.Image):
+    """The cut-out cropped to the garment with a small margin, at most FLAT_MAX_SIDE, as a PNG data URL."""
+    # Faint matting at the edge does not count as garment: the crop follows what can be seen.
+    x0, y0, x1, y1 = flat_rgba.getchannel("A").point(lambda value: 255 if value > 32 else 0).getbbox()
+    margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
+    card = flat_rgba.crop((max(0, x0 - margin), max(0, y0 - margin), min(flat_rgba.width, x1 + margin), min(flat_rgba.height, y1 + margin)))
+    card.thumbnail((FLAT_MAX_SIDE, FLAT_MAX_SIDE), Image.Resampling.LANCZOS)
+    return _image_to_data_url(card)
+
+
 def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
     """The flat picture as a transparent cut-out for the card, and what it and the photo show together.
 
-    Raises HTTPException when the flat cannot be cut out or does not show the photo's garment;
-    the app then keeps the photo's own cut-out.
+    Runs holding the models (_ANALYSIS_LOCK, taken by the caller). Refuses (HTTPException) a flat that
+    cannot be cut out or does not show the photo's garment; the app then keeps the photo's own cut-out.
+    The flat is paid for by then, so a failure of ours never loses it: it comes back without the
+    analysis, and unchecked (logged as such).
     """
-    original, analysis_content = _prepare_image_for_analysis(content)
     flat = flat.convert("RGB")
-    buffer = BytesIO()
-    flat.save(buffer, "JPEG", quality=92)
-    with _FLAT_LOCK:
+    try:
+        buffer = BytesIO()
+        flat.save(buffer, "JPEG", quality=92)
         flat_rgba, flat_cover = _garment_foreground(buffer.getvalue(), flat)
-        if not 0.02 < flat_cover < 0.98:
-            print(f"Garment flat: no cut-out (cover {flat_cover:.3f})", flush=True)
-            raise HTTPException(502, FLAT_NO_CUTOUT)
-        original_rgba, cover = _garment_foreground(analysis_content, original)
-        if cover <= 0.02:
-            original_rgba = original.convert("RGBA")
-        try:
-            result = get_classifier().predict(original, original_rgba, section_hint or None, extra=[(flat, flat_rgba)])
-        except Exception as exc:
-            print(f"Garment flat: classifier unavailable: {type(exc).__name__}", flush=True)
-            result = None
-    analysis = None
-    if result is not None:
-        own, other = result["views"][0], result["views"][1]
-        if other["similarity"] < FLAT_MIN_SIMILARITY or _garment_zone(own["category"]) != _garment_zone(other["category"]):
-            print(f"Garment flat rejected: similarity {other['similarity']:.3f}, {own['category']} -> {other['category']}", flush=True)
-            raise HTTPException(422, FLAT_DIFFERENT)
+    except Exception as exc:
+        print(f"Garment flat UNCHECKED, sent uncut: the cut-out failed ({type(exc).__name__}: {str(exc)[:120]})", flush=True)
+        return {"image": _flat_jpeg(flat)}
+    if not 0.02 < flat_cover < 0.98:
+        print(f"Garment flat: no cut-out (cover {flat_cover:.3f})", flush=True)
+        raise HTTPException(502, FLAT_NO_CUTOUT)
+    try:
+        picture = _flat_cutout_picture(flat_rgba)
+    except Exception as exc:
+        print(f"Garment flat UNCHECKED, sent uncut: the crop failed ({type(exc).__name__})", flush=True)
+        return {"image": _flat_jpeg(flat)}
+    try:
+        original, original_rgba = _photo_cut(content)
+        result = get_classifier().predict(original, original_rgba, section_hint or None, extra=[(flat, flat_rgba)])
+        photo_view, flat_view = result["views"][0], result["views"][1]
+    except Exception as exc:
+        # Refusing a paid flat for our own outage would be worse than showing it unchecked.
+        print(f"Garment flat UNCHECKED, sent without analysis: recognition failed ({type(exc).__name__}: {str(exc)[:120]})", flush=True)
+        return {"image": picture}
+    if flat_view["similarity"] < FLAT_MIN_SIMILARITY or _garment_zone(photo_view["category"]) != _garment_zone(flat_view["category"]):
+        print(f"Garment flat rejected: similarity {flat_view['similarity']:.3f}, {photo_view['category']} -> {flat_view['category']}", flush=True)
+        raise HTTPException(422, FLAT_DIFFERENT)
+    try:
         palette = extract_palette(flat_rgba, flat_rgba.getchannel("A"))
         # The flat shows the garment alone: its colour is the garment's even when the photo had a person in it.
         analysis = {field: result[field] for field in _FLAT_ANALYSIS_FIELDS if field in result}
         analysis.update({"dominantColor": palette[0] if palette else None, "palette": palette,
                          "warnings": [warning for warning in result.get("warnings", []) if not warning.startswith("На фото человек")]})
-        print(f"Garment flat: similarity {other['similarity']:.3f}, {own['category']} / {other['category']} -> {result['category']}", flush=True)
-    alpha = flat_rgba.getchannel("A")
-    x0, y0, x1, y1 = alpha.getbbox()
-    margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
-    card = flat_rgba.crop((max(0, x0 - margin), max(0, y0 - margin), min(flat.width, x1 + margin), min(flat.height, y1 + margin)))
-    card.thumbnail((FLAT_MAX_SIDE, FLAT_MAX_SIDE), Image.Resampling.LANCZOS)
-    return {"image": _image_to_data_url(card), **({"analysis": analysis} if analysis else {})}
+    except Exception as exc:
+        print(f"Garment flat checked, sent without analysis: {type(exc).__name__}: {str(exc)[:120]}", flush=True)
+        return {"image": picture}
+    print(f"Garment flat: similarity {flat_view['similarity']:.3f}, {photo_view['category']} / {flat_view['category']} -> {result['category']}", flush=True)
+    return {"image": picture, "analysis": analysis}
+
+
+async def _take_models(timeout: float):
+    """Takes the models' lock from async code: waiting holds no worker thread, as a blocking acquire would."""
+    deadline = time.monotonic() + timeout
+    while not _ANALYSIS_LOCK.acquire(blocking=False):
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(0.1)
+    return True
+
+
+def _holding_models(work, *args):
+    """Runs in a worker thread with the models' lock already taken, and gives it back when done."""
+    try:
+        return work(*args)
+    finally:
+        _ANALYSIS_LOCK.release()
 
 
 @app.post("/garment-flat")
@@ -1384,11 +1464,12 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
 
     Only for the card: the try-on keeps the item's own photo, so whatever the
     editor invents here never reaches a look. Seedream 5.0 Flash at 1K, about 15 s.
-    "image" is a PNG cut-out of the flat (at most 1000 px); "analysis" is the category,
+    "image" is a PNG cut-out of the flat (at most 800 px); "analysis" is the category,
     colour and pattern read from the flat and the photo together. A flat that does not
     show the photo's garment is refused (422), so the app keeps the photo's own cut-out.
     section_hint narrows the category as in /analyze.
     """
+    started = time.monotonic()
     access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
     if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
         raise HTTPException(422, "Неизвестная категория гардероба.")
@@ -1400,7 +1481,7 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     try:
         source = await asyncio.to_thread(_prepare_tryon_image_data_url, content, file.content_type or 'image/jpeg', FAL_GARMENT_SIDE, FAL_JPEG_QUALITY)
     except Exception:
-        raise HTTPException(422, "Не удалось открыть фото.")
+        raise HTTPException(422, PHOTO_UNREADABLE)
     model = fal_tryon.MODELS['seedream-5-flash']
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         # 1K: enough for a card, and 11-16 s instead of 18-25 s at the same price.
@@ -1412,10 +1493,12 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     if image is None:
         raise HTTPException(502, "Не удалось получить выровненное фото.")
     print(f"Garment flat: {result.get('runSeconds')} s, usd={model.flat_usd}", flush=True)
-    try:
-        return await asyncio.to_thread(_flat_card, content, image, section_hint)
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
-        raise HTTPException(422, "Не удалось открыть фото.")
+    wait = max(1.0, min(FLAT_MODEL_WAIT, FLAT_ANSWER_BY - (time.monotonic() - started)))
+    if not await _take_models(wait):
+        print(f"Garment flat UNCHECKED, sent uncut: the models stayed busy for {wait:.0f} s", flush=True)
+        return {"image": _flat_jpeg(image)}
+    # Shielded: a request dropped meanwhile must not cancel the work before it starts, or the lock stays taken.
+    return await asyncio.shield(asyncio.to_thread(_holding_models, _flat_card, content, image, section_hint))
 
 
 @app.post("/garment-traits")
@@ -1569,7 +1652,8 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
     content = file.file.read(15 * 1024 * 1024 + 1)
     if not content or len(content) > 15 * 1024 * 1024:
         raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
-    if not _ANALYSIS_LOCK.acquire(timeout=2):
+    # A flat card picture may hold the models for a few seconds: wait for it rather than turn the person away.
+    if not _ANALYSIS_LOCK.acquire(timeout=ANALYSIS_WAIT):
         raise HTTPException(503, "Анализ занят. Повтори через несколько секунд.")
     try:
         key = hashlib.sha256(content + section_hint.encode()).hexdigest()
@@ -1586,6 +1670,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
         if coverage <= 0.02:
             foreground = original.convert("RGBA")
             alpha = foreground.getchannel("A")
+        _remember_photo_cut(content, original, foreground)
         try:
             result = get_classifier().predict(original, foreground, section_hint or None)
             embedding = result.pop("embedding", None)

@@ -6,6 +6,7 @@ against 93% for the fashion one, and the confidence it reports actually tracks
 whether it is right, which is what lets the app stop asking the user to double
 check every single item.
 """
+from collections import OrderedDict
 import hashlib
 from io import BytesIO
 import json
@@ -335,8 +336,28 @@ class ClothingClassifier:
     def _fit(self, image: Image.Image):
         return ImageOps.pad(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC, color="white")
 
+    _VECTOR_CACHE_SIZE = 6
+
     def _view_vectors(self, original: Image.Image, foreground: Image.Image):
-        """One photo's two image vectors: the garment cut out on white, and the whole frame."""
+        """One photo's two image vectors: the garment cut out on white, and the whole frame.
+
+        Kept for a few photos by their pixels: /garment-flat reads again the photo /analyze has just read.
+        """
+        digest = hashlib.sha1()
+        for image in (original, foreground):
+            digest.update(f"{image.mode}{image.size}".encode()); digest.update(image.tobytes())
+        key = digest.hexdigest()
+        cache = self.__dict__.setdefault("_vector_cache", OrderedDict())
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+        vectors = self._compute_view_vectors(original, foreground)
+        cache[key] = vectors
+        while len(cache) > self._VECTOR_CACHE_SIZE:
+            cache.popitem(last=False)
+        return vectors
+
+    def _compute_view_vectors(self, original: Image.Image, foreground: Image.Image):
         white = Image.new("RGB", foreground.size, "white")
         white.paste(foreground.convert("RGB"), mask=foreground.getchannel("A"))
         bbox = foreground.getchannel("A").getbbox()
@@ -363,27 +384,31 @@ class ClothingClassifier:
         extra: more views of the same garment as (photo, cut-out) pairs, such as its smoothed flat
         picture (/garment-flat). The category and pattern scores are then averaged over every view;
         the person check, the traits and the feedback embedding stay the first photo's own. Each extra
-        view is also reported on its own under "views": its top category and how alike its cut-out is
-        to the first one's (cosine), so the caller can tell a different garment from another view.
+        view, the photo first, is also reported on its own under "views": its top category within the
+        section hint, whether it is sure of it, and how alike its cut-out is to the photo's (cosine),
+        so the caller can tell a different garment from another view.
         """
         vectors = self._view_vectors(original, foreground)
         similarities, subject_scores, full_scores = self._view_scores(vectors)
         indices = [index for index, entry in enumerate(CATEGORIES) if not section_hint or entry[1] == section_hint]
-        first_sure = None
+
+        def reading(scores):
+            """One view's own top category within the hint, and whether it is sure of it."""
+            order = ranked(scores[indices])
+            sure = order[0][1] >= CONFIDENCE_MIN and (len(order) < 2 or order[0][1] - order[1][1] >= CONFIDENCE_GAP)
+            return CATEGORIES[indices[order[0][0]]][0], sure
+
+        photo_reading = reading(similarities)
         views = []
         if extra:
             all_similarities, all_subjects = [similarities], [subject_scores]
+            views.append({"category": photo_reading[0], "sure": photo_reading[1], "similarity": 1.0})
             for view_original, view_foreground in extra:
                 view_vectors = self._view_vectors(view_original, view_foreground)
                 view_similarities, view_subject, _ = self._view_scores(view_vectors)
                 all_similarities.append(view_similarities); all_subjects.append(view_subject)
-                own = CATEGORIES[int(np.argmax(view_similarities[:len(CATEGORIES)]))][0]
-                views.append({"category": own, "similarity": round(float(vectors[0] @ view_vectors[0]), 4)})
-            first = CATEGORIES[int(np.argmax(similarities[:len(CATEGORIES)]))][0]
-            views.insert(0, {"category": first, "similarity": 1.0})
-            own = ranked(similarities[indices])
-            if own[0][1] >= CONFIDENCE_MIN and own[0][1] - own[1][1] >= CONFIDENCE_GAP:
-                first_sure = CATEGORIES[indices[own[0][0]]][0]
+                view_category, view_sure = reading(view_similarities)
+                views.append({"category": view_category, "sure": view_sure, "similarity": round(float(vectors[0] @ view_vectors[0]), 4)})
             # Averaged logits: one view's strong opinion counts, but two views that agree count more.
             similarities = np.mean(all_similarities, axis=0)
             subject_scores = np.mean(all_subjects, axis=0)
@@ -394,10 +419,12 @@ class ClothingClassifier:
         top = candidates[0]
         runner_up = candidates[1]["score"] if len(candidates) > 1 else 0.0
         uncertain = top["score"] < CONFIDENCE_MIN or top["score"] - runner_up < CONFIDENCE_GAP
-        if first_sure == top["category"]:
-            # Another view that agrees does not make an answer the photo was sure of unsure: averaged with a
-            # less decided flat, the margin shrinks, and on 58 real photos that alone asked for 5 more
-            # confirmations of right answers without flagging a single wrong one (FLAT_REPORT.md).
+        if uncertain and views and photo_reading == (top["category"], True) \
+                and not any(view["sure"] and view["category"] != top["category"] for view in views[1:]):
+            # Another view that does not contradict it does not make an answer the photo was sure of unsure:
+            # averaged with a less decided flat the margin shrinks, and on 58 real photos that alone asked for
+            # 5 more confirmations of right answers without flagging a single wrong one (FLAT_REPORT.md).
+            # A view sure of something else still asks.
             uncertain = False
 
         pattern_choices = ranked(subject_scores[len(CATEGORIES):len(CATEGORIES) + len(PATTERNS)])
@@ -416,7 +443,7 @@ class ClothingClassifier:
             warnings.append(f"Рисунок определён неуверенно — предложен «{pattern.lower()}».")
         if worn:
             warnings.append('На фото человек: проверь цвет и тип вещи. Для точного анализа лучше отдельное фото одежды.')
-        traits = self.traits(original, top["category"]) if top["section"] in TRAIT_SECTIONS else {}
+        traits = self.traits(original, top["category"], frame_vector=vectors[1]) if top["section"] in TRAIT_SECTIONS else {}
         return {"category": top["category"], "section": top["section"], "categoryCandidates": candidates, "traits": traits,
                 "needsReview": uncertain, "pattern": pattern, "season": _season_for(top["category"], top["section"]),
                 "seasonSource": "category", "warnings": warnings,
@@ -446,10 +473,15 @@ class ClothingClassifier:
                     for trait, spec in TRAITS.items()}
             return self._trait_features
 
-    def traits(self, image: Image.Image, category=""):
-        """Sleeves, length, front opening and bulk read from the whole photo; each None when unsure."""
-        frame = self._fit(ImageOps.fit(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
-        vector = self._embed([frame])[0]
+    def traits(self, image: Image.Image, category="", frame_vector=None):
+        """Sleeves, length, front opening and bulk read from the whole photo; each None when unsure.
+
+        frame_vector: the photo's whole-frame vector when predict already has it (the same picture).
+        """
+        if frame_vector is None:
+            frame = self._fit(ImageOps.fit(image.convert("RGB"), (self.size, self.size), method=Image.Resampling.BICUBIC))
+            frame_vector = self._embed([frame])[0]
+        vector = frame_vector
         result = {}
         for trait, features in self._trait_text().items():
             scores = vector @ features.T * 100
