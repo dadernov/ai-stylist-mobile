@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }, fileName: filename }).outputText, filename);
-const { mergeFlatReading, categoryFitsSection, readFlatResponse } = require(path.join(__dirname, '../src/domain/flatReading.ts'));
+const { mergeFlatReading, categoryFitsSection, readFlatResponse, readingColourName } = require(path.join(__dirname, '../src/domain/flatReading.ts'));
 
 const photo = {
   analysisId: 'a1', bgRemovedBase64: 'data:image/png;base64,cut', backgroundRemoved: true,
@@ -67,5 +67,23 @@ assert.equal(readFlatResponse({ image: 'x', checked: false }).checked, false);
 assert.equal(readFlatResponse({ image: 'x', checked: true, analysis: { category: 'Худи' } }).analysis.category, 'Худи');
 assert.equal(readFlatResponse({ image: 'x', analysis: { category: 7 } }).analysis, undefined);
 assert.throws(() => readFlatResponse({}));
+
+// The colour name: the server's (colour head + pixels) when it gives one of the app's names, else the nearest by RGB.
+const known = ['Белый', 'Черный', 'Синий деним', 'Серый'];
+const closest = hex => (hex === '#111111' ? 'Черный' : 'Серый');
+assert.equal(readingColourName({ colorName: 'Синий деним', dominantColor: '#111111' }, closest, known), 'Синий деним');
+assert.equal(readingColourName({ dominantColor: '#111111' }, closest, known), 'Черный');
+assert.equal(readingColourName({ colorName: 'Ультрамарин', dominantColor: '#111111' }, closest, known), 'Черный');
+// A worn photo has no dominantColor, but the server may still name its colour.
+assert.equal(readingColourName({ colorName: 'Белый', dominantColor: null }, closest, known), 'Белый');
+assert.equal(readingColourName({ dominantColor: null }, closest, known), '');
+
+// The flat's colour name wins (no cast, shadow or skin); without one the photo's stays.
+merged = mergeFlatReading({ ...photo, colorName: 'Черный', colorConfidence: 0.5 }, { ...flat, colorName: 'Синий деним', colorConfidence: 0.8 });
+assert.equal(merged.colorName, 'Синий деним');
+assert.equal(merged.colorConfidence, 0.8);
+merged = mergeFlatReading({ ...photo, colorName: 'Черный', colorConfidence: 0.5 }, flat);
+assert.equal(merged.colorName, 'Черный');
+assert.equal(merged.colorConfidence, 0.5);
 
 console.log('PASS: the flat reading merges into the draft without losing the photo\'s own reasons or a hand-set section');

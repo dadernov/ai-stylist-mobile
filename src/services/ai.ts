@@ -15,6 +15,9 @@ export type AiResult = {
   analysisId?: string;
   dominantColor: string | null;
   palette: string[];
+  /** One of the app's named colours, from the server's colour head and the cut-out's pixels; absent from an older server. */
+  colorName?: string;
+  colorConfidence?: number;
   bgRemovedBase64: string;
   category?: string | null;
   section?: string | null;
@@ -210,7 +213,7 @@ export async function analyzeImage(uri: string, sectionHint?: string): Promise<A
 
 /** What the flat picture and the photo show together: the same fields /analyze reads, from both views. */
 export type FlatAnalysis = Pick<AiResult, 'category' | 'section' | 'categoryCandidates' | 'needsReview' | 'pattern' | 'season'
-  | 'dominantColor' | 'palette' | 'warnings' | 'traits' | 'analysisSource'>;
+  | 'dominantColor' | 'palette' | 'colorName' | 'colorConfidence' | 'warnings' | 'traits' | 'analysisSource'>;
 
 export type FlatGarment = {
   /** The smoothed, laid-flat garment as a transparent PNG cut-out (an older server sends a JPEG). */

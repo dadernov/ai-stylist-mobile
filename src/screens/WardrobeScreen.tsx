@@ -35,7 +35,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
 import { analyzeImage, AiResult, FlatAnalysis, flattenGarment, sendCategoryFeedback } from '../services/ai';
-import { categoryFitsSection, mergeFlatReading } from '../domain/flatReading';
+import { categoryFitsSection, mergeFlatReading, readingColourName } from '../domain/flatReading';
 import { GarmentLabel } from '../components/GarmentLabel';
 import { WardrobeStudio } from '../components/studio/WardrobeStudio';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
@@ -512,12 +512,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   // Fills the draft from what recognition read, leaving alone every field the person set by hand.
   const applyReading = (result: FlatAnalysis) => {
     const hex = normalizeHex(result.dominantColor || '');
-    const named = hex ? getClosestColorName(hex) : 'Не определено';
-    if (!manualFields.current.has('color')) setDraftColor(hex ? named : '');
-    if (!manualFields.current.has('color')) setDraftColorHex(hex);
+    // The server's colour name when it sends one (its swatch is that name's own colour), else the nearest to the hex.
+    const named = readingColourName({ colorName: result.colorName, dominantColor: hex }, getClosestColorName, colorOptions);
+    const swatch = named && named === result.colorName ? namedColors.find(color => color.name === named)?.hex || hex : hex;
+    if (!manualFields.current.has('color')) setDraftColor(named);
+    if (!manualFields.current.has('color')) setDraftColorHex(swatch);
     const normalizedPalette = (result.palette || []).map((color) => normalizeHex(color)).filter(Boolean);
-    const paletteNames = normalizedPalette
-      .map((color) => getClosestColorName(color))
+    const paletteNames = [named, ...normalizedPalette.map((color) => getClosestColorName(color))]
       .filter((name) => name && name !== 'Не определено');
     const uniquePalette = Array.from(new Set(paletteNames)).slice(0, 5);
     if (!manualFields.current.has('color')) setDraftPalette(uniquePalette);

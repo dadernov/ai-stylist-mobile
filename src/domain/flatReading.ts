@@ -46,3 +46,11 @@ export function readFlatResponse(result: any): FlatGarment {
   const analysis = result.analysis && typeof result.analysis === 'object' && typeof result.analysis.category === 'string' ? result.analysis : undefined;
   return { image: result.image, analysis, checked: result.checked !== false };
 }
+
+/** The colour a reading names: the server's colorName (its colour head and the cut-out's pixels, right far more often)
+ *  when it is one of the app's names, else the nearest named colour to its dominantColor, as before; '' for none. */
+export function readingColourName(result: { colorName?: string | null; dominantColor?: string | null }, closest: (hex: string) => string,
+  known: readonly string[]): string {
+  if (result.colorName && known.includes(result.colorName)) return result.colorName;
+  return result.dominantColor ? closest(result.dominantColor) : '';
+}
