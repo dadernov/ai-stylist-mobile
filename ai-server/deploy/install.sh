@@ -37,7 +37,8 @@ mkdir -p "$APP_DIR"
 # Все модули сервера, кроме тестов. Список раньше вёлся руками и разошёлся с
 # кодом: fashn_credits.py и tryon_frame.py импортировались, но не копировались,
 # и чистая установка падала бы на старте.
-for f in $(cd "$SRC_DIR" && ls *.py | grep -v '^test_') requirements.txt README.md; do
+# …и обученные головы распознавания рядом с ними (category_head.npz, colour_head.npz, style_space.npz).
+for f in $(cd "$SRC_DIR" && ls *.py *.npz | grep -v '^test_') requirements.txt README.md; do
   [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP_DIR/$f"
 done
 cp -r "$SRC_DIR/deploy" "$APP_DIR/deploy"

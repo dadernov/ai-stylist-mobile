@@ -385,8 +385,8 @@ class ClothingClassifier:
         picture (/garment-flat). The category and pattern scores are then averaged over every view;
         the person check, the traits and the feedback embedding stay the first photo's own. Each extra
         view, the photo first, is also reported on its own under "views": its top category within the
-        section hint, whether it is sure of it, and how alike its cut-out is to the photo's (cosine),
-        so the caller can tell a different garment from another view.
+        section hint, whether it is sure of it, how alike its cut-out is to the photo's (cosine), so
+        the caller can tell a different garment from another view, and its own image vector.
         """
         vectors = self._view_vectors(original, foreground)
         similarities, subject_scores, full_scores = self._view_scores(vectors)
@@ -402,13 +402,14 @@ class ClothingClassifier:
         views = []
         if extra:
             all_similarities, all_subjects = [similarities], [subject_scores]
-            views.append({"category": photo_reading[0], "sure": photo_reading[1], "similarity": 1.0})
+            views.append({"category": photo_reading[0], "sure": photo_reading[1], "similarity": 1.0, "embedding": normalise(vectors.mean(axis=0))})
             for view_original, view_foreground in extra:
                 view_vectors = self._view_vectors(view_original, view_foreground)
                 view_similarities, view_subject, _ = self._view_scores(view_vectors)
                 all_similarities.append(view_similarities); all_subjects.append(view_subject)
                 view_category, view_sure = reading(view_similarities)
-                views.append({"category": view_category, "sure": view_sure, "similarity": round(float(vectors[0] @ view_vectors[0]), 4)})
+                views.append({"category": view_category, "sure": view_sure, "similarity": round(float(vectors[0] @ view_vectors[0]), 4),
+                              "embedding": normalise(view_vectors.mean(axis=0))})
             # Averaged logits: one view's strong opinion counts, but two views that agree count more.
             similarities = np.mean(all_similarities, axis=0)
             subject_scores = np.mean(all_subjects, axis=0)

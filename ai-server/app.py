@@ -21,6 +21,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 from rembg import remove, new_session
 from clothing_analysis import get_classifier, extract_palette, read_garment, CATEGORIES, SHORT_NAMES
+import garment_colour
 import tryon_composite
 import face_guard
 import footwear_guard
@@ -1336,6 +1337,15 @@ _CATEGORY_SECTION = {entry[0]: entry[1] for entry in CATEGORIES}
 _FLAT_ANALYSIS_FIELDS = ("category", "section", "categoryCandidates", "needsReview", "pattern", "season", "traits", "analysisSource")
 
 
+def _colour_name(embedding, foreground: Image.Image):
+    """colorName / colorConfidence (garment_colour.py), or nothing: the app then names the colour itself, as before."""
+    try:
+        return garment_colour.name_colour(embedding, foreground)
+    except Exception as exc:
+        print(f"Colour name unavailable: {type(exc).__name__}: {str(exc)[:120]}", flush=True)
+        return {}
+
+
 def _garment_zone(category):
     """Where a garment is worn: top, bottom or one-piece for clothes; its section for the rest."""
     if category in _ONE_PIECE:
@@ -1432,7 +1442,9 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
         # The flat shows the garment alone: its colour is the garment's even when the photo had a person in it.
         analysis = {field: result[field] for field in _FLAT_ANALYSIS_FIELDS if field in result}
         analysis.update({"dominantColor": palette[0] if palette else None, "palette": palette,
-                         "warnings": [warning for warning in result.get("warnings", []) if not warning.startswith("На фото человек")]})
+                         "warnings": [warning for warning in result.get("warnings", []) if not warning.startswith("На фото человек")],
+                         # Named from the flat alone, its own image vector and cut-out: no cast, shadow or skin.
+                         **_colour_name(flat_view.get("embedding"), flat_rgba)})
     except Exception as exc:
         print(f"Garment flat checked, sent without analysis: {type(exc).__name__}: {str(exc)[:120]}", flush=True)
         return {"image": picture, "checked": True}
@@ -1677,6 +1689,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
             foreground = original.convert("RGBA")
             alpha = foreground.getchannel("A")
         _remember_photo_cut(content, original, foreground)
+        embedding = None
         try:
             result = get_classifier().predict(original, foreground, section_hint or None)
             embedding = result.pop("embedding", None)
@@ -1690,6 +1703,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
                       "categoryCandidates": [], "needsReview": True, "analysisSource": "unavailable",
                       "warnings": ["Распознавание сейчас недоступно. Выбери тип вещи вручную или повтори анализ."]}
         palette = extract_palette(foreground, alpha)
+        result.update(_colour_name(embedding, foreground))
         if not background_removed:
             result["warnings"].append("Фон не удалось надёжно отделить. Цвет может включать фон фотографии.")
             result["needsReview"] = True
