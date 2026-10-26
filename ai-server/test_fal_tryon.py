@@ -236,6 +236,67 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(opened), 3)
         self.assertTrue(any(call[1].endswith('/status') for call in calls))
 
+    async def test_an_event_without_a_status_keeps_the_last_one(self):
+        client, _, _ = self.streamed([{'status': 'IN_PROGRESS'}, {'logs': []}], close_early=99)
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertEqual(followed['last_state'], 'IN_PROGRESS')
+
+    async def test_a_stream_that_cannot_connect_falls_back_to_polling(self):
+        opened = []
+
+        def handler(request):
+            if request.url.path.endswith('/status/stream'):
+                opened.append(1)
+                raise httpx.ConnectTimeout('no route', request=request)
+            return httpx.Response(200, json={})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertIsNone(followed['final'])
+        self.assertNotIn('timeout', followed)
+        self.assertEqual(len(opened), 3, 'counted as breaks, then polled')
+
+    async def test_a_silent_stream_is_opened_again_until_it_completes(self):
+        opened = []
+
+        def handler(request):
+            opened.append(1)
+            if len(opened) < 4:
+                raise httpx.ReadTimeout('silent', request=request)
+            return httpx.Response(200, text='data: {"status": "COMPLETED"}\n\n', headers={'content-type': 'text/event-stream'})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertEqual(followed['final'], {'status': 'COMPLETED'})
+        self.assertEqual(len(opened), 4, 'a read timeout is not a break')
+
+    async def test_the_result_is_asked_for_once_more_after_a_failure(self):
+        answers = [httpx.Response(502, text='bad gateway'), httpx.Response(200, json={'images': [{'url': 'https://fal.media/out.png'}]})]
+        client, _, _ = self.streamed([{'status': 'COMPLETED'}])
+        handler = client._transport.handler
+
+        def flaky(request):
+            if request.method == 'GET' and request.url.path == '/app/requests/req-1':
+                return answers.pop(0)
+            return handler(request)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(flaky))
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(answers, [])
+
+    async def test_a_result_that_fails_twice_is_a_failure(self):
+        client, _, _ = self.streamed([{'status': 'COMPLETED'}])
+        handler = client._transport.handler
+        asked = []
+
+        def broken(request):
+            if request.method == 'GET' and request.url.path == '/app/requests/req-1':
+                asked.append(1)
+                raise httpx.ConnectError('down', request=request)
+            return handler(request)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(broken))
+        result = await self.run_look(client)
+        self.assertIn('result failed', result['error'])
+        self.assertEqual(len(asked), 2)
+
     async def test_polling_can_be_brought_back(self):
         client, calls, opened = self.streamed([{'status': 'COMPLETED'}])
         with patch.dict(os.environ, {'TRYON_FAL_STATUS_STREAM': 'off'}):

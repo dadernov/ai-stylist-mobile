@@ -18,6 +18,7 @@ The provider is a server setting (TRYON_PROVIDER=fal with FAL_KEY) and can be
 switched back to FASHN without an app release.
 """
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -314,6 +315,7 @@ def status_stream():
     return os.getenv('TRYON_FAL_STATUS_STREAM', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
 
 
+RESULT_RETRY_SECONDS = 0.5
 # A stream silent this long is opened again: a dropped connection is found without waiting for the deadline.
 STREAM_IDLE_SECONDS = 20.0
 
@@ -367,25 +369,30 @@ async def _follow_status(client, status_url, headers, max_wait_seconds, max_queu
                                          timeout=httpx.Timeout(30.0, read=STREAM_IDLE_SECONDS)) as response:
                     if response.status_code >= 400 or 'text/event-stream' not in response.headers.get('content-type', ''):
                         return followed
-                    async for state in _events(response):
-                        followed['last_state'] = state.get('status')
-                        if followed['last_state'] == 'IN_PROGRESS' and followed['started_at'] is None:
-                            followed['started_at'] = _now()
-                            # From here the model's own limit applies, as when polling.
-                            deadline = loop.time() + max_wait_seconds
-                            limit.reschedule(deadline)
-                        if followed['last_state'] == 'COMPLETED':
-                            followed['final'] = state
-                            return followed
+                    async with contextlib.aclosing(_events(response)) as events:
+                        async for state in events:
+                            status = state.get('status')
+                            if not status:
+                                continue  # a log-only event says nothing about the state
+                            followed['last_state'] = status
+                            if status == 'IN_PROGRESS' and followed['started_at'] is None:
+                                followed['started_at'] = _now()
+                                # From here the model's own limit applies, as when polling.
+                                deadline = loop.time() + max_wait_seconds
+                                limit.reschedule(deadline)
+                            if status == 'COMPLETED':
+                                followed['final'] = state
+                                return followed
             # Closed before the request was done: opened again.
             breaks += 1
         except TimeoutError:
             followed['timeout'] = True
             return followed
-        except httpx.TimeoutException:
+        except httpx.ReadTimeout:
             # Silent for a while (no news while the model runs, or a dead connection): opened again.
             continue
         except httpx.HTTPError:
+            # Not reachable (connect, pool or write timeouts too): after a few, the status is polled.
             breaks += 1
     return followed
 
@@ -461,10 +468,18 @@ async def _generate_one(client, model, person_url, garment_urls, prompt, seed, m
             final = state
     if final.get('error'):
         return {'error': f'fal {final.get("error_type") or "model"} error', 'detail': str(final['error'])[:400]}
-    try:
-        response = await client.get(response_url, headers=headers)
-    except httpx.HTTPError as exc:
-        return {'error': f'fal result failed: {type(exc).__name__}'}
+    # The image is paid for by now: a dropped connection or a fal 5xx is asked once more.
+    for attempt in range(2):
+        try:
+            response = await client.get(response_url, headers=headers)
+        except httpx.HTTPError as exc:
+            if attempt:
+                return {'error': f'fal result failed: {type(exc).__name__}'}
+            await asyncio.sleep(RESULT_RETRY_SECONDS)
+            continue
+        if response.status_code < 500 or attempt:
+            break
+        await asyncio.sleep(RESULT_RETRY_SECONDS)
     if response.status_code >= 400:
         return _failure(response, 'result')
     output = response.json()
