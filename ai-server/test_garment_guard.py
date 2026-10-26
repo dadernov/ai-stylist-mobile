@@ -181,6 +181,43 @@ class IntegratedComposite(unittest.TestCase):
         finally:
             app._IDENTITY_SOURCES.clear()
 
+    def test_a_known_photos_face_check_hands_out_a_copy(self):
+        app._IDENTITY_SOURCES.clear()
+        source = photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110)))
+        try:
+            with patch.object(face_guard, 'detect_faces', return_value=['face']), \
+                 patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()):
+                app._prepare_identity_source(source, cached=True)
+                photo, faces = app._prepare_identity_source(source, faces_only=True, cached=True)
+                photo.paste((0, 0, 0), (0, 0, 200, 400))
+                faces.append('another')
+                again = app._prepare_identity_source(source, cached=True)
+            self.assertEqual(again[0].getpixel((5, 5)), (90, 100, 110))
+            self.assertEqual(again[2], ['face'])
+        finally:
+            app._IDENTITY_SOURCES.clear()
+
+    def test_a_kept_photo_is_forgotten_after_its_time_and_with_its_account(self):
+        app._IDENTITY_SOURCES.clear()
+        source = photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110)))
+        other = photo_bytes(Image.new('RGB', (200, 400), (10, 100, 110)))
+        clock = [1000.0]
+        try:
+            with patch.object(app, '_identity_now', side_effect=lambda: clock[0]), \
+                 patch.object(face_guard, 'detect_faces', return_value=['face']), \
+                 patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()):
+                app._prepare_identity_source(source, cached=True, owner='masha')
+                app._prepare_identity_source(other, cached=True, owner='anna')
+                self.assertTrue(app._identity_known(source))
+                app._forget_identity_sources('masha')
+                self.assertFalse(app._identity_known(source))
+                self.assertTrue(app._identity_known(other))
+                clock[0] += app._identity_sources_ttl() + 1
+                self.assertFalse(app._identity_known(other))
+                self.assertEqual(len(app._IDENTITY_SOURCES), 0)
+        finally:
+            app._IDENTITY_SOURCES.clear()
+
     def test_a_photo_is_read_only_when_asked_to_keep_it(self):
         app._IDENTITY_SOURCES.clear()
         with patch.object(face_guard, 'detect_faces', return_value=['face']), \
@@ -207,7 +244,7 @@ class IntegratedComposite(unittest.TestCase):
                 app._prepare_identity_source(photo_bytes(Image.new('RGB', (200, 400))), faces_only=True)
         parse.assert_not_called()
 
-    def test_source_parser_failure_stops_before_paid_generation(self):
+    def test_source_parser_failure_is_reported_to_the_caller(self):
         with patch.object(face_guard, 'detect_faces', return_value=['face']), \
              patch.object(footwear_guard, 'parse', side_effect=RuntimeError('model unavailable')):
             with self.assertRaisesRegex(ValueError, 'защиту лица и обуви'):

@@ -23,6 +23,8 @@ import app
 import fal_tryon
 import tryon_policy
 
+REAL_PREPARE = app._prepare_identity_source
+
 
 def queue(status_sequence, result=None, submit_status=200, submit_body=None, result_status=200):
     """A fake fal queue: submit, a few status polls, then the result."""
@@ -496,10 +498,17 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn('одного человека', result['error'])
         self.generate.assert_not_awaited()
 
-    async def test_the_photo_is_parsed_while_the_editor_works(self):
-        order = []
+    async def test_source_parser_failure_stops_before_paid_generation(self):
+        # The real preparation: a photo whose parsing fails is refused before the paid call.
+        with patch.object(app, '_prepare_identity_source', REAL_PREPARE), \
+             patch.object(app.face_guard, 'detect_faces', return_value=['face']), \
+             patch.object(app.footwear_guard, 'parse', side_effect=RuntimeError('model unavailable')):
+            result = await self.look()
+        self.assertIn('защиту лица и обуви', result['error'])
+        self.generate.assert_not_awaited()
 
-        def prepare(content, photo=None, faces_only=False, cached=False):
+    def ordered(self, order):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
             order.append('faces' if faces_only else 'parse')
             return 'photo' if faces_only else 'prepared'
 
@@ -507,7 +516,24 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
             order.append('generate')
             await asyncio.sleep(0.05)
             return self.generate.return_value
+        return prepare, generate
+
+    async def test_a_new_photo_is_parsed_before_the_paid_call(self):
+        order = []
+        prepare, generate = self.ordered(order)
         with patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app.fal_tryon, 'generate', side_effect=generate), \
+             patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
+            result = await self.look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(order, ['parse', 'generate'])
+        self.assertEqual(face_only.call_args.args[1], 'prepared')
+
+    async def test_a_photo_read_before_is_finished_while_the_editor_works(self):
+        order = []
+        prepare, generate = self.ordered(order)
+        with patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare), \
              patch.object(app.fal_tryon, 'generate', side_effect=generate), \
              patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
             result = await self.look()
@@ -515,16 +541,40 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order, ['faces', 'generate', 'parse'])
         self.assertEqual(face_only.call_args.args[1], 'prepared')
 
-    async def test_a_photo_whose_parsing_fails_during_the_call_says_why(self):
-        def prepare(content, photo=None, faces_only=False, cached=False):
+    async def test_a_paid_frame_is_shown_with_a_note_when_the_photo_fails_after_the_call(self):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
             if faces_only:
                 return 'photo'
             raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
-        with patch.object(app, '_prepare_identity_source', side_effect=prepare):
+        with patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app, '_face_only_output_url') as face_only:
             result = await self.look()
-        self.assertIn('отделить человека', result['error'])
-        self.assertNotIn('outputUrl', result)
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertTrue(result['outputUrl'].startswith('data:image/jpeg;base64,'))
+        self.assertEqual(result['warning'], app.UNLOCKED_WARNING)
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (False, False))
         self.assertEqual(self.generate.await_count, 1)
+        face_only.assert_not_called()
+        self.protect.assert_not_awaited()
+
+    async def test_the_cpu_slot_is_taken_after_the_frame_is_downloaded(self):
+        app._CPU_STAGES = None
+        held = []
+
+        async def load(client, source):
+            # The first download fails: the composite fetches the frame again.
+            held.append(app._cpu_stage().locked())
+            return Image.new('RGB', (64, 128)) if len(held) > 1 else None
+        try:
+            with patch.dict(os.environ, {'AI_TRYON_CPU_STAGES': '1'}), \
+                 patch.object(app, '_load_image_from_url_or_data_url', side_effect=load), \
+                 patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face'):
+                result = await self.look()
+        finally:
+            app._CPU_STAGES = None
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(held, [False, False], 'no download while holding the slot')
 
     async def test_heavy_photo_work_of_two_looks_goes_one_at_a_time(self):
         app._CPU_STAGES = None

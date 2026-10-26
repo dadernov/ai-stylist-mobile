@@ -31,7 +31,11 @@ class ReleaseGuards(unittest.IsolatedAsyncioTestCase):
         jobs.start('masha', 'job-1', 'fp', 1)
         jobs.finish('masha', 'job-1', {'status': 'succeeded', 'outputUrl': 'data:image/png;base64,AA'})
         jobs.start('other', 'job-2', 'fp', 1)
+        app._IDENTITY_SOURCES[b'masha-photo'] = [None, [], None, app._identity_now(), {'masha'}]
+        app._IDENTITY_SOURCES[b'other-photo'] = [None, [], None, app._identity_now(), {'other'}]
         result = await app.auth_delete_account(login='masha')
+        self.assertEqual(list(app._IDENTITY_SOURCES), [b'other-photo'], 'the photo kept for her looks is forgotten')
+        app._IDENTITY_SOURCES.clear()
         self.assertEqual(result, {'deleted': True, 'login': 'masha'})
         self.assertIsNone(accounts.session_owner(self.token), 'sessions are revoked')
         self.assertIsNone(accounts.profile('masha'))
