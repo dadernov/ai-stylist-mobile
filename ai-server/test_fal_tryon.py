@@ -558,6 +558,18 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         face_only.assert_not_called()
         self.protect.assert_not_awaited()
 
+    async def test_without_the_unlocked_fallback_a_late_failure_is_an_error(self):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
+            if faces_only:
+                return 'photo'
+            raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
+        with patch.dict(os.environ, {'AI_TRYON_UNLOCKED_FALLBACK': 'false'}), \
+             patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare):
+            result = await self.look()
+        self.assertIn('error', result)
+        self.assertNotIn('outputUrl', result)
+
     async def test_the_cpu_slot_is_taken_after_the_frame_is_downloaded(self):
         app._CPU_STAGES = None
         held = []

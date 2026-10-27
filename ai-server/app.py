@@ -499,12 +499,13 @@ def _prepare_identity_source(original_content: bytes, photo=None, faces_only=Fal
             if entry is not None:
                 if owner is not None:
                     entry[4].add(owner)
-                known = entry[:3]
+                # Copied inside the lock: an eviction meanwhile cannot hand out a shared object.
+                known = (entry[0].copy(), list(entry[1]), entry[2] if faces_only else entry[2].copy())
     if known is not None:
         original, faces, labels = known
         if faces_only:
-            return original.copy(), list(faces)
-        return original.copy(), garment_guard.silhouette(original, labels), list(faces), labels.copy()
+            return original, faces
+        return original, garment_guard.silhouette(original, labels), faces, labels
     if photo is None:
         original = _working_image(original_content)
         faces = face_guard.detect_faces(original)
@@ -2158,8 +2159,8 @@ async def tryon_generate_look(
             identity_task = None
             identity_photo = None
             if fal_model and await asyncio.to_thread(_identity_known, person_content):
-                # A photo read for an earlier look: its face is checked again before the paid call and the
-                # kept parsing is copied out while the editor works.
+                # A photo read for an earlier look (its face was checked then): its kept face and
+                # parsing are copied out, the parsing while the editor works.
                 identity_photo = await asyncio.to_thread(_prepare_identity_source, person_content, None, True, True, device)
                 prepared_identity = None
             else:
@@ -2334,7 +2335,7 @@ async def tryon_generate_look(
                 if prepared_identity is None:
                     # The photo could not be protected after the paid call: as after a rejected
                     # lock, the editor's own frame is shown with a note instead of losing the look.
-                    if last_frame is None:
+                    if last_frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
                         raise ValueError('Не удалось проверить результат примерки. Попробуй ещё раз.')
                     locked, warning = False, UNLOCKED_WARNING
                     locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, last_frame)
