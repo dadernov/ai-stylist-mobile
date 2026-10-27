@@ -276,7 +276,8 @@ class FlatAlongsideAnalyze(FlatCase):
                 patch.object(app, '_remove_background_rgba', side_effect=fake_rembg()), \
                 patch.object(app, 'get_classifier', return_value=SimpleNamespace(predict=lambda *a, **k: prediction())):
             result = await app.garment_flat(photo_upload(), '', 'masha', only_for)
-        return result, generate.await_count, throttle.call_count
+        # Made flats are counted per day; every request also passes the cheap per-minute bound.
+        return result, generate.await_count, sum(call.args[1] == 'garment-flat' for call in throttle.call_args_list)
 
     async def test_a_garment_of_those_sections_is_made_once_its_category_is_read(self):
         async def analyse_later():
@@ -328,6 +329,34 @@ class FlatAlongsideAnalyze(FlatCase):
         finally:
             app._ANALYSIS_LOCK.release()
         self.assertIsNone(app._EARLY_CATEGORY[self.key()][1])
+
+    async def test_a_dropped_request_stops_waiting_unpaid(self):
+        gone = SimpleNamespace(is_disconnected=AsyncMock(return_value=True))
+        generate = AsyncMock()
+        with patch.object(app.access, 'throttle'), patch.object(app.fal_tryon, 'enabled', return_value=True), \
+                patch.object(app.fal_tryon, '_generate_one', generate), \
+                patch.object(app, '_prepare_tryon_image_data_url') as prepare:
+            started = asyncio.get_running_loop().time()
+            result = await app.garment_flat(photo_upload(), '', 'masha', 'Верх', gone)
+        self.assertTrue(result['skipped'])
+        self.assertLess(asyncio.get_running_loop().time() - started, 1.0)
+        # Nothing of its own was done while it waited: no picture prepared, nothing generated.
+        prepare.assert_not_called(); generate.assert_not_awaited()
+
+    async def test_the_request_bound_comes_before_the_upload_is_read(self):
+        upload = photo_upload()
+        with patch.object(app.access, 'throttle', side_effect=HTTPException(429, 'много')), \
+                patch.object(upload, 'read', AsyncMock()) as read, self.assertRaises(HTTPException) as raised:
+            await app.garment_flat(upload, '', 'masha', 'Верх')
+        self.assertEqual(raised.exception.status_code, 429)
+        read.assert_not_awaited()
+
+    async def test_analyze_refused_early_publishes_no_category(self):
+        for error in (HTTPException(429, 'много'), None):
+            app._EARLY_CATEGORY.clear()
+            with patch.object(app.access, 'throttle', side_effect=error), self.assertRaises(HTTPException):
+                app.analyze(photo_upload(), '' if error else 'Космос', 'masha')
+            self.assertEqual([value[1] for value in app._EARLY_CATEGORY.values()], [None])
 
     async def test_an_unknown_section_in_only_for_is_refused(self):
         with self.assertRaises(HTTPException) as raised:

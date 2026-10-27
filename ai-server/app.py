@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import numpy as np
-from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, Request, UploadFile, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -187,6 +187,7 @@ _PHOTO_CUTS_SIZE = 3
 # Kept with the time it was published: a category stays true for the same bytes, a None only for this attempt.
 _EARLY_CATEGORY = OrderedDict()
 _EARLY_CATEGORY_SIZE = 24
+_EARLY_CATEGORY_LOCK = threading.Lock()
 _REMBG_LOCK = threading.Lock()
 _rembg_session = None
 
@@ -1503,10 +1504,12 @@ def _holding_models(work, *args):
 
 
 def _publish_category(key: str, category):
-    _EARLY_CATEGORY[key] = (time.monotonic(), category)
-    _EARLY_CATEGORY.move_to_end(key)
-    while len(_EARLY_CATEGORY) > _EARLY_CATEGORY_SIZE:
-        _EARLY_CATEGORY.popitem(last=False)
+    # /analyze runs in worker threads: the dict is changed under its own lock (reads in the event loop take one get).
+    with _EARLY_CATEGORY_LOCK:
+        _EARLY_CATEGORY[key] = (time.monotonic(), category)
+        _EARLY_CATEGORY.move_to_end(key)
+        while len(_EARLY_CATEGORY) > _EARLY_CATEGORY_SIZE:
+            _EARLY_CATEGORY.popitem(last=False)
 
 
 # How long a flat started alongside /analyze waits for its category: /analyze itself may wait ANALYSIS_WAIT
@@ -1515,25 +1518,26 @@ FLAT_CATEGORY_WAIT = _env_float('AI_FLAT_CATEGORY_WAIT', ANALYSIS_WAIT + 25.0)
 FLAT_SKIPPED = {"skipped": True, "checked": False}
 
 
-async def _analysed_category(key: str, since: float, timeout: float):
+async def _analysed_category(key: str, since: float, timeout: float, request: Request | None = None):
     """The category /analyze reads for this photo, waited for without holding a thread; (False, None) on timeout.
 
     A category read before `since` still counts (the same bytes read the same); a failure only from `since` on,
     so a photo analysed again after a busy or failed attempt is not skipped for that old attempt.
+    A request the app has dropped (a new photo, the draft closed) stops waiting: (False, None), nothing is paid.
     """
     deadline = time.monotonic() + timeout
     while True:
         published = _EARLY_CATEGORY.get(key)
         if published and (published[1] is not None or published[0] >= since):
             return True, published[1]
-        if time.monotonic() >= deadline:
+        if time.monotonic() >= deadline or (request is not None and await request.is_disconnected()):
             return False, None
         await asyncio.sleep(0.1)
 
 
 @app.post("/garment-flat")
 async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account),
-                       only_for: str = Form("")):
+                       only_for: str = Form(""), request: Request = None):
     """A smoothed, laid-flat picture of a garment for its card in the wardrobe, cut out on transparency.
 
     Only for the card: the try-on keeps the item's own photo, so whatever the
@@ -1551,6 +1555,8 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     analysis of the photo comes within FLAT_CATEGORY_WAIT, the answer is {"skipped": true} at no cost.
     """
     started = time.monotonic()
+    # A cheap per-minute bound first, before the upload is read or anything waits: the daily one below counts made flats.
+    access.throttle(device, 'garment-flat-request', _env_int('AI_FLAT_REQUESTS_PER_MINUTE', 20))
     sections = {entry[1] for entry in CATEGORIES}
     if section_hint and section_hint not in sections:
         raise HTTPException(422, "Неизвестная категория гардероба.")
@@ -1562,16 +1568,18 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     content = await file.read(15 * 1024 * 1024 + 1)
     if not content or len(content) > 15 * 1024 * 1024:
         raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    if wanted:
+        # Waits while /analyze works on the same photo, before any work of its own: nothing is prepared, generated
+        # or counted until its category is known.
+        known, category = await _analysed_category(hashlib.sha256(content + section_hint.encode()).hexdigest(), started,
+                                                   FLAT_CATEGORY_WAIT, request)
+        if not known or _CATEGORY_SECTION.get(category) not in wanted:
+            print(f"Garment flat skipped: {'no analysis came' if not known else f'{category} is not in {sorted(wanted)}'}", flush=True)
+            return FLAT_SKIPPED
     try:
         source = await asyncio.to_thread(_prepare_tryon_image_data_url, content, file.content_type or 'image/jpeg', FAL_GARMENT_SIDE, FAL_JPEG_QUALITY)
     except Exception:
         raise HTTPException(422, PHOTO_UNREADABLE)
-    if wanted:
-        # Read while /analyze works on the same photo; nothing is generated or counted until its category is known.
-        known, category = await _analysed_category(hashlib.sha256(content + section_hint.encode()).hexdigest(), started, FLAT_CATEGORY_WAIT)
-        if not known or _CATEGORY_SECTION.get(category) not in wanted:
-            print(f"Garment flat skipped: {'no analysis came' if not known else f'{category} is not in {sorted(wanted)}'}", flush=True)
-            return FLAT_SKIPPED
     # Counted only for a flat that is made: a skipped one costs nothing.
     access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
     model = fal_tryon.MODELS['seedream-5-flash']
@@ -1740,12 +1748,17 @@ def looks(body: LooksRequest, device: str = Depends(access.require_account)):
 
 @app.post("/analyze")
 def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
-    access.throttle(device, 'analyze', _env_int('AI_ANALYZE_PER_MINUTE', 20))
-    if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
-        raise HTTPException(422, "Неизвестная категория гардероба.")
     content = file.file.read(15 * 1024 * 1024 + 1)
-    if not content or len(content) > 15 * 1024 * 1024:
-        raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    try:
+        access.throttle(device, 'analyze', _env_int('AI_ANALYZE_PER_MINUTE', 20))
+        if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
+            raise HTTPException(422, "Неизвестная категория гардероба.")
+        if not content or len(content) > 15 * 1024 * 1024:
+            raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
+    except HTTPException:
+        # A flat sent alongside this request (only_for) stops waiting for it at once, unpaid.
+        _publish_category(hashlib.sha256(content + section_hint.encode()).hexdigest(), None)
+        raise
     # A flat card picture may hold the models for a few seconds: wait for it rather than turn the person away.
     if not _ANALYSIS_LOCK.acquire(timeout=ANALYSIS_WAIT):
         # A flat sent alongside this request is not made either: the app shows the error and is asked again.

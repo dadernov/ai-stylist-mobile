@@ -151,12 +151,10 @@ class Layering(unittest.TestCase):
         self.assertTrue(app.ONE_PIECE_GARMENTS.issubset({"Платье", "Сарафан", "Комбинезон"}))
         self.assertIn("one-pieces", app._category_candidates("top", ["one-pieces", "auto"]))
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class AnalysisImage(unittest.TestCase):
-    """The photo recognition reads: a big JPEG decoded at a fraction, upright, transparency on white, at most 1280 px."""
+    """The photo recognition reads: upright, transparency on white, at most 1280 px."""
 
     def encode(self, image, fmt='JPEG', **options):
         buffer = BytesIO(); image.save(buffer, fmt, **options); return buffer.getvalue()
@@ -188,3 +186,7 @@ class AnalysisImage(unittest.TestCase):
         self.assertEqual(rgba.mode, 'RGBA')
         self.assertEqual(rgba.getpixel((20, 20)), (200, 60, 60, 255))
         self.assertEqual(rgba.getpixel((5, 5))[3], 0)
+
+
+if __name__ == '__main__':
+    unittest.main()
