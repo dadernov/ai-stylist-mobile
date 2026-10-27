@@ -8,6 +8,7 @@ hand-off — is the real code.
 import json
 import os
 import tempfile
+import time
 import unittest
 from io import BytesIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -21,6 +22,8 @@ import accounts
 import app
 import fal_tryon
 import tryon_policy
+
+REAL_PREPARE = app._prepare_identity_source
 
 
 def queue(status_sequence, result=None, submit_status=200, submit_body=None, result_status=200):
@@ -164,6 +167,172 @@ class FalClient(unittest.IsolatedAsyncioTestCase):
         sent = json.loads(body)
         self.assertNotIn('seed', sent)
         self.assertEqual((sent['image_size'], len(sent['image_urls'])), ('auto_2K', 3))
+
+    async def test_seedreams_image_comes_inside_its_result(self):
+        inline = 'data:image/jpeg;base64,' + 'A' * 64
+        client, calls = queue([{'status': 'COMPLETED'}], {'images': [{'url': inline, 'content_type': 'image/jpeg'}]})
+        result = await self.run_look(client, model='seedream-5-lite')
+        self.assertTrue(json.loads(calls[0][2])['sync_mode'])
+        self.assertEqual(result['outputUrl'], inline)
+        with patch.dict(os.environ, {'TRYON_FAL_INLINE': 'off'}):
+            client, calls = queue([{'status': 'COMPLETED'}], {'images': [{'url': 'https://fal.media/out.jpg'}]})
+            await self.run_look(client, model='seedream-5-lite')
+        self.assertNotIn('sync_mode', json.loads(calls[0][2]))
+        client, calls = queue([{'status': 'COMPLETED'}], {'image': {'url': 'https://fal.media/bria.png'}})
+        await self.run_look(client, model='bria-tryon')
+        self.assertNotIn('sync_mode', json.loads(calls[0][2]), 'only Seedream is asked for it')
+
+    def streamed(self, events, stream_status=200, result=None, statuses=({'status': 'COMPLETED'},), close_early=0):
+        """A fal queue whose status stream sends `events`; plain polls answer `statuses`."""
+        calls, opened = [], []
+        statuses = list(statuses)
+
+        def handler(request):
+            calls.append((request.method, request.url.path))
+            if request.method == 'POST':
+                return httpx.Response(200, json={
+                    'request_id': 'req-1', 'status_url': 'https://queue.fal.run/app/requests/req-1/status',
+                    'response_url': 'https://queue.fal.run/app/requests/req-1', 'cancel_url': 'https://queue.fal.run/app/requests/req-1/cancel'})
+            if request.url.path.endswith('/status/stream'):
+                opened.append(1)
+                if stream_status != 200:
+                    return httpx.Response(stream_status, text='no stream')
+                sent = events[:1] if len(opened) <= close_early else events
+                body = ''.join(f'data: {json.dumps(event)}\n\n' for event in sent)
+                return httpx.Response(200, text=body, headers={'content-type': 'text/event-stream'})
+            if request.url.path.endswith('/status'):
+                return httpx.Response(200, json=statuses.pop(0) if len(statuses) > 1 else statuses[0])
+            return httpx.Response(200, json=result or {'images': [{'url': 'https://fal.media/out.png'}]})
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler)), calls, opened
+
+    async def test_the_status_stream_reports_the_finished_image_without_polling(self):
+        client, calls, _ = self.streamed([{'status': 'IN_QUEUE'}, {'status': 'IN_PROGRESS'}, {'status': 'COMPLETED'}])
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual([call for call in calls if call[1].endswith('/status')], [], 'no status polls')
+        self.assertIn(('GET', '/app/requests/req-1/status/stream'), calls)
+
+    async def test_a_model_error_on_the_stream_is_a_failure(self):
+        client, _, _ = self.streamed([{'status': 'COMPLETED', 'error': 'CUDA out of memory', 'error_type': 'runner'}])
+        result = await self.run_look(client)
+        self.assertIn('runner', result['error'])
+        self.assertNotIn('outputUrl', result)
+
+    async def test_without_the_stream_the_status_is_polled(self):
+        client, calls, _ = self.streamed([], stream_status=405)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertTrue(any(call[1].endswith('/status') for call in calls))
+
+    async def test_a_stream_that_breaks_off_is_opened_again(self):
+        client, calls, opened = self.streamed([{'status': 'IN_PROGRESS'}, {'status': 'COMPLETED'}], close_early=1)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(len(opened), 2)
+        self.assertEqual([call for call in calls if call[1].endswith('/status')], [])
+
+    async def test_a_stream_that_never_completes_falls_back_to_polling(self):
+        client, calls, opened = self.streamed([{'status': 'IN_QUEUE'}], close_early=99)
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(len(opened), 3)
+        self.assertTrue(any(call[1].endswith('/status') for call in calls))
+
+    async def test_an_event_without_a_status_keeps_the_last_one(self):
+        client, _, _ = self.streamed([{'status': 'IN_PROGRESS'}, {'logs': []}], close_early=99)
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertEqual(followed['last_state'], 'IN_PROGRESS')
+
+    async def test_a_stream_that_cannot_connect_falls_back_to_polling(self):
+        opened = []
+
+        def handler(request):
+            if request.url.path.endswith('/status/stream'):
+                opened.append(1)
+                raise httpx.ConnectTimeout('no route', request=request)
+            return httpx.Response(200, json={})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertIsNone(followed['final'])
+        self.assertNotIn('timeout', followed)
+        self.assertEqual(len(opened), 3, 'counted as breaks, then polled')
+
+    async def test_a_silent_stream_is_opened_again_until_it_completes(self):
+        opened = []
+
+        def handler(request):
+            opened.append(1)
+            if len(opened) < 4:
+                raise httpx.ReadTimeout('silent', request=request)
+            return httpx.Response(200, text='data: {"status": "COMPLETED"}\n\n', headers={'content-type': 'text/event-stream'})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 60, 600)
+        self.assertEqual(followed['final'], {'status': 'COMPLETED'})
+        self.assertEqual(len(opened), 4, 'a read timeout is not a break')
+
+    async def test_the_result_is_asked_for_once_more_after_a_failure(self):
+        answers = [httpx.Response(502, text='bad gateway'), httpx.Response(200, json={'images': [{'url': 'https://fal.media/out.png'}]})]
+        client, _, _ = self.streamed([{'status': 'COMPLETED'}])
+        handler = client._transport.handler
+
+        def flaky(request):
+            if request.method == 'GET' and request.url.path == '/app/requests/req-1':
+                return answers.pop(0)
+            return handler(request)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(flaky))
+        result = await self.run_look(client)
+        self.assertEqual(result['outputUrl'], 'https://fal.media/out.png', result)
+        self.assertEqual(answers, [])
+
+    async def test_a_result_that_fails_twice_is_a_failure(self):
+        client, _, _ = self.streamed([{'status': 'COMPLETED'}])
+        handler = client._transport.handler
+        asked = []
+
+        def broken(request):
+            if request.method == 'GET' and request.url.path == '/app/requests/req-1':
+                asked.append(1)
+                raise httpx.ConnectError('down', request=request)
+            return handler(request)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(broken))
+        result = await self.run_look(client)
+        self.assertIn('result failed', result['error'])
+        self.assertEqual(len(asked), 2)
+
+    async def test_polling_can_be_brought_back(self):
+        client, calls, opened = self.streamed([{'status': 'COMPLETED'}])
+        with patch.dict(os.environ, {'TRYON_FAL_STATUS_STREAM': 'off'}):
+            result = await self.run_look(client)
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(opened, [])
+
+    async def test_a_request_that_runs_too_long_on_the_stream_is_cancelled(self):
+        async def stuck(*args, **kwargs):
+            return {'started_at': 1.0, 'last_state': 'IN_PROGRESS', 'final': None, 'timeout': True}
+        client, calls, _ = self.streamed([{'status': 'IN_PROGRESS'}])
+        with patch.object(fal_tryon, '_follow_status', side_effect=stuck):
+            result = await self.run_look(client)
+        self.assertTrue(result.get('timeout'), result)
+        self.assertIn(('PUT', '/app/requests/req-1/cancel'), calls)
+
+    async def test_the_stream_keeps_the_run_limit(self):
+        # A model still running past its limit ends the wait on the stream itself.
+        class Slow(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b'data: {"status": "IN_PROGRESS"}\n\n'
+                await asyncio.sleep(5)
+                yield b'data: {"status": "COMPLETED"}\n\n'
+
+        def handler(request):
+            if request.url.path.endswith('/status/stream'):
+                return httpx.Response(200, stream=Slow(), headers={'content-type': 'text/event-stream'})
+            return httpx.Response(200, json={})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        started = asyncio.get_running_loop().time()
+        followed = await fal_tryon._follow_status(client, 'https://queue.fal.run/app/requests/req-1/status', {}, 0.2, 600)
+        self.assertTrue(followed.get('timeout'))
+        self.assertEqual(followed['last_state'], 'IN_PROGRESS')
+        self.assertLess(asyncio.get_running_loop().time() - started, 2)
 
     async def test_bria_gets_its_own_fields_and_a_single_image(self):
         client, calls = queue([{'status': 'COMPLETED'}], {'image': {'url': 'https://fal.media/bria.png'}})
@@ -322,6 +491,121 @@ class Endpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['error'], fal_tryon.BALANCE_ERROR)
         self.protect.assert_not_awaited()
+
+    async def test_a_photo_that_cannot_be_protected_is_refused_before_paying(self):
+        with patch.object(app, '_prepare_identity_source', side_effect=ValueError('Для защищённой примерки нужно фото одного человека')):
+            result = await self.look()
+        self.assertIn('одного человека', result['error'])
+        self.generate.assert_not_awaited()
+
+    async def test_source_parser_failure_stops_before_paid_generation(self):
+        # The real preparation: a photo whose parsing fails is refused before the paid call.
+        with patch.object(app, '_prepare_identity_source', REAL_PREPARE), \
+             patch.object(app.face_guard, 'detect_faces', return_value=['face']), \
+             patch.object(app.footwear_guard, 'parse', side_effect=RuntimeError('model unavailable')):
+            result = await self.look()
+        self.assertIn('защиту лица и обуви', result['error'])
+        self.generate.assert_not_awaited()
+
+    def ordered(self, order):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
+            order.append('faces' if faces_only else 'parse')
+            return 'photo' if faces_only else 'prepared'
+
+        async def generate(*args, **kwargs):
+            order.append('generate')
+            await asyncio.sleep(0.05)
+            return self.generate.return_value
+        return prepare, generate
+
+    async def test_a_new_photo_is_parsed_before_the_paid_call(self):
+        order = []
+        prepare, generate = self.ordered(order)
+        with patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app.fal_tryon, 'generate', side_effect=generate), \
+             patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
+            result = await self.look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(order, ['parse', 'generate'])
+        self.assertEqual(face_only.call_args.args[1], 'prepared')
+
+    async def test_a_photo_read_before_is_finished_while_the_editor_works(self):
+        order = []
+        prepare, generate = self.ordered(order)
+        with patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app.fal_tryon, 'generate', side_effect=generate), \
+             patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face') as face_only:
+            result = await self.look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(order, ['faces', 'generate', 'parse'])
+        self.assertEqual(face_only.call_args.args[1], 'prepared')
+
+    async def test_a_paid_frame_is_shown_with_a_note_when_the_photo_fails_after_the_call(self):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
+            if faces_only:
+                return 'photo'
+            raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
+        with patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare), \
+             patch.object(app, '_face_only_output_url') as face_only:
+            result = await self.look()
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertTrue(result['outputUrl'].startswith('data:image/jpeg;base64,'))
+        self.assertEqual(result['warning'], app.UNLOCKED_WARNING)
+        self.assertEqual((result['identityLocked'], result['faceRestored']), (False, False))
+        self.assertEqual(self.generate.await_count, 1)
+        face_only.assert_not_called()
+        self.protect.assert_not_awaited()
+
+    async def test_without_the_unlocked_fallback_a_late_failure_is_an_error(self):
+        def prepare(content, photo=None, faces_only=False, cached=False, owner=None):
+            if faces_only:
+                return 'photo'
+            raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
+        with patch.dict(os.environ, {'AI_TRYON_UNLOCKED_FALLBACK': 'false'}), \
+             patch.object(app, '_identity_known', return_value=True), \
+             patch.object(app, '_prepare_identity_source', side_effect=prepare):
+            result = await self.look()
+        self.assertIn('error', result)
+        self.assertNotIn('outputUrl', result)
+
+    async def test_the_cpu_slot_is_taken_after_the_frame_is_downloaded(self):
+        app._CPU_STAGES = None
+        held = []
+
+        async def load(client, source):
+            # The first download fails: the composite fetches the frame again.
+            held.append(app._cpu_stage().locked())
+            return Image.new('RGB', (64, 128)) if len(held) > 1 else None
+        try:
+            with patch.dict(os.environ, {'AI_TRYON_CPU_STAGES': '1'}), \
+                 patch.object(app, '_load_image_from_url_or_data_url', side_effect=load), \
+                 patch.object(app, '_face_only_output_url', return_value='data:image/png;base64,face'):
+                result = await self.look()
+        finally:
+            app._CPU_STAGES = None
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(held, [False, False], 'no download while holding the slot')
+
+    async def test_heavy_photo_work_of_two_looks_goes_one_at_a_time(self):
+        app._CPU_STAGES = None
+        running, most = [0], [0]
+
+        def restore(*args, **kwargs):
+            running[0] += 1
+            most[0] = max(most[0], running[0])
+            time.sleep(0.05)
+            running[0] -= 1
+            return 'data:image/png;base64,face'
+        try:
+            with patch.dict(os.environ, {'AI_TRYON_CPU_STAGES': '1'}), \
+                 patch.object(app, '_face_only_output_url', side_effect=restore):
+                results = await asyncio.gather(self.look(request='request_000000000001'), self.look(request='request_000000000002'))
+        finally:
+            app._CPU_STAGES = None
+        self.assertEqual([result['status'] for result in results], ['succeeded', 'succeeded'])
+        self.assertEqual(most[0], 1)
 
     async def test_by_default_only_the_face_comes_from_the_photo(self):
         # Pasting the photo's floor back around a re-rendered body leaves seams;

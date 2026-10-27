@@ -159,7 +159,92 @@ class IntegratedComposite(unittest.TestCase):
         rembg.assert_not_called()
         self.assertEqual(len(prepared), 4)
 
-    def test_source_parser_failure_stops_before_paid_generation(self):
+    def test_a_photo_read_for_one_look_is_reused_for_the_next(self):
+        app._IDENTITY_SOURCES.clear()
+        source = Image.new('RGB', (200, 400), (90, 100, 110))
+        try:
+            with patch.object(face_guard, 'detect_faces', return_value=['face']), \
+                 patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()) as parse:
+                first = app._prepare_identity_source(photo_bytes(source), cached=True)
+                # What one look does to its copy never reaches the next look.
+                first[3][:] = 0
+                first[0].paste((0, 0, 0), (0, 0, 200, 400))
+                second = app._prepare_identity_source(photo_bytes(source), cached=True)
+                again = app._prepare_identity_source(photo_bytes(source), app._prepare_identity_source(photo_bytes(source), faces_only=True, cached=True),
+                                                     cached=True)
+            parse.assert_called_once()
+            np.testing.assert_array_equal(second[3], labels())
+            self.assertEqual(second[0].getpixel((5, 5)), (90, 100, 110))
+            self.assertEqual(second[2], ['face'])
+            self.assertEqual(second[1].size, (200, 400))
+            np.testing.assert_array_equal(np.asarray(again[1]), np.asarray(second[1]))
+        finally:
+            app._IDENTITY_SOURCES.clear()
+
+    def test_a_known_photos_face_check_hands_out_a_copy(self):
+        app._IDENTITY_SOURCES.clear()
+        source = photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110)))
+        try:
+            with patch.object(face_guard, 'detect_faces', return_value=['face']), \
+                 patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()):
+                app._prepare_identity_source(source, cached=True)
+                photo, faces = app._prepare_identity_source(source, faces_only=True, cached=True)
+                photo.paste((0, 0, 0), (0, 0, 200, 400))
+                faces.append('another')
+                again = app._prepare_identity_source(source, cached=True)
+            self.assertEqual(again[0].getpixel((5, 5)), (90, 100, 110))
+            self.assertEqual(again[2], ['face'])
+        finally:
+            app._IDENTITY_SOURCES.clear()
+
+    def test_a_kept_photo_is_forgotten_after_its_time_and_with_its_account(self):
+        app._IDENTITY_SOURCES.clear()
+        source = photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110)))
+        other = photo_bytes(Image.new('RGB', (200, 400), (10, 100, 110)))
+        clock = [1000.0]
+        try:
+            with patch.object(app, '_identity_now', side_effect=lambda: clock[0]), \
+                 patch.object(face_guard, 'detect_faces', return_value=['face']), \
+                 patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()):
+                app._prepare_identity_source(source, cached=True, owner='masha')
+                app._prepare_identity_source(other, cached=True, owner='anna')
+                self.assertTrue(app._identity_known(source))
+                app._forget_identity_sources('masha')
+                self.assertFalse(app._identity_known(source))
+                self.assertTrue(app._identity_known(other))
+                clock[0] += app._identity_sources_ttl() + 1
+                self.assertFalse(app._identity_known(other))
+                self.assertEqual(len(app._IDENTITY_SOURCES), 0)
+        finally:
+            app._IDENTITY_SOURCES.clear()
+
+    def test_a_photo_is_read_only_when_asked_to_keep_it(self):
+        app._IDENTITY_SOURCES.clear()
+        with patch.object(face_guard, 'detect_faces', return_value=['face']), \
+             patch.object(footwear_guard, 'parse', side_effect=lambda image: labels()) as parse:
+            for _ in range(2):
+                app._prepare_identity_source(photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110))))
+        self.assertEqual(parse.call_count, 2)
+        self.assertEqual(len(app._IDENTITY_SOURCES), 0)
+
+    def test_the_face_is_checked_first_and_the_parsing_done_later(self):
+        source = photo_bytes(Image.new('RGB', (200, 400), (90, 100, 110)))
+        with patch.object(face_guard, 'detect_faces', return_value=['face']) as detect, \
+             patch.object(footwear_guard, 'parse', return_value=labels()) as parse:
+            photo = app._prepare_identity_source(source, faces_only=True)
+            parse.assert_not_called()
+            prepared = app._prepare_identity_source(source, photo)
+        detect.assert_called_once()
+        parse.assert_called_once()
+        self.assertEqual(len(prepared), 4)
+
+    def test_a_photo_without_one_face_is_refused_at_the_face_check(self):
+        with patch.object(face_guard, 'detect_faces', return_value=[]), patch.object(footwear_guard, 'parse') as parse:
+            with self.assertRaisesRegex(ValueError, 'одного человека'):
+                app._prepare_identity_source(photo_bytes(Image.new('RGB', (200, 400))), faces_only=True)
+        parse.assert_not_called()
+
+    def test_source_parser_failure_is_reported_to_the_caller(self):
         with patch.object(face_guard, 'detect_faces', return_value=['face']), \
              patch.object(footwear_guard, 'parse', side_effect=RuntimeError('model unavailable')):
             with self.assertRaisesRegex(ValueError, 'защиту лица и обуви'):

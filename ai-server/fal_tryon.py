@@ -18,6 +18,7 @@ The provider is a server setting (TRYON_PROVIDER=fal with FAL_KEY) and can be
 switched back to FASHN without an app release.
 """
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -192,9 +193,22 @@ def payload(model, person_url, garment_urls, prompt, seed, frame_size=None):
         body['image_size'] = size
     if model.family == 'seedream':
         body['max_images'] = 1
+        if inline_result():
+            body['sync_mode'] = True
     else:
         body['output_format'] = 'png'
     return body
+
+
+def inline_result():
+    """Seedream's image comes inside its result as a data URI (`sync_mode`), TRYON_FAL_INLINE=off for a file URL.
+
+    The file was a second request to fal's CDN on a fresh connection after the
+    result, 0.4-0.6 s before its first byte; inline, the same image comes with
+    the result. fal then keeps neither a public file of the look nor the
+    output in its request history.
+    """
+    return os.getenv('TRYON_FAL_INLINE', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
 
 
 def _image_url(output):
@@ -291,6 +305,111 @@ async def generate(client, model, person_url, garment_urls, prompt, seed, max_wa
             task.cancel()
 
 
+def status_stream():
+    """Follow a request on fal's status stream (TRYON_FAL_STATUS_STREAM=off to poll every second instead).
+
+    Polled once a second, a finished image waited half a second on average
+    before it was noticed, and a look made some fifty status requests; the
+    stream reports the new state the moment it changes.
+    """
+    return os.getenv('TRYON_FAL_STATUS_STREAM', 'on').strip().lower() not in ('0', 'off', 'false', 'no')
+
+
+RESULT_RETRY_SECONDS = 0.5
+# A stream silent this long is opened again: a dropped connection is found without waiting for the deadline.
+STREAM_IDLE_SECONDS = 20.0
+
+
+async def _events(response):
+    """The JSON objects of a server-sent event stream, one per event."""
+    data = []
+    async for line in response.aiter_lines():
+        if line.startswith('data:'):
+            data.append(line[5:].removeprefix(' '))
+            continue
+        if line.strip() or not data:
+            continue
+        try:
+            event = json.loads('\n'.join(data))
+        except ValueError:
+            event = None
+        data = []
+        if isinstance(event, dict):
+            yield event
+    if data:
+        try:
+            event = json.loads('\n'.join(data))
+        except ValueError:
+            event = None
+        if isinstance(event, dict):
+            yield event
+
+
+async def _follow_status(client, status_url, headers, max_wait_seconds, max_queue_seconds):
+    """Wait for COMPLETED on the status stream (fal queue `.../status/stream`).
+
+    Returns {'started_at', 'last_state', 'final'}: `final` is the COMPLETED
+    status, or None when the stream is not available or kept breaking off, and
+    the caller polls the rest of the way. 'timeout' is set when the request ran
+    past the same limits the polling keeps.
+    """
+    followed = {'started_at': None, 'last_state': None, 'final': None}
+    loop = asyncio.get_running_loop()
+    url = httpx.URL(status_url)
+    url = url.copy_with(path=url.path.rstrip('/') + '/stream')
+    deadline = loop.time() + max_queue_seconds
+    breaks = 0
+    while breaks < 3:
+        if loop.time() >= deadline:
+            followed['timeout'] = True
+            return followed
+        try:
+            async with asyncio.timeout_at(deadline) as limit:
+                async with client.stream('GET', url, headers=headers,
+                                         timeout=httpx.Timeout(30.0, read=STREAM_IDLE_SECONDS)) as response:
+                    if response.status_code >= 400 or 'text/event-stream' not in response.headers.get('content-type', ''):
+                        return followed
+                    async with contextlib.aclosing(_events(response)) as events:
+                        async for state in events:
+                            status = state.get('status')
+                            if not status:
+                                continue  # a log-only event says nothing about the state
+                            followed['last_state'] = status
+                            if status == 'IN_PROGRESS' and followed['started_at'] is None:
+                                followed['started_at'] = _now()
+                                # From here the model's own limit applies, as when polling.
+                                deadline = loop.time() + max_wait_seconds
+                                limit.reschedule(deadline)
+                            if status == 'COMPLETED':
+                                followed['final'] = state
+                                return followed
+            # Closed before the request was done: opened again.
+            breaks += 1
+        except TimeoutError:
+            followed['timeout'] = True
+            return followed
+        except httpx.ReadTimeout:
+            # Silent for a while (no news while the model runs, or a dead connection): opened again.
+            continue
+        except httpx.HTTPError:
+            # Not reachable (connect, pool or write timeouts too): after a few, the status is polled.
+            breaks += 1
+    return followed
+
+
+async def _timed_out(client, queued, headers, last_state):
+    cancel_url = queued.get('cancel_url')
+    if cancel_url:
+        try:
+            # Only a request still in the queue can be cancelled; a
+            # running one is billed either way.
+            await client.put(cancel_url, headers=headers)
+        except httpx.HTTPError:
+            pass
+    print(f'fal timeout: last status {last_state}', flush=True)
+    return {'error': 'fal timeout', 'timeout': True}
+
+
 async def _generate_one(client, model, person_url, garment_urls, prompt, seed, max_wait_seconds=None, poll_seconds=1.0,
                         frame_size=None, image_size=None):
     """Submit one look to the fal queue and wait for its image URL.
@@ -317,23 +436,21 @@ async def _generate_one(client, model, person_url, garment_urls, prompt, seed, m
         return {'error': 'fal submit returned no status URL'}
     submitted_at = _now()
     started_at = None
-    network_errors = 0
     # The last queue state tells a slow queue (IN_QUEUE) from a slow model (IN_PROGRESS).
     last_state = None
-    while True:
+    final = None
+    if status_stream():
+        followed = await _follow_status(client, status_url, headers, max_wait_seconds, max_queue_seconds)
+        started_at, last_state, final = followed['started_at'], followed['last_state'], followed['final']
+        if followed.get('timeout'):
+            return await _timed_out(client, queued, headers, last_state)
+    # Without the stream (or after it broke off) the status is polled.
+    network_errors = 0
+    while final is None:
         await asyncio.sleep(poll_seconds)
         now = _now()
         if (now > started_at + max_wait_seconds) if started_at is not None else (now > submitted_at + max_queue_seconds):
-            cancel_url = queued.get('cancel_url')
-            if cancel_url:
-                try:
-                    # Only a request still in the queue can be cancelled; a
-                    # running one is billed either way.
-                    await client.put(cancel_url, headers=headers)
-                except httpx.HTTPError:
-                    pass
-            print(f'fal timeout: last status {last_state}', flush=True)
-            return {'error': 'fal timeout', 'timeout': True}
+            return await _timed_out(client, queued, headers, last_state)
         try:
             status = await client.get(status_url, headers=headers)
         except httpx.HTTPError as exc:
@@ -347,15 +464,22 @@ async def _generate_one(client, model, person_url, garment_urls, prompt, seed, m
         last_state = state.get('status')
         if last_state == 'IN_PROGRESS' and started_at is None:
             started_at = now
-        if state.get('status') != 'COMPLETED':
+        if state.get('status') == 'COMPLETED':
+            final = state
+    if final.get('error'):
+        return {'error': f'fal {final.get("error_type") or "model"} error', 'detail': str(final['error'])[:400]}
+    # The image is paid for by now: a dropped connection or a fal 5xx is asked once more.
+    for attempt in range(2):
+        try:
+            response = await client.get(response_url, headers=headers)
+        except httpx.HTTPError as exc:
+            if attempt:
+                return {'error': f'fal result failed: {type(exc).__name__}'}
+            await asyncio.sleep(RESULT_RETRY_SECONDS)
             continue
-        if state.get('error'):
-            return {'error': f'fal {state.get("error_type") or "model"} error', 'detail': str(state['error'])[:400]}
-        break
-    try:
-        response = await client.get(response_url, headers=headers)
-    except httpx.HTTPError as exc:
-        return {'error': f'fal result failed: {type(exc).__name__}'}
+        if response.status_code < 500 or attempt:
+            break
+        await asyncio.sleep(RESULT_RETRY_SECONDS)
     if response.status_code >= 400:
         return _failure(response, 'result')
     output = response.json()

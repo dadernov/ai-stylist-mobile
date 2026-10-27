@@ -81,16 +81,22 @@ async def run_one(client, case, model, out, lock):
         record['error'] = result['error'] + (f": {result['detail'][:200]}" if result.get('detail') else '')
         return record
     raw = out / f'{model.key}.png'
-    response = await client.get(result['outputUrl'])
-    response.raise_for_status()
-    raw.write_bytes(response.content)
+    # Seedream's image comes inline (fal_tryon.inline_result); other editors give a URL.
+    decoded = app._data_url_to_bytes(result['outputUrl'])
+    if decoded:
+        content = decoded[0]
+    else:
+        response = await client.get(result['outputUrl'])
+        response.raise_for_status()
+        content = response.content
+    raw.write_bytes(content)
     record['raw'] = raw.name
     if lock:
         changed = sorted(tryon_policy.composite_slot(slot, case['outer_category'] if slot == 'outer' else case['top_category'])
                          for slot in case['garments'])
         try:
             prepared = await asyncio.to_thread(app._prepare_identity_source, case['person'])
-            frame = await asyncio.to_thread(app._working_image, response.content)
+            frame = await asyncio.to_thread(app._working_image, content)
             locked = await app._face_locked_output_url(client, case['person'], result['outputUrl'], changed, prepared,
                                                        generated_image=frame)
             _save_data_url(locked, out / f'{model.key}-locked.png')

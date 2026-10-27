@@ -442,11 +442,83 @@ def _silhouette(image: Image.Image):
     return rgba
 
 
-def _prepare_identity_source(original_content: bytes):
-    original = _working_image(original_content)
-    faces = face_guard.detect_faces(original)
-    if len(faces) != 1:
-        raise ValueError('Для защищённой примерки нужно фото одного человека с хорошо видимым лицом.')
+# The person photos read last, by their bytes: a user tries many looks on one photo,
+# and reading it (clothes parsing above all) is half a second of CPU each time.
+# An entry is the photo, its face and its parsing, about 10 MB for 2048x1152; it
+# is kept AI_IDENTITY_CACHE_TTL_SECONDS and dropped with its account.
+_IDENTITY_SOURCES = OrderedDict()  # sha256 -> [original, faces, labels, stored at, owners]
+_IDENTITY_SOURCES_LOCK = threading.Lock()
+
+
+def _identity_sources_size():
+    return max(0, _env_int('AI_IDENTITY_CACHE_SIZE', 2))
+
+
+def _identity_sources_ttl():
+    return max(0., _env_float('AI_IDENTITY_CACHE_TTL_SECONDS', 600.))
+
+
+def _identity_now():
+    return time.monotonic()
+
+
+def _identity_entry(key):
+    """The kept entry for `key`, or None; expired entries go first. Call with the lock held."""
+    oldest = _identity_now() - _identity_sources_ttl()
+    for stale in [name for name, entry in _IDENTITY_SOURCES.items() if entry[3] < oldest]:
+        del _IDENTITY_SOURCES[stale]
+    entry = _IDENTITY_SOURCES.get(key)
+    if entry is not None:
+        _IDENTITY_SOURCES.move_to_end(key)
+    return entry
+
+
+def _identity_known(original_content: bytes):
+    """True when this photo was read for an earlier look and is still kept."""
+    key = hashlib.sha256(original_content).digest()
+    with _IDENTITY_SOURCES_LOCK:
+        return _identity_entry(key) is not None
+
+
+def _forget_identity_sources(owner):
+    """Drop every kept photo an account used (account deletion)."""
+    with _IDENTITY_SOURCES_LOCK:
+        for key in [key for key, entry in _IDENTITY_SOURCES.items() if owner in entry[4]]:
+            del _IDENTITY_SOURCES[key]
+
+
+def _prepare_identity_source(original_content: bytes, photo=None, faces_only=False, cached=False, owner=None):
+    """The photo, its silhouette, its one face and its clothes parsing, for the face restore and the lock.
+
+    `faces_only` reads the photo and checks its face, a tenth of a second,
+    and returns that `photo` for a later call to finish from. `cached`: a
+    photo read for an earlier look is taken from memory (_IDENTITY_SOURCES),
+    on behalf of `owner`; every caller gets its own copies.
+    """
+    key = hashlib.sha256(original_content).digest() if cached else None
+    known = None
+    if key is not None:
+        with _IDENTITY_SOURCES_LOCK:
+            entry = _identity_entry(key)
+            if entry is not None:
+                if owner is not None:
+                    entry[4].add(owner)
+                # Copied inside the lock: an eviction meanwhile cannot hand out a shared object.
+                known = (entry[0].copy(), list(entry[1]), entry[2] if faces_only else entry[2].copy())
+    if known is not None:
+        original, faces, labels = known
+        if faces_only:
+            return original, faces
+        return original, garment_guard.silhouette(original, labels), faces, labels
+    if photo is None:
+        original = _working_image(original_content)
+        faces = face_guard.detect_faces(original)
+        if len(faces) != 1:
+            raise ValueError('Для защищённой примерки нужно фото одного человека с хорошо видимым лицом.')
+        if faces_only:
+            return original, faces
+    else:
+        original, faces = photo
     try:
         labels = footwear_guard.parse(original)
     except Exception as exc:
@@ -454,7 +526,36 @@ def _prepare_identity_source(original_content: bytes):
     cutout = garment_guard.silhouette(original, labels)
     if tryon_composite.person_alpha(original.size, cutout) is None:
         raise ValueError('Не удалось отделить человека от фона. Выбери более чёткое фото.')
+    if key is not None and _identity_sources_size():
+        with _IDENTITY_SOURCES_LOCK:
+            _IDENTITY_SOURCES[key] = [original.copy(), list(faces), labels.copy(), _identity_now(),
+                                      {owner} if owner is not None else set()]
+            _IDENTITY_SOURCES.move_to_end(key)
+            while len(_IDENTITY_SOURCES) > _identity_sources_size():
+                _IDENTITY_SOURCES.popitem(last=False)
     return original, cutout, faces, labels
+
+
+async def _finish_identity(person_content, photo, owner=None):
+    """The rest of _prepare_identity_source after its face check, in a CPU slot."""
+    async with _cpu_stage():
+        return await asyncio.to_thread(_prepare_identity_source, person_content, photo, False, True, owner)
+
+
+_CPU_STAGES = None
+
+
+def _cpu_stage():
+    """A slot for a try-on's heavy photo work (parsing, the face restore or lock): AI_TRYON_CPU_STAGES at once.
+
+    On this one-CPU box two such stages at once each took twice as long and
+    together pushed it into swap; one after the other, the first look is done
+    in half the time and the second no later. Waiting on fal takes no slot.
+    """
+    global _CPU_STAGES
+    if _CPU_STAGES is None:
+        _CPU_STAGES = asyncio.Semaphore(max(1, _env_int('AI_TRYON_CPU_STAGES', os.cpu_count() or 1)))
+    return _CPU_STAGES
 
 
 def _apply_identity_lock(original_content: bytes, generated_image: Image.Image, changed_slots, prepared=None):
@@ -798,8 +899,12 @@ FAL_JPEG_QUALITY = 92
 
 
 async def _run_fal_look(client, model, person_content, garments, top_category, outer_category, tuck, seed, categories=None, options=None,
-                        traits=None):
-    """One call for the whole look: the photo first, then each garment."""
+                        traits=None, before_submit=None):
+    """One call for the whole look: the photo first, then each garment.
+
+    `before_submit` is called once the request is ready to go, right before
+    it is sent: local work started there runs while the editor works.
+    """
     categories = dict(categories or {})
     slots = [slot for slot in fal_tryon.LOOK_ORDER if slot in garments]
     person_url = await asyncio.to_thread(_prepare_provider_frame, person_content, FAL_PERSON_SIDE, FAL_JPEG_QUALITY, fal_tryon.MIN_ASPECT)
@@ -813,6 +918,8 @@ async def _run_fal_look(client, model, person_content, garments, top_category, o
         prompt = tryon_policy.bria_instruction(slots, top_category, outer_category, tuck, (traits.get('outer') or {}).get('length'))
     else:
         prompt = tryon_policy.look_prompt(slots, top_category, outer_category, tuck, _CATEGORY_NOUNS, categories, options, traits)
+    if before_submit is not None:
+        before_submit()
     return await fal_tryon.generate(client, model, person_url, garment_urls, prompt, seed, frame_size=frame_size)
 
 
@@ -1322,6 +1429,7 @@ async def auth_delete_account(login: str = Depends(access.require_account)):
     await asyncio.to_thread(jobs.purge_owner, login)
     await asyncio.to_thread(stage_cache.purge_owner, login)
     await asyncio.to_thread(closet.purge_owner, login)
+    _forget_identity_sources(login)
     await asyncio.to_thread(feedback.purge_owner, login)
     existed = await asyncio.to_thread(accounts.delete_account, login)
     return {"deleted": bool(existed), "login": login}
@@ -2147,7 +2255,33 @@ async def tryon_generate_look(
 
         async def _generate_look():
             started = time.monotonic()
-            prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content)
+            identity_task = None
+            identity_photo = None
+            if fal_model and await asyncio.to_thread(_identity_known, person_content):
+                # A photo read for an earlier look (its face was checked then): its kept face and
+                # parsing are copied out, the parsing while the editor works.
+                identity_photo = await asyncio.to_thread(_prepare_identity_source, person_content, None, True, True, device)
+                prepared_identity = None
+            else:
+                # A new photo is read in full before paying: one that cannot be protected costs nothing.
+                async with _cpu_stage():
+                    prepared_identity = await asyncio.to_thread(_prepare_identity_source, person_content, None, False, True, device)
+
+            def start_identity():
+                nonlocal identity_task
+                if identity_photo is not None and identity_task is None:
+                    identity_task = asyncio.ensure_future(_finish_identity(person_content, identity_photo, device))
+            try:
+                return await _dress(started, start_identity, lambda: identity_task, prepared_identity)
+            finally:
+                # After a failed call nothing is restored: the parsing is let finish, its outcome unread.
+                if identity_task is not None:
+                    if identity_task.done():
+                        identity_task.cancelled() or identity_task.exception()
+                    else:
+                        identity_task.add_done_callback(lambda task: task.cancelled() or task.exception())
+
+        async def _dress(started, start_identity, identity_task, prepared_identity):
             stages = ([('outfit', None, None)] + ([('layers', None, None)] if fal_layer_pass else [])) if fal_model else await asyncio.to_thread(
                 _plan_stages, garments, top_category.strip(), outer_category.strip(), tuck_mode_normalized,
                 tryon_max_side, tryon_jpeg_quality
@@ -2198,7 +2332,7 @@ async def tryon_generate_look(
                     result = await _run_fal_look(client, fal_model, person_content,
                                                  {slot: value for slot, value in garments.items() if slot not in upper},
                                                  top_category.strip(), outer_category.strip(), tuck_mode_normalized, seed, slot_categories,
-                                                 slot_options, garment_traits)
+                                                 slot_options, garment_traits, before_submit=start_identity)
                     elapsed = round(time.monotonic() - step_started, 2)
                     steps.append({'step': 'outfit', 'result': result, 'durationSeconds': elapsed})
                     print(f'Try-on timing: stage=outfit; model={fal_model.key}; seconds={elapsed}; '
@@ -2209,13 +2343,21 @@ async def tryon_generate_look(
                     if result.get('error') or not result.get('outputUrl'):
                         return {'error': fal_tryon.user_error(result), 'steps': steps}
                     current_model = result['outputUrl']
+                    if prepared_identity is None:
+                        start_identity()
+                        try:
+                            prepared_identity = await identity_task()
+                        except Exception as exc:
+                            # The look is paid for: it is shown as the editor made it, with a note (below).
+                            print(f'Try-on photo protection failed after the call: {type(exc).__name__}', flush=True)
                     if upper:
                         # The base look is shown while the layers go on; its face and
                         # background are the editor's until the final lock.
                         base_frame = None
                         try:
                             base_frame = await _load_image_from_url_or_data_url(client, current_model)
-                            preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, base_frame) if base_frame else None
+                            preview_url = await asyncio.to_thread(_stage_preview_url, prepared_identity, base_frame) \
+                                if base_frame and prepared_identity is not None else None
                         except Exception as exc:
                             print(f'Try-on preview unavailable: {type(exc).__name__}', flush=True)
                         await publish(['outfit'], stage='layers', preview_url=preview_url)
@@ -2286,37 +2428,50 @@ async def tryon_generate_look(
             locked = True
             face_restored = False
             async with httpx.AsyncClient(timeout=30.0, trust_env=False) as output_client:
-                if fal_model and fal_tryon.face_only():
-                    # The editor's scene is kept whole; only the face is the photo's.
-                    frame = last_frame or await _load_image_from_url_or_data_url(output_client, current_model)
-                    restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT,
-                                                       fit_allowance, keep_labels) if frame is not None else None
-                    if restored:
-                        locked_output_url, face_restored, locked = restored, True, False
-                        print('Try-on composite: face-restored', flush=True)
-                if not face_restored:
-                    try:
-                        locked_output_url = await _face_locked_output_url(
-                            output_client, person_content, current_model, changed_slots, prepared_identity,
-                            debug_context=(device, job_id), generated_image=last_frame,
-                        )
-                    except AlignmentRejected as exc:
-                        if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
-                            raise
-                        locked = False
-                        # The scene moved, but the face alone may still fit: the
-                        # user then sees their own face on the generator's frame.
-                        restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity, fit_allowance, keep_labels)
-                        if restored:
-                            locked_output_url, face_restored = restored, True
-                            print('Try-on composite: face-restored', flush=True)
-                        else:
-                            # The credits are spent; show the provider's frame with an
-                            # explicit note rather than an error, and let the user
-                            # decide whether to regenerate.
-                            locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
-                            warning = UNLOCKED_WARNING
-                            print('Try-on composite: unlocked-fallback', flush=True)
+                if last_frame is None:
+                    # Fetched before the CPU slot is taken: a download holds no slot.
+                    last_frame = await _load_image_from_url_or_data_url(output_client, current_model)
+                if prepared_identity is None:
+                    # The photo could not be protected after the paid call: as after a rejected
+                    # lock, the editor's own frame is shown with a note instead of losing the look.
+                    if last_frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
+                        raise ValueError('Не удалось проверить результат примерки. Попробуй ещё раз.')
+                    locked, warning = False, UNLOCKED_WARNING
+                    locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, last_frame)
+                    print('Try-on composite: unlocked-fallback', flush=True)
+                else:
+                    async with _cpu_stage():
+                        if fal_model and fal_tryon.face_only():
+                            # The editor's scene is kept whole; only the face is the photo's.
+                            frame = last_frame
+                            restored = await asyncio.to_thread(_face_only_output_url, frame, prepared_identity, fal_tryon.MIN_ASPECT,
+                                                               fit_allowance, keep_labels) if frame is not None else None
+                            if restored:
+                                locked_output_url, face_restored, locked = restored, True, False
+                                print('Try-on composite: face-restored', flush=True)
+                        if not face_restored:
+                            try:
+                                locked_output_url = await _face_locked_output_url(
+                                    output_client, person_content, current_model, changed_slots, prepared_identity,
+                                    debug_context=(device, job_id), generated_image=last_frame,
+                                )
+                            except AlignmentRejected as exc:
+                                if exc.frame is None or not _env_bool('AI_TRYON_UNLOCKED_FALLBACK', True):
+                                    raise
+                                locked = False
+                                # The scene moved, but the face alone may still fit: the
+                                # user then sees their own face on the generator's frame.
+                                restored = await asyncio.to_thread(_face_restored_output_url, exc.frame, prepared_identity, fit_allowance, keep_labels)
+                                if restored:
+                                    locked_output_url, face_restored = restored, True
+                                    print('Try-on composite: face-restored', flush=True)
+                                else:
+                                    # The credits are spent; show the provider's frame with an
+                                    # explicit note rather than an error, and let the user
+                                    # decide whether to regenerate.
+                                    locked_output_url = await asyncio.to_thread(_unlocked_output_url, person_content, exc.frame)
+                                    warning = UNLOCKED_WARNING
+                                    print('Try-on composite: unlocked-fallback', flush=True)
             timings['compositeSeconds'] = round(time.monotonic() - composite_started, 2)
             # Only a look that passed the identity lock may seed later looks: a
             # frame that could not be aligned would carry its defect into every
