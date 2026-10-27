@@ -8,6 +8,10 @@ export class ApiError extends Error {
 export async function fetchJson<T = any>(url: string, init: RequestInit = {}, timeoutMs = 15000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // The caller's own signal (a request it no longer needs) aborts it too.
+  const caller = init.signal;
+  const onAbort = () => controller.abort();
+  if (caller) { if (caller.aborted) controller.abort(); else caller.addEventListener('abort', onAbort); }
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     const raw = await response.text();
@@ -25,5 +29,5 @@ export async function fetchJson<T = any>(url: string, init: RequestInit = {}, ti
   } catch (error: any) {
     if (error?.name === 'AbortError') throw new ApiError('Сервер не ответил вовремя. Проверь соединение и попробуй ещё раз.');
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); caller?.removeEventListener('abort', onAbort); }
 }

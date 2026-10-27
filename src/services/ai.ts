@@ -243,7 +243,7 @@ export type FlatGarment = {
 
 /** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo.
  *  The server refuses a flat that does not show the photo's garment, so the caller keeps its picture. */
-export async function flattenGarment(uri: string, sectionHint?: string, onlyFor?: readonly string[]): Promise<FlatGarment> {
+export async function flattenGarment(uri: string, sectionHint?: string, onlyFor?: readonly string[], signal?: AbortSignal): Promise<FlatGarment> {
   const form = new FormData();
   await appendPhoto(form, 'file', uri);
   // The analysis keeps to the section the item is being added to, as /analyze does.
@@ -251,7 +251,7 @@ export async function flattenGarment(uri: string, sectionHint?: string, onlyFor?
   // Sent together with /analyze of the same photo: the server makes the flat only once /analyze has read a category
   // of these sections, and answers { skipped: true } otherwise.
   if (onlyFor?.length) form.append('only_for', onlyFor.join(','));
-  return readFlatResponse(await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000));
+  return readFlatResponse(await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form, signal }, 150000));
 }
 
 /** The traits of an item added before /analyze returned them: read once, then kept with the item. */

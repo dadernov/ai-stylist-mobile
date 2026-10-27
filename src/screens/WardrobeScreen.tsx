@@ -379,7 +379,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       setFlatBusyId(null);
     }
   };
-  const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; setAnalyzing(false); setModalVisible(false); setDraftFlat({ flat: null, cutout: null, busy: false }); };
+  const closeDraft = () => { Keyboard.dismiss(); analysisRequestRef.current++; earlyFlatRef.current?.abort(); setAnalyzing(false); setModalVisible(false); setDraftFlat({ flat: null, cutout: null, busy: false }); };
   const manual = (field: string, setter: (value: string) => void) => (value: string) => {
     manualFields.current.add(field); setter(value);
   };
@@ -387,6 +387,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   // висит предыдущий запрос, устаревший ответ должен быть проигнорирован, а не
   // перезаписать уже новый черновик (см. аудит #34).
   const analysisRequestRef = useRef(0);
+  // The flat sent together with the current analysis (only_for), to drop it when that analysis is no longer wanted.
+  const earlyFlatRef = useRef<AbortController | null>(null);
 
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState(categoryOptions[0]);
@@ -546,9 +548,15 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       const upload = await prepareGarmentPhoto(photoUri);
       // The flat picture starts together with the analysis instead of after it: the server makes it only once the
       // analysis has read a category of FLAT_SECTIONS, and skips it (unpaid) otherwise. A hint outside them needs none.
-      const early = !sectionHint || FLAT_SECTIONS.includes(sectionHint) ? flattenGarment(upload, sectionHint, FLAT_SECTIONS) : null;
+      // Dropped when the photo is retaken or the draft closed: the server then stops waiting, before anything is paid.
+      earlyFlatRef.current?.abort();
+      const abort = new AbortController();
+      earlyFlatRef.current = abort;
+      const early = !sectionHint || FLAT_SECTIONS.includes(sectionHint) ? flattenGarment(upload, sectionHint, FLAT_SECTIONS, abort.signal) : null;
       early?.catch(() => undefined);
-      const result = await analyzeImage(upload, sectionHint);
+      const result = await analyzeImage(upload, sectionHint).catch(error => { abort.abort(); throw error; });
+      // From here the server has the category and may be generating (paid): closing the draft no longer drops it.
+      if (earlyFlatRef.current === abort) earlyFlatRef.current = null;
       if (analysisRequestRef.current !== requestId) return; // ответ на уже неактуальное фото
       setAnalysis(result);
       applyReading(result);
