@@ -153,3 +153,38 @@ class Layering(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AnalysisImage(unittest.TestCase):
+    """The photo recognition reads: a big JPEG decoded at a fraction, upright, transparency on white, at most 1280 px."""
+
+    def encode(self, image, fmt='JPEG', **options):
+        buffer = BytesIO(); image.save(buffer, fmt, **options); return buffer.getvalue()
+
+    def test_a_camera_photo_is_read_upright_at_1280(self):
+        photo = Image.new('RGB', (4032, 3024), (30, 90, 200))
+        photo.paste((250, 20, 20), (0, 0, 2016, 1512))  # red top-left quarter
+        exif = Image.Exif(); exif[0x0112] = 6  # stored sideways, shown turned 90 degrees clockwise
+        image, _ = app._analysis_image(self.encode(photo, quality=92, exif=exif.tobytes()))
+        self.assertEqual((image.mode, image.size), ('RGB', (960, 1280)))
+        # Upright: the stored top-left quarter is now the top-right one.
+        self.assertGreater(image.getpixel((900, 100))[0], 200)
+        self.assertLess(image.getpixel((60, 100))[0], 60)
+        self.assertLess(np.abs(np.asarray(image.getpixel((480, 1200))) - (30, 90, 200)).max(), 8)
+
+    def test_transparency_is_read_on_white_and_small_photos_stay_as_they_are(self):
+        sticker = Image.new('RGBA', (300, 200), (0, 0, 0, 0)); sticker.paste((10, 120, 40, 255), (100, 50, 200, 150))
+        image, _ = app._analysis_image(self.encode(sticker, 'PNG'))
+        self.assertEqual((image.mode, image.size), ('RGB', (300, 200)))
+        self.assertEqual(image.getpixel((5, 5)), (255, 255, 255))
+        self.assertEqual(image.getpixel((150, 100)), (10, 120, 40))
+
+    def test_the_cut_out_is_the_decoded_picture_under_rembgs_mask(self):
+        picture = Image.new('RGB', (64, 48), (200, 60, 60))
+        mask = Image.new('L', (64, 48), 0); mask.paste(255, (10, 10, 40, 30))
+        session = SimpleNamespace(predict=lambda image: [mask])
+        with patch.object(app, '_rembg', return_value=session):
+            rgba, _ = app._remove_background_rgba(None, picture)
+        self.assertEqual(rgba.mode, 'RGBA')
+        self.assertEqual(rgba.getpixel((20, 20)), (200, 60, 60, 255))
+        self.assertEqual(rgba.getpixel((5, 5))[3], 0)

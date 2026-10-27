@@ -2,6 +2,7 @@
 and a flat that shows another garment is refused. fal and rembg are mocked; the classifier is too, except in
 FlatViews, where predict runs over stubbed image vectors."""
 import asyncio
+import hashlib
 import threading
 import unittest
 from io import BytesIO
@@ -57,7 +58,7 @@ class FlatCase(unittest.IsolatedAsyncioTestCase):
                 patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=flat)), \
                 patch.object(app, '_remove_background_rgba', side_effect=rembg or fake_rembg()), \
                 patch.object(app, 'get_classifier', return_value=classifier):
-            return await app.garment_flat(photo_upload(), section, 'masha')
+            return await app.garment_flat(photo_upload(), section, 'masha', '')
 
     def picture(self, data_url):
         self.assertTrue(data_url.startswith('data:image/png;base64,'))
@@ -91,8 +92,9 @@ class GarmentFlat(FlatCase):
         self.assertEqual((analysis['category'], analysis['needsReview'], analysis['pattern']), ('Худи', True, 'Однотонный'))
         self.assertEqual(analysis['categoryCandidates'][0]['category'], 'Худи')
         # The colour is the flat garment's own; the person in the photo no longer colours it.
-        self.assertEqual(analysis['dominantColor'], '#c83c3c')
-        self.assertEqual(analysis['palette'], ['#c83c3c'])
+        # (200, 60, 60) as the flat's JPEG q92 step gives it back: the cut-out is made from those pixels, as in production.
+        self.assertIn(analysis['dominantColor'], ('#c83c3c', '#c83c3b'))
+        self.assertEqual(analysis['palette'], [analysis['dominantColor']])
         self.assertEqual(analysis['warnings'], ['Тип вещи определён неуверенно. Проверь предложенные варианты.'])
         # Nothing the answer must not carry: the feedback embedding and the per-view details.
         self.assertNotIn('embedding', analysis)
@@ -123,7 +125,7 @@ class GarmentFlat(FlatCase):
         generate = AsyncMock()
         with patch.object(app.access, 'throttle'), patch.object(app.fal_tryon, 'enabled', return_value=True), \
                 patch.object(app.fal_tryon, '_generate_one', generate), self.assertRaises(HTTPException) as raised:
-            await app.garment_flat(photo_upload(), 'Космос', 'masha')
+            await app.garment_flat(photo_upload(), 'Космос', 'masha', '')
         self.assertEqual(raised.exception.status_code, 422)
         generate.assert_not_called()
 
@@ -254,6 +256,83 @@ class GarmentFlatResilience(FlatCase):
         app._PHOTO_CUTS.clear()
         await self.call(prediction(), rembg=remove)
         self.assertEqual(calls[2:], [(1024, 1024), (600, 800)])
+
+
+class FlatAlongsideAnalyze(FlatCase):
+    """only_for: the app sends the flat with /analyze; it is made only for a category of those sections."""
+
+    def setUp(self):
+        super().setUp()
+        app._EARLY_CATEGORY.clear()
+
+    def key(self, section=''):
+        return hashlib.sha256(photo_upload().file.getvalue() + section.encode()).hexdigest()
+
+    async def flat(self, only_for='Верх,Низ,Верхняя одежда', wait=2.0):
+        generate = AsyncMock(return_value={'status': 'succeeded', 'outputUrl': 'https://x/y.png'})
+        with patch.object(app.access, 'throttle') as throttle, patch.object(app.fal_tryon, 'enabled', return_value=True), \
+                patch.object(app.fal_tryon, '_generate_one', generate), patch.object(app, 'FLAT_CATEGORY_WAIT', wait), \
+                patch.object(app, '_load_image_from_url_or_data_url', AsyncMock(return_value=Image.new('RGB', (1024, 1024), (200, 60, 60)))), \
+                patch.object(app, '_remove_background_rgba', side_effect=fake_rembg()), \
+                patch.object(app, 'get_classifier', return_value=SimpleNamespace(predict=lambda *a, **k: prediction())):
+            result = await app.garment_flat(photo_upload(), '', 'masha', only_for)
+        return result, generate.await_count, throttle.call_count
+
+    async def test_a_garment_of_those_sections_is_made_once_its_category_is_read(self):
+        async def analyse_later():
+            await asyncio.sleep(0.3)
+            app._publish_category(self.key(), 'Футболка')
+        later = asyncio.create_task(analyse_later())
+        result, generated, counted = await self.flat()
+        await later
+        self.assertEqual((generated, counted), (1, 1))
+        self.assertTrue(result['checked'])
+
+    async def test_shoes_are_skipped_without_paying_or_counting(self):
+        app._publish_category(self.key(), 'Кроссовки')
+        result, generated, counted = await self.flat()
+        self.assertEqual(result, {'skipped': True, 'checked': False})
+        self.assertEqual((generated, counted), (0, 0))
+
+    async def test_no_analysis_in_time_or_an_unreadable_one_skips_it(self):
+        result, generated, _ = await self.flat(wait=0.3)
+        self.assertTrue(result['skipped']); self.assertEqual(generated, 0)
+        # An analysis without a category (the classifier was down) skips it too.
+        async def fail_later():
+            await asyncio.sleep(0.2)
+            app._publish_category(self.key(), None)
+        later = asyncio.create_task(fail_later())
+        result, generated, _ = await self.flat()
+        await later
+        self.assertTrue(result['skipped']); self.assertEqual(generated, 0)
+
+    async def test_an_old_failure_does_not_skip_a_new_attempt_but_an_old_reading_counts(self):
+        app._publish_category(self.key(), None)
+        result, generated, _ = await self.flat(wait=0.3)
+        self.assertTrue(result['skipped'])
+        app._publish_category(self.key(), 'Джинсы')
+        result, generated, _ = await self.flat(wait=0.3)
+        self.assertEqual(generated, 1)
+
+    async def test_analyze_publishes_its_category_or_its_failure(self):
+        with patch.object(app.access, 'throttle'), patch.object(app, '_remove_background_rgba', side_effect=fake_rembg()), \
+                patch.object(app, 'get_classifier', return_value=SimpleNamespace(predict=lambda *a, **k: prediction(other='Джинсы'))), \
+                patch.object(app.feedback, 'remember_analysis'):
+            app.analyze(photo_upload(), '', 'masha')
+        self.assertEqual(app._EARLY_CATEGORY[self.key()][1], 'Джинсы')
+        app._EARLY_CATEGORY.clear(); app._ANALYSIS_CACHE.clear()
+        app._ANALYSIS_LOCK.acquire()
+        try:
+            with patch.object(app.access, 'throttle'), patch.object(app, 'ANALYSIS_WAIT', 0.1), self.assertRaises(HTTPException):
+                app.analyze(photo_upload(), '', 'masha')
+        finally:
+            app._ANALYSIS_LOCK.release()
+        self.assertIsNone(app._EARLY_CATEGORY[self.key()][1])
+
+    async def test_an_unknown_section_in_only_for_is_refused(self):
+        with self.assertRaises(HTTPException) as raised:
+            await self.flat(only_for='Верх,Космос')
+        self.assertEqual(raised.exception.status_code, 422)
 
 
 class GarmentZones(unittest.TestCase):

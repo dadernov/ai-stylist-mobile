@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
-from rembg import remove, new_session
+from rembg.bg import naive_cutout
 from clothing_analysis import get_classifier, extract_palette, read_garment, CATEGORIES, SHORT_NAMES
 import garment_colour
 import tryon_composite
@@ -181,6 +181,12 @@ _ANALYSIS_CACHE = {}
 # A few full-size images; one evicted is simply cut out again.
 _PHOTO_CUTS = OrderedDict()
 _PHOTO_CUTS_SIZE = 3
+# The category /analyze has read for a photo (by its bytes and section hint), published as soon as it is
+# known, before the colours and the cut-out picture: a flat started alongside it (/garment-flat only_for)
+# waits for it to know whether it is wanted at all. None: /analyze could not read the photo (or was busy).
+# Kept with the time it was published: a category stays true for the same bytes, a None only for this attempt.
+_EARLY_CATEGORY = OrderedDict()
+_EARLY_CATEGORY_SIZE = 24
 _REMBG_LOCK = threading.Lock()
 _rembg_session = None
 
@@ -189,17 +195,16 @@ def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value))
 
 
-def _image_to_data_url(image: Image.Image, fmt="PNG"):
+# zlib level 4 instead of PNG's default 6 for the cut-outs /analyze and /garment-flat send: 0.06 s instead of
+# 0.13 s for a 1280 px garment, the file 6% bigger (perf/ANALYZE_PERF.md).
+CUTOUT_PNG_LEVEL = 4
+
+
+def _image_to_data_url(image: Image.Image, fmt="PNG", **options):
     buff = BytesIO()
-    image.save(buff, format=fmt)
+    image.save(buff, format=fmt, **options)
     b64 = base64.b64encode(buff.getvalue()).decode("utf-8")
     return f"data:image/{fmt.lower()};base64,{b64}"
-
-
-def _rgba_to_png_bytes(image: Image.Image):
-    buff = BytesIO()
-    image.convert("RGBA").save(buff, format="PNG")
-    return buff.getvalue()
 
 
 def _bytes_to_data_url(content: bytes, mime_type: str):
@@ -432,9 +437,7 @@ def _stage_preview_url(prepared, generated_image: Image.Image, max_height: int =
 
 def _silhouette(image: Image.Image):
     """Cut the person out so the composite can tell body from background."""
-    buffer = BytesIO()
-    image.convert("RGB").save(buffer, format="PNG")
-    rgba, _ = _remove_background_rgba(buffer.getvalue(), image.convert("RGB"))
+    rgba, _ = _remove_background_rgba(None, image.convert("RGB"))
     return rgba
 
 
@@ -563,19 +566,25 @@ async def read_upload(upload: UploadFile | None, field: str):
     return content, Image.MIME.get(probe.format, "image/jpeg")
 
 
-def _prepare_image_for_analysis(content: bytes):
+def _analysis_image(content: bytes):
+    """The photo as recognition reads it: upright, on white where it is transparent, at most AI_ANALYZE_MAX_SIDE,
+    then once through JPEG q88 as before (the cut-out's pixels, and so the readings, stay exactly what they were)."""
     source = Image.open(BytesIO(content))
     if source.width * source.height > 25_000_000:
         raise ValueError("Фото слишком большое. Выбери изображение до 25 мегапикселей.")
-    source = ImageOps.exif_transpose(source).convert("RGBA")
-    original = Image.new("RGB", source.size, "white")
-    original.paste(source, mask=source.getchannel("A"))
     max_side = int(os.getenv("AI_ANALYZE_MAX_SIDE", "1280"))
+    source = ImageOps.exif_transpose(source)
+    if source.mode in ("RGBA", "LA", "PA") or "transparency" in source.info:
+        source = source.convert("RGBA")
+        original = Image.new("RGB", source.size, "white")
+        original.paste(source, mask=source.getchannel("A"))
+    else:
+        original = source.convert("RGB")
     if max_side > 0 and max(original.size) > max_side:
         original.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     buff = BytesIO()
     original.save(buff, format="JPEG", quality=88, optimize=True)
-    return original, buff.getvalue()
+    return original, Image.open(BytesIO(buff.getvalue())).convert("RGB")
 
 
 def _extract_prediction_image(output):
@@ -1168,22 +1177,44 @@ def _segment_person_with_mediapipe(original_rgb: Image.Image):
     return rgba
 
 
-def _remove_background_rgba(content: bytes, original_rgb: Image.Image):
+def _rembg():
+    """The u2net session (rembg), made on first use: one thread, as the box has one CPU.
+
+    No memory arena and no memory pattern: with them ONNX Runtime keeps the peak of every run reserved,
+    and the process held 920 MB after a few cut-outs instead of 430 MB (perf/ANALYZE_PERF.md) on a box with
+    2 GB and swap, for about 5% more CPU per cut-out.
+    """
     global _rembg_session
+    with _REMBG_LOCK:
+        if _rembg_session is None:
+            import onnxruntime as ort
+            from rembg.sessions.u2net import U2netSession
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = 1
+            options.inter_op_num_threads = 1
+            options.enable_cpu_mem_arena = False
+            options.enable_mem_pattern = False
+            _rembg_session = U2netSession("u2net", options, providers=["CPUExecutionProvider"])
+        return _rembg_session
+
+
+def _remove_background_rgba(content: bytes | None, original_rgb: Image.Image):
+    """The picture cut out by rembg (u2net) as RGBA, and None where its PNG bytes used to be.
+
+    content: the encoded photo, read and turned upright here; None cuts out original_rgb itself, as it is,
+    with no encoding and decoding on the way. Either way the mask is the one rembg.remove() makes (u2net
+    reads a 320 px copy, its mask is scaled back up), without remove()'s PNG round trip, which cost more
+    than a tenth of a second on a 1280 px photo.
+    """
     if not REMBG_RUNTIME_AVAILABLE:
-        rgba = _segment_person_with_mediapipe(original_rgb)
-        return rgba, _rgba_to_png_bytes(rgba)
+        return _segment_person_with_mediapipe(original_rgb), None
     try:
-        with _REMBG_LOCK:
-            if _rembg_session is None:
-                os.environ.setdefault("OMP_NUM_THREADS", "1")
-                _rembg_session = new_session("u2net", providers=["CPUExecutionProvider"])
-        removed_bytes = remove(content, session=_rembg_session)
-        rgba = Image.open(BytesIO(removed_bytes)).convert("RGBA")
-        return rgba, removed_bytes
+        image = original_rgb if content is None else ImageOps.exif_transpose(Image.open(BytesIO(content)))
+        mask = _rembg().predict(image)[0]
+        rgba = naive_cutout(image, mask)
+        return (rgba if rgba.mode == "RGBA" else rgba.convert("RGBA")), None
     except Exception:
-        rgba = _segment_person_with_mediapipe(original_rgb)
-        return rgba, _rgba_to_png_bytes(rgba)
+        return _segment_person_with_mediapipe(original_rgb), None
 
 
 def _estimate_skin_tone(original_rgb: Image.Image, person_rgba: Image.Image, pose):
@@ -1367,17 +1398,17 @@ def _photo_cut(content: bytes):
     cached = _PHOTO_CUTS.get(hashlib.sha256(content).hexdigest())
     if cached:
         return cached
-    original, analysis_content = _prepare_image_for_analysis(content)
-    foreground, cover = _garment_foreground(analysis_content, original)
+    original, decoded = _analysis_image(content)
+    foreground, cover = _garment_foreground(decoded)
     if cover <= 0.02:
         foreground = original.convert("RGBA")
     _remember_photo_cut(content, original, foreground)
     return original, foreground
 
 
-def _garment_foreground(content: bytes, image: Image.Image):
+def _garment_foreground(image: Image.Image):
     """The garment cut out by rembg and how much of the frame it covers."""
-    rgba, _ = _remove_background_rgba(content, image)
+    rgba, _ = _remove_background_rgba(None, image)
     if rgba.size != image.size:
         rgba = rgba.resize(image.size)
     return rgba, float((np.asarray(rgba.getchannel("A")) > 180).mean())
@@ -1399,7 +1430,7 @@ def _flat_cutout_picture(flat_rgba: Image.Image):
     margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
     card = flat_rgba.crop((max(0, x0 - margin), max(0, y0 - margin), min(flat_rgba.width, x1 + margin), min(flat_rgba.height, y1 + margin)))
     card.thumbnail((FLAT_MAX_SIDE, FLAT_MAX_SIDE), Image.Resampling.LANCZOS)
-    return _image_to_data_url(card)
+    return _image_to_data_url(card, compress_level=CUTOUT_PNG_LEVEL)
 
 
 def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
@@ -1412,9 +1443,10 @@ def _flat_card(content: bytes, flat: Image.Image, section_hint: str = ""):
     """
     flat = flat.convert("RGB")
     try:
+        # Through JPEG q92 as before, so the flat's cut-out and readings stay exactly what they were.
         buffer = BytesIO()
         flat.save(buffer, "JPEG", quality=92)
-        flat_rgba, flat_cover = _garment_foreground(buffer.getvalue(), flat)
+        flat_rgba, flat_cover = _garment_foreground(Image.open(BytesIO(buffer.getvalue())).convert("RGB"))
     except Exception as exc:
         print(f"Garment flat UNCHECKED, sent uncut: the cut-out failed ({type(exc).__name__}: {str(exc)[:120]})", flush=True)
         return {"image": _flat_jpeg(flat), "checked": False}
@@ -1470,8 +1502,38 @@ def _holding_models(work, *args):
         _ANALYSIS_LOCK.release()
 
 
+def _publish_category(key: str, category):
+    _EARLY_CATEGORY[key] = (time.monotonic(), category)
+    _EARLY_CATEGORY.move_to_end(key)
+    while len(_EARLY_CATEGORY) > _EARLY_CATEGORY_SIZE:
+        _EARLY_CATEGORY.popitem(last=False)
+
+
+# How long a flat started alongside /analyze waits for its category: /analyze itself may wait ANALYSIS_WAIT
+# for the models, then reads the photo in a few seconds.
+FLAT_CATEGORY_WAIT = _env_float('AI_FLAT_CATEGORY_WAIT', ANALYSIS_WAIT + 25.0)
+FLAT_SKIPPED = {"skipped": True, "checked": False}
+
+
+async def _analysed_category(key: str, since: float, timeout: float):
+    """The category /analyze reads for this photo, waited for without holding a thread; (False, None) on timeout.
+
+    A category read before `since` still counts (the same bytes read the same); a failure only from `since` on,
+    so a photo analysed again after a busy or failed attempt is not skipped for that old attempt.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        published = _EARLY_CATEGORY.get(key)
+        if published and (published[1] is not None or published[0] >= since):
+            return True, published[1]
+        if time.monotonic() >= deadline:
+            return False, None
+        await asyncio.sleep(0.1)
+
+
 @app.post("/garment-flat")
-async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account)):
+async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""), device: str = Depends(access.require_account),
+                       only_for: str = Form("")):
     """A smoothed, laid-flat picture of a garment for its card in the wardrobe, cut out on transparency.
 
     Only for the card: the try-on keeps the item's own photo, so whatever the
@@ -1482,10 +1544,18 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
     "checked" says whether the flat was compared with the photo at all: when our own recognition
     failed or stayed busy, the picture still comes (it is paid for) but unchecked, and the app
     must not put it on a card by itself. section_hint narrows the category as in /analyze.
+
+    only_for: comma-separated sections. The app then sends the flat at the same time as /analyze of the
+    very same photo bytes, instead of after it: the flat waits here for the category /analyze reads and is
+    made (and paid for) only when that category is in one of these sections; otherwise, or when no
+    analysis of the photo comes within FLAT_CATEGORY_WAIT, the answer is {"skipped": true} at no cost.
     """
     started = time.monotonic()
-    access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
-    if section_hint and section_hint not in {entry[1] for entry in CATEGORIES}:
+    sections = {entry[1] for entry in CATEGORIES}
+    if section_hint and section_hint not in sections:
+        raise HTTPException(422, "Неизвестная категория гардероба.")
+    wanted = {part.strip() for part in only_for.split(",") if part.strip()}
+    if wanted - sections:
         raise HTTPException(422, "Неизвестная категория гардероба.")
     if not fal_tryon.enabled():
         raise HTTPException(503, "Выравнивание фото сейчас недоступно.")
@@ -1496,10 +1566,20 @@ async def garment_flat(file: UploadFile = File(...), section_hint: str = Form(""
         source = await asyncio.to_thread(_prepare_tryon_image_data_url, content, file.content_type or 'image/jpeg', FAL_GARMENT_SIDE, FAL_JPEG_QUALITY)
     except Exception:
         raise HTTPException(422, PHOTO_UNREADABLE)
+    if wanted:
+        # Read while /analyze works on the same photo; nothing is generated or counted until its category is known.
+        known, category = await _analysed_category(hashlib.sha256(content + section_hint.encode()).hexdigest(), started, FLAT_CATEGORY_WAIT)
+        if not known or _CATEGORY_SECTION.get(category) not in wanted:
+            print(f"Garment flat skipped: {'no analysis came' if not known else f'{category} is not in {sorted(wanted)}'}", flush=True)
+            return FLAT_SKIPPED
+    # Counted only for a flat that is made: a skipped one costs nothing.
+    access.throttle(device, 'garment-flat', _env_int('AI_FLAT_PER_DAY', 40), 86400)
     model = fal_tryon.MODELS['seedream-5-flash']
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         # 1K: enough for a card, and 11-16 s instead of 18-25 s at the same price.
-        result = await fal_tryon._generate_one(client, model, source, [], FLAT_PROMPT, 1, image_size={'width': 1024, 'height': 1024})
+        # Polled every 0.25 s, not 1 s: the start and the end are seen ~0.4-0.75 s sooner (perf/ANALYZE_PERF.md).
+        result = await fal_tryon._generate_one(client, model, source, [], FLAT_PROMPT, 1, poll_seconds=0.25,
+                                               image_size={'width': 1024, 'height': 1024})
         if result.get('error') or not result.get('outputUrl'):
             print(f"Garment flat failed: {result.get('error')}", flush=True)
             raise HTTPException(502, fal_tryon.user_error(result))
@@ -1668,6 +1748,8 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
         raise HTTPException(413, "Нужно фото размером не больше 15 МБ.")
     # A flat card picture may hold the models for a few seconds: wait for it rather than turn the person away.
     if not _ANALYSIS_LOCK.acquire(timeout=ANALYSIS_WAIT):
+        # A flat sent alongside this request is not made either: the app shows the error and is asked again.
+        _publish_category(hashlib.sha256(content + section_hint.encode()).hexdigest(), None)
         raise HTTPException(503, "Анализ занят. Повтори через несколько секунд.")
     try:
         key = hashlib.sha256(content + section_hint.encode()).hexdigest()
@@ -1676,12 +1758,14 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
             photo_key = hashlib.sha256(content).hexdigest()
             if photo_key in _PHOTO_CUTS:
                 _PHOTO_CUTS.move_to_end(photo_key)
+            _publish_category(key, _ANALYSIS_CACHE[key].get("category"))
             return _ANALYSIS_CACHE[key]
         try:
-            original, analysis_content = _prepare_image_for_analysis(content)
+            original, decoded = _analysis_image(content)
         except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+            _publish_category(key, None)
             raise HTTPException(422, "Не удалось открыть фото. Выбери JPEG, PNG или WebP до 25 мегапикселей.")
-        foreground, _ = _remove_background_rgba(analysis_content, original)
+        foreground, _ = _remove_background_rgba(None, decoded)
         alpha = foreground.getchannel("A")
         coverage = float((np.asarray(alpha) > 180).mean())
         background_removed = 0.02 < coverage < 0.98
@@ -1702,6 +1786,8 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
             result = {"category": None, "section": section_hint or None, "season": None, "pattern": None,
                       "categoryCandidates": [], "needsReview": True, "analysisSource": "unavailable",
                       "warnings": ["Распознавание сейчас недоступно. Выбери тип вещи вручную или повтори анализ."]}
+        # A flat started alongside this request may go on now; the rest below is colours and the picture.
+        _publish_category(key, result.get("category"))
         palette = extract_palette(foreground, alpha)
         result.update(_colour_name(embedding, foreground))
         if not background_removed:
@@ -1715,7 +1801,7 @@ def analyze(file: UploadFile = File(...), section_hint: str = Form(""), device: 
                 margin = max(8, round(max(x1 - x0, y1 - y0) * 0.04))
                 foreground = foreground.crop((max(0, x0 - margin), max(0, y0 - margin),
                                               min(foreground.width, x1 + margin), min(foreground.height, y1 + margin)))
-            cutout = _image_to_data_url(foreground)
+            cutout = _image_to_data_url(foreground, compress_level=CUTOUT_PNG_LEVEL)
         result.update({"dominantColor": palette[0] if palette and not result.get('wornByPerson') else None, "palette": palette,
                        "bgRemovedBase64": cutout, "backgroundRemoved": background_removed})
         if result['analysisSource'] != 'unavailable':

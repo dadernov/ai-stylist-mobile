@@ -158,7 +158,7 @@ class FlatColour(UsingHead, unittest.IsolatedAsyncioTestCase):
                 patch.object(app, '_remove_background_rgba', side_effect=remove), \
                 patch.object(app, 'get_classifier', return_value=SimpleNamespace(predict=lambda *a, **k: prediction)), \
                 patch.object(app.garment_colour, 'name_colour', side_effect=name):
-            return await app.garment_flat(upload(), '', 'masha'), seen
+            return await app.garment_flat(upload(), '', 'masha', ''), seen
 
     async def test_the_flat_names_its_own_colour(self):
         with tempfile.TemporaryDirectory() as directory:
