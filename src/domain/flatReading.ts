@@ -42,6 +42,8 @@ export function categoryFitsSection(category: string, sectionOfCategory: string,
 /** /garment-flat's answer. "checked" false: the server could not compare the flat with the photo (the picture is
  *  paid for, so it still comes); an older server sends no "checked", and its flats were all shown as they came. */
 export function readFlatResponse(result: any): FlatGarment {
+  // No flat was wanted for this photo's category (only_for): nothing to show, nothing paid.
+  if (result?.skipped === true) return { image: '', checked: false, skipped: true };
   if (typeof result?.image !== 'string') throw new Error('no image');
   const analysis = result.analysis && typeof result.analysis === 'object' && typeof result.analysis.category === 'string' ? result.analysis : undefined;
   return { image: result.image, analysis, checked: result.checked !== false };

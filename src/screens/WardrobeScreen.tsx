@@ -34,7 +34,7 @@ import { SHADOWS, ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { analyzeImage, AiResult, FlatAnalysis, flattenGarment, sendCategoryFeedback } from '../services/ai';
+import { analyzeImage, AiResult, FlatAnalysis, flattenGarment, prepareGarmentPhoto, sendCategoryFeedback } from '../services/ai';
 import { categoryFitsSection, mergeFlatReading, readingColourName } from '../domain/flatReading';
 import { GarmentLabel } from '../components/GarmentLabel';
 import { WardrobeStudio } from '../components/studio/WardrobeStudio';
@@ -542,7 +542,13 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     try {
       setAnalyzing(true);
       setAnalysis(null); setAnalysisError('');
-      const result = await analyzeImage(photoUri, sectionHint);
+      // One upload-sized copy for both requests: the server matches them by their bytes.
+      const upload = await prepareGarmentPhoto(photoUri);
+      // The flat picture starts together with the analysis instead of after it: the server makes it only once the
+      // analysis has read a category of FLAT_SECTIONS, and skips it (unpaid) otherwise. A hint outside them needs none.
+      const early = !sectionHint || FLAT_SECTIONS.includes(sectionHint) ? flattenGarment(upload, sectionHint, FLAT_SECTIONS) : null;
+      early?.catch(() => undefined);
+      const result = await analyzeImage(upload, sectionHint);
       if (analysisRequestRef.current !== requestId) return; // ответ на уже неактуальное фото
       setAnalysis(result);
       applyReading(result);
@@ -554,7 +560,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       if (result.category && FLAT_SECTIONS.includes(getSectionByCategory(result.category))) {
         const cutout = result.bgRemovedBase64 || photoUri;
         setDraftFlat({ flat: null, cutout, busy: true });
-        flattenGarment(photoUri, sectionHint).then(flat => {
+        // An early flat skipped all the same (its analysis never reached the server's check) is asked for again, as before.
+        // Never asked again after a real failure: that flat may be paid for already.
+        const flatRequest = early ? early.then(flat => (flat.skipped ? flattenGarment(upload, sectionHint) : flat))
+          : flattenGarment(upload, sectionHint);
+        flatRequest.then(flat => {
+          if (flat.skipped) throw new Error('skipped');
           // Saved already: only its picture changes, never what it was saved as.
           // An unchecked flat (not compared with the photo) never goes onto a saved card, and in the draft it is only
           // offered: the person picks it or not.

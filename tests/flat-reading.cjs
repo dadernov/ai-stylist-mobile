@@ -67,6 +67,8 @@ assert.equal(readFlatResponse({ image: 'x', checked: false }).checked, false);
 assert.equal(readFlatResponse({ image: 'x', checked: true, analysis: { category: 'Худи' } }).analysis.category, 'Худи');
 assert.equal(readFlatResponse({ image: 'x', analysis: { category: 7 } }).analysis, undefined);
 assert.throws(() => readFlatResponse({}));
+// A flat sent alongside /analyze for a category of no flat section: skipped, with nothing to show.
+assert.deepEqual(readFlatResponse({ skipped: true, checked: false }), { image: '', checked: false, skipped: true });
 
 // The colour name: the server's (colour head + pixels) when it gives one of the app's names, else the nearest by RGB.
 const known = ['Белый', 'Черный', 'Синий деним', 'Серый'];

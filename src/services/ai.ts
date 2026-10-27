@@ -166,10 +166,25 @@ export const appendPhoto = async (form: FormData, field: string, uri: string, sh
     form.append(field, blob, `${field}.${blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg'}`);
     return;
   }
+  let fileUri = await localFile(uri, field, extension);
+  // Expo's multipart encoder accepts any part with bytes(); File itself
+  // exposes arrayBuffer() only, so wrap it with the name and type it needs.
+  if (shrink) fileUri = await shrinkForUpload(fileUri, png, shrink === true ? TRYON_UPLOAD_MAX_SIDE : shrink);
+  const file = new File(fileUri);
+  const part = {
+    uri: fileUri,
+    name: `${field}.${extension}`,
+    type: png ? 'image/png' : webp ? 'image/webp' : 'image/jpeg',
+    bytes: async () => new Uint8Array(await file.arrayBuffer())
+  };
+  form.append(field, part as unknown as Blob);
+};
+
+// A photo as a local file: data URLs and foreign schemes are materialised in the cache first; the
+// legacy writer is the same one that stores wardrobe photos.
+const localFile = async (uri: string, field: string, extension: string) => {
   let fileUri = uri;
   if (!/^file:\/\//i.test(uri)) {
-    // Data URLs and foreign schemes are materialised in the cache first; the
-    // legacy writer is the same one that stores wardrobe photos.
     const target = `${LegacyFileSystem.cacheDirectory || ''}upload-${field}-${Date.now()}.${extension}`;
     try {
       if (/^data:image\//i.test(uri)) {
@@ -185,18 +200,18 @@ export const appendPhoto = async (form: FormData, field: string, uri: string, sh
     }
     fileUri = target;
   }
-  // Expo's multipart encoder accepts any part with bytes(); File itself
-  // exposes arrayBuffer() only, so wrap it with the name and type it needs.
-  if (shrink) fileUri = await shrinkForUpload(fileUri, png, shrink === true ? TRYON_UPLOAD_MAX_SIDE : shrink);
-  const file = new File(fileUri);
-  const part = {
-    uri: fileUri,
-    name: `${field}.${extension}`,
-    type: png ? 'image/png' : webp ? 'image/webp' : 'image/jpeg',
-    bytes: async () => new Uint8Array(await file.arrayBuffer())
-  };
-  form.append(field, part as unknown as Blob);
+  return fileUri;
 };
+
+/** A garment photo as one local file for both /analyze and /garment-flat: the server matches the two requests (the
+ *  flat waits for the analysis's category, and reuses its cut-out) by the very same bytes. Web URIs stay as they are.
+ *  (Shrinking it to 1280 px here would also cut the upload; not done until its effect on recognition is measured.) */
+export async function prepareGarmentPhoto(uri: string): Promise<string> {
+  if (Platform.OS === 'web') return uri;
+  const png = /^data:image\/png/i.test(uri) || /\.png(?:\?|$)/i.test(uri);
+  const webp = /^data:image\/webp/i.test(uri) || /\.webp(?:\?|$)/i.test(uri);
+  return localFile(uri, 'garment', png ? 'png' : webp ? 'webp' : 'jpg');
+}
 
 export async function analyzeImage(uri: string, sectionHint?: string): Promise<AiResult> {
   const form = new FormData();
@@ -222,15 +237,20 @@ export type FlatGarment = {
   analysis?: FlatAnalysis;
   /** False when the server could not check the flat shows the photo's garment: never put on a card by itself. */
   checked: boolean;
+  /** Sent with onlyFor: the photo's category is in none of those sections, so no flat was made (nor paid for). */
+  skipped?: boolean;
 };
 
 /** A smoothed, laid-flat picture of a garment for its card; the try-on keeps the item's own photo.
  *  The server refuses a flat that does not show the photo's garment, so the caller keeps its picture. */
-export async function flattenGarment(uri: string, sectionHint?: string): Promise<FlatGarment> {
+export async function flattenGarment(uri: string, sectionHint?: string, onlyFor?: readonly string[]): Promise<FlatGarment> {
   const form = new FormData();
   await appendPhoto(form, 'file', uri);
   // The analysis keeps to the section the item is being added to, as /analyze does.
   if (sectionHint) form.append('section_hint', sectionHint);
+  // Sent together with /analyze of the same photo: the server makes the flat only once /analyze has read a category
+  // of these sections, and answers { skipped: true } otherwise.
+  if (onlyFor?.length) form.append('only_for', onlyFor.join(','));
   return readFlatResponse(await fetchJson(AI_BASE_URL + '/garment-flat', { method: 'POST', headers: await authHeaders(), body: form }, 150000));
 }
 
