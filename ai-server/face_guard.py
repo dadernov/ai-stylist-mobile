@@ -47,6 +47,35 @@ def detect_faces(image: Image.Image, region=None):
                  face[4:14].reshape(5, 2) / scales + offset) for face in found]
 
 
+def _describe(faces):
+    return ', '.join(f'({x:.0f},{y:.0f},{w:.0f}x{h:.0f})' for x, y, w, h in (f.box for f in faces))
+
+
+def the_person(faces, source_face: Face) -> Face:
+    """The generated frame's face of the photo's person, or AlignmentError.
+
+    The frame is in the photo's coordinates, so the person's head is where the
+    photo's head is. A second face elsewhere (a print on the clothes, a
+    reflection, gloved hands held up) is not a reason to give up the face;
+    only two faces at the head are ambiguous.
+    """
+    if len(faces) == 1:
+        return faces[0]
+    if not faces:
+        raise AlignmentError('face-not-found')
+    x, y, w, h = source_face.box
+    centre, reach = np.array((x + w / 2, y + h / 2)), max(w, h)
+    near = [f for f in faces
+            if np.hypot(*(np.array((f.box[0] + f.box[2] / 2, f.box[1] + f.box[3] / 2)) - centre)) < .75 * reach
+            and .5 < max(f.box[2], f.box[3]) / reach < 2.]
+    # Diagnostics only: boxes, never pixels.
+    print(f'Face guard: {len(faces)} faces in generated frame [{_describe(faces)}]; '
+          f'source head ({x:.0f},{y:.0f},{w:.0f}x{h:.0f}); at the head: {len(near)}', flush=True)
+    if len(near) != 1:
+        raise AlignmentError('multiple-faces')
+    return near[0]
+
+
 def protected_head(face, size):
     x, y, w, h = face.box
     return (max(0, int(x - .45 * w)), max(0, int(y - .65 * h)),
@@ -559,8 +588,7 @@ def transplant_face(original: Image.Image, generated: Image.Image, source_face: 
         region = (max(0, int(x - 1.5 * w)), max(0, int(y - h)),
                   min(original.width, int(x + 2.5 * w)), min(original.height, int(y + 2 * h)))
         faces = detect_faces(generated, region=region)
-    if len(faces) != 1:
-        raise AlignmentError('face-not-found' if not faces else 'multiple-faces')
+    faces = [the_person(faces, source_face)]
     source = np.asarray(source_face.landmarks, dtype=np.float64)
     target = np.asarray(faces[0].landmarks, dtype=np.float64)
     if source.shape != (5, 2) or target.shape != (5, 2) or not np.isfinite([source, target]).all():
@@ -824,8 +852,7 @@ def align_to_source(original: Image.Image, generated: Image.Image, source_face: 
         region = (max(0, int(x - 1.5 * w)), max(0, int(y - h)),
                   min(original.width, int(x + 2.5 * w)), min(original.height, int(y + 2 * h)))
         faces = detect_faces(generated, region=region)
-    if len(faces) != 1:
-        raise AlignmentError('face-not-found' if not faces else 'multiple-faces')
+    faces = [the_person(faces, source_face)]
     matrix = background_transform(original, generated, source_face, source_labels)
     if matrix is None:
         matrix = fallback_alignment(source_face, faces[0], original.size)

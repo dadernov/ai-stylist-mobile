@@ -142,9 +142,27 @@ class DetectionAndWarp(unittest.TestCase):
 
     def test_missing_or_ambiguous_face_is_not_accepted(self):
         image = Image.new('RGB', (400, 800))
-        for detections in [[], [face(), face(offset=(70, 0))]]:
+        near = face_guard.Face((190., 70., 40., 50.), face().landmarks + (10, 6))
+        for detections in [[], [face(), near]]:
             with patch.object(face_guard, 'detect_faces', return_value=detections), self.assertRaises(face_guard.AlignmentError):
                 face_guard.align_to_source(image, image, face())
+
+    def test_a_second_face_away_from_the_head_is_not_the_person(self):
+        # A face printed on a shirt, a reflection or gloved hands raised: the frame is in the
+        # photo's coordinates, so the person's own head is the one where the photo's head is.
+        original = Image.new('RGB', (400, 800), 'red')
+        generated = Image.new('RGB', original.size, 'green')
+        printed = face_guard.Face((185., 300., 30., 36.), face().landmarks + (5, 236))
+        for detections in ([printed, face(offset=(4, 3))], [face(offset=(4, 3)), printed]):
+            with patch.object(face_guard, 'detect_faces', return_value=detections):
+                face_guard.align_to_source(original, generated, face())
+
+    def test_the_transplant_ignores_a_face_away_from_the_head(self):
+        original = Image.new('RGB', (400, 800), 'red')
+        generated = Image.new('RGB', original.size, 'green')
+        printed = face_guard.Face((185., 300., 30., 36.), face().landmarks + (5, 236))
+        with patch.object(face_guard, 'detect_faces', return_value=[printed, face(offset=(4, 3))]):
+            face_guard.transplant_face(original, generated, face())
 
     def test_crop_detection_returns_full_frame_coordinates(self):
         row = np.array([20, 30, 50, 60, 25, 35, 60, 35, 45, 50, 30, 65, 55, 65, .99])

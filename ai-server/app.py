@@ -514,6 +514,7 @@ def _prepare_identity_source(original_content: bytes, photo=None, faces_only=Fal
         original = _working_image(original_content)
         faces = face_guard.detect_faces(original)
         if len(faces) != 1:
+            print(f'Try-on source photo: {len(faces)} faces', flush=True)
             raise ValueError('Для защищённой примерки нужно фото одного человека с хорошо видимым лицом.')
         if faces_only:
             return original, faces
