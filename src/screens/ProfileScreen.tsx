@@ -11,6 +11,7 @@ import { Gender } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
 import { ChoiceSheet, SettingsPanel, SettingsRow } from '../components/SettingsRows';
 import { PhotoAdvice } from '../components/PhotoAdvice';
+import { PhotoGuide } from '../components/PhotoGuide';
 import { ProductHelp } from '../components/ProductHelp';
 import { Glass, Pill } from '../components/studio/Glass';
 import { font, INK } from '../components/studio/studio';
@@ -130,11 +131,15 @@ export function ProfileScreen({
               <View style={styles.tryOnBody}>
                 <Text style={[font('semibold'), styles.tryOnTitle, { color: c.text }]}>{t('Фото для примерки')}</Text>
                 <Text style={[font('regular'), styles.tryOnHint, { color: c.muted }]}>
-                  {t('Фото в полный рост, от макушки до стоп, руки опущены. Фон любой, вырезать его не нужно. Лучше в облегающей одежде. На это фото мы надеваем образы.')}
+                  {t('Встань в полный рост, лицом к камере, руки чуть в стороны. Лучше всего — облегающая одежда: лосины или шорты и топ, спортивная форма. Тогда примерка точно повторит твою фигуру.')}
                 </Text>
                 <Pill variant="primary" size="sm" title={t(modelUri ? 'Заменить фото' : 'Выбрать из галереи')} onPress={handlePickModel} style={styles.replace} />
               </View>
             </View>
+            {modelUri ? null : <View style={styles.guide}><PhotoGuide /></View>}
+            <Text style={[font('regular'), styles.privacy, { color: c.muted }]}>
+              {t('Хороший свет, без объёмной верхней одежды и сумок. Фото видишь только ты, оно нужно только для примерки.')}
+            </Text>
             {modelUri ? <View style={styles.advice}><PhotoAdvice uri={modelUri} /></View> : null}
           </Glass>
         </FadeInView>
@@ -187,6 +192,8 @@ const styles = StyleSheet.create({
   tryOnHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   replace: { alignSelf: 'flex-start', marginTop: 8 },
   advice: { marginTop: 12 },
+  guide: { marginTop: 14 },
+  privacy: { fontSize: 12, lineHeight: 17, marginTop: 12 },
   actions: { flexDirection: 'row', gap: 8 },
   help: { flex: 1 },
   logout: { borderRadius: 999 },
