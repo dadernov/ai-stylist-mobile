@@ -461,6 +461,7 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
         text += (f'The top in image {image["top"]} is worn under the garment in image {image["top2"]}: it may show only at the '
                  f'neckline, and it never sticks out below the hem of the garment in image {image["top2"]}; '
                  'below that hem only the trousers show. ')
+    text += keep_unworn_instruction(slots, categories.get('top', ''))
     if 'bottom' in slots:
         text += TROUSERS
     if 'legwear' in slots:
@@ -513,6 +514,30 @@ def look_prompt(slots, top_category='', outer_category='', tuck='auto', names=No
     else:
         text += FOOTWEAR + ' '
     return text + 'The result is a photorealistic photo with the lighting and colours of image 1.'
+
+
+def keep_unworn_instruction(slots, top_category=''):
+    """Each garment replaces only its own zone; the photo's clothes elsewhere stay.
+
+    Told only "dress this person in the outfit", a look with a T-shirt alone came
+    out with bare legs: the shorts of the photo were taken off. A one-piece
+    replaces both zones; outerwear goes over whatever is worn. A bag or other
+    accessory of the photo that is not in the look is removed.
+    """
+    one_piece = 'top' in slots and top_category in ONE_PIECE
+    kept = []
+    if 'top' not in slots:
+        kept.append('upper-body garment the person wears in image 1 (top, shirt or sweater)')
+    if 'bottom' not in slots and not one_piece:
+        kept.append('lower-body garment the person wears in image 1 (trousers, jeans, shorts or skirt)')
+    text = ''
+    if kept:
+        text += ('Change only the body zones covered by the new garments. Keep the ' + ' and the '.join(kept)
+                 + ' exactly as it is, with the same colour, cut and length; never remove it, never show bare skin '
+                 'or underwear in its place and never replace it with something else. ')
+    if 'bag' not in slots:
+        text += 'Remove any bag the person carries in image 1: no bag is part of the outfit. '
+    return text
 
 
 def _bare(noun):
