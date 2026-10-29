@@ -138,7 +138,7 @@ export function ProfileScreen({
             </View>
             {modelUri ? null : <View style={styles.guide}><PhotoGuide /></View>}
             <Text style={[font('regular'), styles.privacy, { color: c.muted }]}>
-              {t('Хороший свет, без объёмной верхней одежды и сумок. Фото видишь только ты, оно нужно только для примерки.')}
+              {t('Хороший свет, без объёмной верхней одежды и сумок. Фото нужно только для примерки и не попадает в общий доступ.')}
             </Text>
             {modelUri ? <View style={styles.advice}><PhotoAdvice uri={modelUri} /></View> : null}
           </Glass>
