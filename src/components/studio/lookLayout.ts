@@ -23,7 +23,7 @@ const GAP = 18;      // between pieces, leaves room for a tilt and the floor sha
 const PAD = 16;      // around the stage edge
 const SHADOW = 14;   // the floor shadow below the lowest row
 /** Linear size of shoes, bags and accessories against clothes. */
-export const SMALL = 0.8;
+export const SMALL = 0.7;
 const TILTS = [-2, 1.5, -1, 2, -1.5, 1];
 
 type Piece = { item: WardrobeItem; a: number; band: number };
