@@ -3,15 +3,20 @@ import { ActivityIndicator, Animated, Easing, Image, LayoutChangeEvent, Modal, N
   StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowUpRight, Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
+import { BlurView } from 'expo-blur';
+import { ArrowUpRight, Check, ChevronDown, Download, LucideIcon, RefreshCw, Share2, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { AppPressable } from './AppPressable';
 import { EXPECTED_TRYON_MS } from './tryOnStatus';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { ZoomableImage } from './ui/ZoomableImage';
+import { Pill } from './studio/Glass';
+import { font, glassFill, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
+
+/** A spinner in a Pill's icon slot: Pill draws its icon with `size` and `color`, so it follows the pill's ink. */
+export const SpinnerIcon = (({ color }: { color?: string }) => <ActivityIndicator size="small" color={color} />) as unknown as LucideIcon;
 
 /** Before the try-on: how each garment is worn, and the button that starts it. */
 export type StageSetup = {
@@ -66,7 +71,9 @@ type Props = {
  */
 export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange, onClose, setup, banner }: Props) {
   const t = useT();
-  const { colors: c } = useTheme();
+  const { colors: { danger }, isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const ink = isDark ? INK_ON_DARK : INK;
   const { height } = useWindowDimensions();
   const slide = useRef(new Animated.Value(height)).current;
   const pager = useRef<ScrollView>(null);
@@ -75,8 +82,9 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
   const current = setup ? null : pages[Math.min(page, pages.length - 1)];
 
   useEffect(() => {
-    Animated.spring(slide, { toValue: 0, damping: 22, stiffness: 180, mass: 0.9, useNativeDriver: true }).start();
-  }, [slide]);
+    if (reduced) slide.setValue(0);
+    else Animated.spring(slide, { toValue: 0, damping: 22, stiffness: 180, mass: 0.9, useNativeDriver: true }).start();
+  }, [slide, reduced]);
   useEffect(() => { onPageChange?.(page); }, [page]);
   // The setup step turns into the try-ons on the page asked for: the first look, the new one a swipe away.
   useEffect(() => { if (!setup) setPage(Math.min(initialPage, Math.max(0, pages.length - 1))); }, [Boolean(setup)]);
@@ -91,7 +99,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
   }, [scrollTo?.at]);
 
   const close = () => {
-    Animated.timing(slide, { toValue: height, duration: 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onClose());
+    Animated.timing(slide, { toValue: height, duration: reduced ? 0 : 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onClose());
   };
   const measure = (event: LayoutChangeEvent) => {
     const { width, height: tall } = event.nativeEvent.layout;
@@ -110,25 +118,25 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
     <Modal transparent visible animationType="none" onRequestClose={close}>
       <SafeAreaProvider>
         <View style={styles.backdrop}>
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: c.overlay,
-            opacity: slide.interpolate({ inputRange: [0, height], outputRange: [1, 0], extrapolate: 'clamp' }) }]} />
-          <Animated.View style={[styles.sheet, { backgroundColor: c.card, transform: [{ translateY: slide }] }]}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill,
+            { opacity: slide.interpolate({ inputRange: [0, height], outputRange: [1, 0], extrapolate: 'clamp' }) }]}>
+            <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          </Animated.View>
+          <Animated.View style={[styles.sheet, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)', transform: [{ translateY: slide }] }]}>
+            <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
             <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
               <View style={styles.header}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.title, { color: c.text }]}>{t('Примерка')}</Text>
-                  <Text style={[styles.subtitle, { color: c.muted }]} numberOfLines={1}>{setup ? setup.title : current?.title}</Text>
+                  <Text style={[styles.title, { color: ink }]}>{t('Примерка')}</Text>
+                  <Text style={[styles.subtitle, { color: inkSoft(isDark) }]} numberOfLines={1}>{setup ? setup.title : current?.title}</Text>
                 </View>
                 {/* While the look generates the cross folds the window into the corner. */}
-                <AppPressable accessibilityRole="button" accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close}
-                  style={[styles.close, { borderColor: c.border }]}>
-                  {busy ? <ChevronDown size={22} color={c.text} /> : <X size={20} color={c.text} />}
-                </AppPressable>
+                <Pill size="icon" icon={busy ? ChevronDown : X} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close} />
               </View>
               {!setup && pages.length > 1 ? (
                 <View style={styles.dots} accessibilityLabel={t('Образ {page} из {count}', { page: page + 1, count: pages.length })}>
                   {pages.map((item, index) => (
-                    <View key={item.key} style={[styles.dot, { backgroundColor: c.border }, index === page && [styles.dotActive, { backgroundColor: c.text }]]} />
+                    <View key={item.key} style={[styles.dot, { backgroundColor: isDark ? 'rgba(255,255,255,0.22)' : 'rgba(18,20,23,0.14)' }, index === page && [styles.dotActive, { backgroundColor: ink }]]} />
                   ))}
                 </View>
               ) : null}
@@ -136,17 +144,13 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
               {setup ? <>
                 {/* First how each garment is worn; the try-on starts from here and plays in this same window. */}
                 <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.setup}>
-                  <Text style={[styles.setupTitle, { color: c.text }]}>{t('Как надеть')}</Text>
+                  <Text style={[styles.setupTitle, { color: ink }]}>{t('Как надеть')}</Text>
                   <TryOnOptions items={setup.items} options={setup.options} onChange={setup.onOptions} disabled={setup.starting} />
-                  {setup.error ? <Text style={[styles.note, { color: c.danger }]}>{setup.error}</Text> : null}
+                  {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
                 </ScrollView>
                 <View style={styles.actions}>
-                  <AppPressable accessibilityRole="button" onPress={setup.onGenerate} disabled={setup.starting}
-                    accessibilityState={{ disabled: setup.starting, busy: setup.starting }}
-                    style={[styles.primary, { backgroundColor: c.buttonPrimaryBg }, setup.starting && { opacity: 0.6 }]}>
-                    {setup.starting ? <ActivityIndicator size="small" color={c.buttonPrimaryText} /> : <ArrowUpRight size={18} color={c.buttonPrimaryText} />}
-                    <Text style={[styles.primaryText, { color: c.buttonPrimaryText }]}>{t('Примерить')}</Text>
-                  </AppPressable>
+                  <Pill variant="primary" title={t('Примерить')} icon={setup.starting ? SpinnerIcon : ArrowUpRight} onPress={setup.onGenerate}
+                    disabled={setup.starting} accessibilityState={{ disabled: setup.starting }} />
                 </View>
               </> : (
                 <View style={{ flex: 1 }} onLayout={measure}>
@@ -174,8 +178,10 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
 /** One try-on: the photo under a shimmer while it runs, then the look, its status and actions. */
 function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
   const t = useT();
-  const { colors: c } = useTheme();
   const { width } = useWindowDimensions();
+  const { colors: { danger }, isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const ink = isDark ? INK_ON_DARK : INK;
   const { busy, busyLabel, startedAt, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
   const shimmer = useRef(new Animated.Value(0)).current;
   const reveal = useRef(new Animated.Value(resultUri && !busy ? 1 : 0)).current;
@@ -185,12 +191,13 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
 
   useEffect(() => {
     if (!busy) return;
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    if (reduced) return () => clearInterval(timer);
     const loop = Animated.loop(Animated.timing(shimmer, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
     shimmer.setValue(0);
     loop.start();
-    const timer = setInterval(() => setNow(Date.now()), 500);
     return () => { loop.stop(); clearInterval(timer); };
-  }, [busy, shimmer]);
+  }, [busy, shimmer, reduced]);
 
   useEffect(() => {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
@@ -200,9 +207,10 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
   }, [now, startedAt, busy, done, progress]);
 
   useEffect(() => {
-    if (done) Animated.timing(reveal, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    if (done && reduced) reveal.setValue(1);
+    else if (done) Animated.timing(reveal, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     else reveal.setValue(0);
-  }, [done, reveal]);
+  }, [done, reveal, reduced]);
 
   const frameWidth = Math.min(width - 32, 480);
   const sweep = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-frameWidth, frameWidth] });
@@ -210,7 +218,7 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={[styles.frame, { width: frameWidth, backgroundColor: c.surface }]}>
+      <View style={[styles.frame, { width: frameWidth, backgroundColor: glassFill(isDark) }]}>
         {photoUri ? (
           // The photo gives way to the result, so no edge of it shows around a finished look.
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: reveal.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}>
@@ -220,10 +228,10 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
         {busy ? (
           <>
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.18)' }]} />
-            <Animated.View pointerEvents="none" style={[styles.sweep, { transform: [{ translateX: sweep }, { rotate: '12deg' }] }]}>
+            {reduced ? null : <Animated.View pointerEvents="none" style={[styles.sweep, { transform: [{ translateX: sweep }, { rotate: '12deg' }] }]}>
               <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
                 start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
-            </Animated.View>
+            </Animated.View>}
           </>
         ) : null}
         {resultUri ? (
@@ -237,48 +245,33 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
         {busy ? (
           <>
             <View style={styles.statusRow}>
-              <ActivityIndicator size="small" color={c.accentGold} />
-              <Text style={[styles.statusText, { color: c.text }]}>{busyLabel}</Text>
+              <ActivityIndicator size="small" color={ink} />
+              <Text style={[styles.statusText, { color: ink }]}>{busyLabel}</Text>
             </View>
-            <View style={[styles.track, { backgroundColor: c.surface }]}>
-              <Animated.View style={[styles.bar, { backgroundColor: c.accentGold,
+            <View style={[styles.track, { backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(18,20,23,0.08)' }]}>
+              <Animated.View style={[styles.bar, { backgroundColor: ink,
                 width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
             </View>
-            <Text style={[styles.note, { color: c.muted }]}>{t('Обычно около минуты. Окно можно свернуть — примерка продолжится.')}</Text>
+            <Text style={[styles.note, { color: inkSoft(isDark) }]}>{t('Обычно около минуты. Окно можно свернуть — примерка продолжится.')}</Text>
           </>
         ) : null}
-        {error && !busy ? <Text style={[styles.note, { color: c.danger }]}>{error}</Text> : null}
-        {warning && done ? <Text style={[styles.note, { color: c.muted }]}>{warning}</Text> : null}
+        {error && !busy ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
+        {warning && done ? <Text style={[styles.note, { color: inkSoft(isDark) }]}>{warning}</Text> : null}
       </View>
 
       {!busy ? (
         <View style={styles.actions}>
           {done ? (
             <View style={styles.row}>
-              <AppPressable accessibilityRole="button" onPress={onSave} disabled={saveState === 'saving'}
-                style={[styles.primary, { backgroundColor: c.buttonPrimaryBg, flex: 1 }]}>
-                {saveState === 'saving' ? <ActivityIndicator size="small" color={c.buttonPrimaryText} />
-                  : saveState === 'saved' ? <Check size={18} color={c.buttonPrimaryText} /> : <Download size={18} color={c.buttonPrimaryText} />}
-                <Text style={[styles.primaryText, { color: c.buttonPrimaryText }]}>
-                  {t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')}
-                </Text>
-              </AppPressable>
-              {Platform.OS !== 'web' ? (
-                <AppPressable accessibilityRole="button" accessibilityLabel={t('Поделиться')} onPress={onShare}
-                  style={[styles.square, { borderColor: c.border }]}>
-                  <Share2 size={18} color={c.text} />
-                </AppPressable>
-              ) : null}
+              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} disabled={saveState === 'saving'}
+                icon={saveState === 'saving' ? SpinnerIcon : saveState === 'saved' ? Check : Download}
+                title={t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} />
+              {Platform.OS !== 'web' ? <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} /> : null}
             </View>
           ) : null}
           <View style={styles.row}>
-            <AppPressable accessibilityRole="button" onPress={onRegenerate} style={[styles.secondary, { borderColor: c.border, flex: 1 }]}>
-              <RefreshCw size={16} color={c.text} />
-              <Text style={[styles.secondaryText, { color: c.text }]}>{t(done ? 'Ещё вариант' : 'Попробовать снова')}</Text>
-            </AppPressable>
-            <AppPressable accessibilityRole="button" onPress={onDone} style={[styles.secondary, { borderColor: c.border, flex: 1 }]}>
-              <Text style={[styles.secondaryText, { color: c.text }]}>{t('Готово')}</Text>
-            </AppPressable>
+            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} />
+            <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} />
           </View>
         </View>
       ) : null}
@@ -288,30 +281,25 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { height: '94%', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 16, paddingTop: 14, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: '700' },
-  subtitle: { fontSize: 13, marginTop: 2 },
-  close: { width: 44, height: 44, borderRadius: 4, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  sheet: { height: '94%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, overflow: 'hidden' },
+  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10, marginBottom: 14 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  title: { ...font('semibold'), fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
+  subtitle: { ...font('regular'), fontSize: 13, lineHeight: 18, marginTop: 2 },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: -4, marginBottom: 10 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
-  frame: { flex: 1, alignSelf: 'center', borderRadius: 4, overflow: 'hidden' },
+  frame: { flex: 1, alignSelf: 'center', borderRadius: 30, overflow: 'hidden' },
   image: { width: '100%', height: '100%' },
   sweep: { position: 'absolute', top: -80, bottom: -80, width: 140 },
   status: { paddingTop: 14, gap: 10, minHeight: 20 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  statusText: { fontSize: 16, fontWeight: '600', flex: 1 },
-  track: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  bar: { height: 6, borderRadius: 3 },
-  note: { fontSize: 13, lineHeight: 18 },
+  statusText: { ...font('semibold'), fontSize: 15, lineHeight: 20, flex: 1 },
+  track: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  bar: { height: 4, borderRadius: 2 },
+  note: { ...font('regular'), fontSize: 13, lineHeight: 18 },
   actions: { gap: 10, paddingTop: 12, paddingBottom: 8 },
   setup: { gap: 14, paddingBottom: 16 },
-  setupTitle: { fontSize: 15, fontWeight: '600' },
-  row: { flexDirection: 'row', gap: 10 },
-  primary: { minHeight: 50, borderRadius: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  primaryText: { fontSize: 16, fontWeight: '600' },
-  square: { width: 50, minHeight: 50, borderRadius: 4, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  secondary: { minHeight: 46, borderRadius: 4, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  secondaryText: { fontSize: 15, fontWeight: '600' },
+  setupTitle: { ...font('semibold'), fontSize: 15, lineHeight: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });
