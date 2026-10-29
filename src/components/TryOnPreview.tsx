@@ -2,7 +2,8 @@ import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { useMemo, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
-import { useThemedStyles } from '../constants/ThemeContext';
+import { useTheme, useThemedStyles } from '../constants/ThemeContext';
+import { font, glassEdge, glassFill } from './studio/studio';
 import { useT } from '../constants/i18n';
 import { TryOnModelResult } from '../services/ai';
 
@@ -39,6 +40,7 @@ const buildLayer = (x: number, y: number, width: number, height: number, rotateD
 export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLayout, isModelLoading }: TryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { isDark } = useTheme();
   const [box, setBox] = useState({ width: 0, height: 0 });
   const sorted = useMemo(() => {
     const uniqueItems = Array.from(new Map(items.map((item) => [item.id, item])).values());
@@ -93,7 +95,7 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
   };
 
   return (
-    <View style={styles.preview} onLayout={onLayout}>
+    <View style={[styles.preview, { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]} onLayout={onLayout}>
       <View style={styles.mannequinFrame}>
         <View style={styles.head} />
         <View style={styles.torso} />
@@ -140,11 +142,9 @@ export function TryOnPreview({ modelUri: _modelUri, items, modelLayout: _modelLa
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   preview: {
     height: 356,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: c.border,
+    borderRadius: 30,
+    borderWidth: StyleSheet.hairlineWidth * 2,
     overflow: 'hidden',
-    backgroundColor: c.surface,
     marginBottom: 8
   },
   mannequinFrame: {
@@ -167,7 +167,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     left: '35%',
     width: '30%',
     height: '33%',
-    borderRadius: 4,
+    borderRadius: 18,
     backgroundColor: '#ECE3D6',
     borderWidth: 1,
     borderColor: '#D8CBB8'
@@ -177,7 +177,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: '27%',
     width: '8.5%',
     height: '30%',
-    borderRadius: 4,
+    borderRadius: 999,
     backgroundColor: '#E8DECF',
     borderWidth: 1,
     borderColor: '#D8CBB8'
@@ -193,7 +193,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     top: '56%',
     width: '12%',
     height: '34%',
-    borderRadius: 4,
+    borderRadius: 999,
     backgroundColor: '#E8DECF',
     borderWidth: 1,
     borderColor: '#D8CBB8'
@@ -206,29 +206,29 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   layerItem: {
     position: 'absolute',
-    borderRadius: 4,
+    borderRadius: 14,
     borderWidth: 1,
     justifyContent: 'flex-end',
     paddingHorizontal: 8,
     paddingVertical: 5
   },
   layerLabel: {
+    ...font('semibold'),
     fontSize: 10,
-    color: '#312B24',
-    fontWeight: '700'
+    color: '#312B24'
   },
   loadingBadge: {
     position: 'absolute',
     bottom: 10,
     alignSelf: 'center',
-    backgroundColor: 'rgba(30,28,25,0.8)',
-    borderRadius: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 10
+    backgroundColor: 'rgba(18,20,23,0.75)',
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 14
   },
   loadingText: {
+    ...font('semibold'),
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600'
+    fontSize: 12
   }
 });

@@ -20,6 +20,7 @@ import { font, glassEdge, glassFill, INK, INK_SOFT, isCutout, useReducedMotion }
 import { StudioSheet } from './studio/StudioSheet';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
+import { SpinnerIcon } from './GenerationStage';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { TryOnJob } from '../services/tryOnJobs';
@@ -194,6 +195,8 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
   const dock = useGenerationDock();
   const recent = jobs.slice(0, 12);
   const [currentId, setCurrentId] = useState<string>();
+  // The try-on whose result is being checked: its pill spins and waits until the poll answers.
+  const [checkingId, setCheckingId] = useState<string | null>(null);
   // A newly started try-on takes the frame, so its veil shows.
   const newest = recent[0]?.id;
   useEffect(() => { setCurrentId(undefined); }, [newest]);
@@ -293,7 +296,9 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
                 : current.error ? <Text style={styles.captionError} numberOfLines={3}>{t(current.error)}</Text>
                 : <Text style={styles.captionMeta}>{t('Примерка не завершена')}</Text>}
             </View>
-            {!result && current.status === 'retry' ? <Pill size="icon" icon={RefreshCw} accessibilityLabel={t('Проверить результат')} onPress={() => void store.poll(current)} /> : null}
+            {!result && current.status === 'retry' ? <Pill size="icon" icon={checkingId === current.id ? SpinnerIcon : RefreshCw}
+              accessibilityLabel={t('Проверить результат')} disabled={checkingId === current.id} accessibilityState={{ disabled: checkingId === current.id }}
+              onPress={() => { const id = current.id; setCheckingId(id); void store.poll(current).finally(() => setCheckingId(value => value === id ? null : value)); }} /> : null}
           </View>
         </Glass> : null}
       </View>

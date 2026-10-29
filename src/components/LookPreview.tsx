@@ -4,6 +4,7 @@ import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { AppPressable } from './AppPressable';
+import { font, glassEdge, glassFill, INK, inkSoft } from './studio/studio';
 
 type LookPreviewProps = {
   items: WardrobeItem[];
@@ -28,7 +29,7 @@ const sortBySection = (items: WardrobeItem[]) => {
 
 export function LookPreview({ items, onSwap, canSwap, swapLabel, swappingId }: LookPreviewProps) {
   const styles = useThemedStyles(makeStyles);
-  const { colors: c } = useTheme();
+  const { isDark } = useTheme();
   const sorted = sortBySection(items);
   if (!sorted.length) {
     return <View style={styles.preview} />;
@@ -46,11 +47,13 @@ export function LookPreview({ items, onSwap, canSwap, swapLabel, swappingId }: L
           {onSwap && (!canSwap || canSwap(item)) ? (
             <AppPressable accessibilityRole="button" accessibilityLabel={swapLabel?.(item)} accessibilityState={{ selected: swappingId === item.id }}
               hitSlop={6} onPress={() => onSwap(item)}
-              style={[styles.swap, { backgroundColor: swappingId === item.id ? c.buttonPrimaryBg : c.card, borderColor: c.border }]}>
-              <ArrowRightLeft size={15} color={swappingId === item.id ? c.buttonPrimaryText : c.text} />
+              style={[styles.swap, swappingId === item.id
+                ? { backgroundColor: isDark ? '#FFFFFF' : INK, borderColor: 'transparent' }
+                : { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]}>
+              <ArrowRightLeft size={15} strokeWidth={1.8} color={(swappingId === item.id) !== isDark ? '#FFFFFF' : INK} />
             </AppPressable>
           ) : null}
-          <Text style={styles.caption} numberOfLines={1}>{item.name}</Text>
+          <Text style={[styles.caption, { color: inkSoft(isDark) }]} numberOfLines={1}>{item.name}</Text>
         </View>
       ))}
     </View>
@@ -75,14 +78,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     width: '100%',
     height: 160,
     backgroundColor: c.stage,
-    borderRadius: 4
+    borderRadius: 24
   },
   previewPlaceholder: {
     width: '100%',
     height: 160,
-    borderRadius: 4,
+    borderRadius: 24,
     backgroundColor: c.stage
   },
-  caption: { color: c.muted, fontSize: 11, paddingHorizontal: 2 },
-  swap: { position: 'absolute', top: 8, right: 8, width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }
+  caption: { ...font('medium'), fontSize: 12, lineHeight: 16, paddingHorizontal: 4 },
+  swap: { position: 'absolute', top: 8, right: 8, width: 34, height: 34, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth * 2, alignItems: 'center', justifyContent: 'center' }
 });

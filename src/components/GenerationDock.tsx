@@ -17,6 +17,7 @@ import { AppPressable } from './AppPressable';
 import { GenerationStage, StagePage } from './GenerationStage';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
+import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
 import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
 
 /** A look about to be tried on: the window first asks how to wear each garment. */
@@ -261,20 +262,22 @@ function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }
   jobs: TryOnJob[]; bottom: number; modelUri?: string; startedAt: Record<string, number>;
   onOpen: (id: string) => void; onDismiss: (id: string) => void;
 }) {
-  const { colors: c } = useTheme();
+  const { isDark } = useTheme();
+  const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   // Over the screens it sits above the tab bar; over a sheet, at the sheet's own bottom.
   const offset = useOverlayPlace() === 'root' ? bottom : insets.bottom + 24;
   const [page, setPage] = useState(0);
   const appear = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.spring(appear, { toValue: 1, damping: 16, stiffness: 190, mass: 0.8, useNativeDriver: true }).start();
-  }, [appear]);
+    if (reduced) appear.setValue(1);
+    else Animated.spring(appear, { toValue: 1, damping: 16, stiffness: 190, mass: 0.8, useNativeDriver: true }).start();
+  }, [appear, reduced]);
   useEffect(() => { if (page > jobs.length - 1) setPage(Math.max(0, jobs.length - 1)); }, [jobs.length, page]);
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) =>
     setPage(Math.round(event.nativeEvent.contentOffset.x / MINI_WIDTH));
   return (
-    <Animated.View style={[styles.mini, SHADOWS.floating, { bottom: offset, backgroundColor: c.card, borderColor: c.border, opacity: appear,
+    <Animated.View style={[styles.mini, SHADOWS.floating, { bottom: offset, backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark), opacity: appear,
       transform: [{ scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }] }]}>
       <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32}>
         {jobs.map(job => <MiniPage key={job.id} job={job} modelUri={modelUri} startedAt={startedAt[job.id]} onOpen={onOpen} onDismiss={onDismiss} />)}
@@ -297,16 +300,18 @@ function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
   const failed = !pending && !result;
   const [now, setNow] = useState(Date.now());
   const pulse = useRef(new Animated.Value(0)).current;
+  const reduced = useReducedMotion();
   useEffect(() => {
     if (!pending) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    if (reduced) { pulse.setValue(0.5); return () => clearInterval(timer); }
     const loop = Animated.loop(Animated.sequence([
       Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       Animated.timing(pulse, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
     ]));
     loop.start();
-    const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { loop.stop(); clearInterval(timer); };
-  }, [pending, pulse]);
+  }, [pending, pulse, reduced]);
   const elapsed = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
   const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
   const label = pending
@@ -338,16 +343,17 @@ function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
 }
 
 const styles = StyleSheet.create({
-  mini: { position: 'absolute', right: 16, width: MINI_WIDTH, height: MINI_HEIGHT, borderRadius: 4, borderWidth: 1, overflow: 'hidden' },
+  // A photo frame of the studio: 24 radius, glass ground and its light edge.
+  mini: { position: 'absolute', right: 16, width: MINI_WIDTH, height: MINI_HEIGHT, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   page: { width: MINI_WIDTH, height: MINI_HEIGHT, overflow: 'hidden' },
   veil: { backgroundColor: '#FFFFFF' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 7, paddingTop: 16, paddingBottom: 10, backgroundColor: 'rgba(17,19,23,0.55)' },
-  footerText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700', flexShrink: 1 },
+    paddingHorizontal: 10, paddingTop: 16, paddingBottom: 11, backgroundColor: 'rgba(18,20,23,0.5)' },
+  footerText: { ...font('semibold'), color: '#FFFFFF', fontSize: 12, lineHeight: 16, flexShrink: 1 },
   track: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.3)' },
   bar: { height: 3, backgroundColor: '#FFFFFF' },
-  dismiss: { position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(17,19,23,0.55)' },
+  dismiss: { position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(18,20,23,0.5)', borderWidth: StyleSheet.hairlineWidth * 2, borderColor: 'rgba(255,255,255,0.35)' },
   dismissFailed: { backgroundColor: 'rgba(166,61,47,0.85)' },
   dots: { position: 'absolute', top: 8, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.55)' },
