@@ -1,11 +1,12 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { Alert as NativeAlert, AlertButton, Modal, Platform, StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Trash2, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { PrimaryButton } from './ui/PrimaryButton';
-import { IconButton } from './ui/IconButton';
 import { FormScrollView } from './ui/FormScrollView';
+import { Pill } from './studio/Glass';
+import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
 
 type Dialog = { title: string; message?: string; buttons: AlertButton[] };
 type DialogApi = { alert: (title: string, message?: string, buttons?: AlertButton[]) => void; visible: boolean };
@@ -14,7 +15,8 @@ const Context = createContext<DialogApi | null>(null);
 export function AppDialogProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<Dialog[]>([]);
   const [nativeVisible, setNativeVisible] = useState(false);
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const reduced = useReducedMotion();
   const t = useT();
   const alert = useCallback((title: string, message?: string, buttons?: AlertButton[]) => {
     if (Platform.OS !== 'web') {
@@ -32,17 +34,19 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
   const cancel = () => close(current?.buttons.find(button => button.style === 'cancel'));
   return <Context.Provider value={value}>
     {children}
-    {Platform.OS === 'web' && current && <Modal transparent visible animationType="fade" onRequestClose={cancel}>
-      {current && <View style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
-        <View style={[styles.dialog, { backgroundColor: colors.card }]} accessibilityViewIsModal>
+    {Platform.OS === 'web' && current && <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={cancel}>
+      {current && <View style={styles.backdrop}>
+        <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[styles.dialog, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]} accessibilityViewIsModal>
           <View style={styles.heading}>
-            <Text accessibilityRole="header" style={{ flex: 1, color: colors.text, fontSize: 20, fontWeight: '600' }}>{current.title}</Text>
-            <IconButton icon={X} label={t('Закрыть подтверждение')} onPress={cancel} variant="quiet" />
+            <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: isDark ? INK_ON_DARK : INK }]}>{current.title}</Text>
+            <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть подтверждение')} onPress={cancel} />
           </View>
-          <FormScrollView contentContainerStyle={{ gap: 20 }}>
-            {current.message ? <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>{current.message}</Text> : null}
-            {current.buttons.map((button, index) => <PrimaryButton key={index} title={button.text || t('Понятно')}
-              variant={button.style === 'cancel' ? 'ghost' : 'primary'} icon={button.style === 'destructive' ? Trash2 : undefined}
+          <FormScrollView contentContainerStyle={{ gap: 10 }}>
+            {current.message ? <Text style={[font('regular'), styles.message, { color: inkSoft(isDark) }]}>{current.message}</Text> : null}
+            {current.buttons.map((button, index) => <Pill key={index} title={button.text || t('Понятно')}
+              variant={button.style === 'cancel' ? 'glass' : 'primary'} icon={button.style === 'destructive' ? Trash2 : undefined}
+              iconColor={button.style === 'destructive' ? colors.danger : undefined}
               onPress={() => close(button)} />)}
           </FormScrollView>
         </View>
@@ -58,7 +62,9 @@ export function useAppDialog() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  dialog: { width: '100%', maxWidth: 400, maxHeight: '85%', borderRadius: 4, padding: 20, gap: 16 },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  dialog: { width: '100%', maxWidth: 420, maxHeight: '85%', borderRadius: 30, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 20, gap: 14 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  title: { flex: 1, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
+  message: { fontSize: 15, lineHeight: 22, marginBottom: 8 },
 });

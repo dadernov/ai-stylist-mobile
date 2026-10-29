@@ -1,11 +1,13 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { ShieldCheck } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { privacyUrl } from '../constants/ai';
 import { hasAiConsent, saveAiConsent } from '../services/aiConsent';
-import { PrimaryButton } from './ui/PrimaryButton';
+import { Pill } from './studio/Glass';
+import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
 import { AppPressable } from './AppPressable';
 import { useOverlay } from './OverlayHost';
 
@@ -13,7 +15,9 @@ type Api = { ensure: () => Promise<boolean>; revoke: () => Promise<void> };
 const Context = createContext<Api | null>(null);
 
 export function AiConsentProvider({ login, children }: { login: string; children: ReactNode }) {
-  const { colors } = useTheme();
+  const { isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const ink = isDark ? INK_ON_DARK : INK;
   const t = useT();
   const [open, setOpen] = useState(false);
   const pending = useRef<((granted: boolean) => void)[]>([]);
@@ -37,18 +41,21 @@ export function AiConsentProvider({ login, children }: { login: string; children
   ];
   // Consent is asked from inside sheets (try-on, item editor): the window is
   // drawn in the topmost one, or iOS would never show it (OverlayHost).
-  const prompt = open ? <Modal transparent visible animationType="fade" onRequestClose={() => void answer(false)}>
-      <View style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]} accessibilityViewIsModal>
-          <ScrollView contentContainerStyle={{ gap: 14 }}>
-            <ShieldCheck size={28} color={colors.accentGold} />
-            <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{t('Обработка фото нейросетями')}</Text>
-            {points.map(point => <Text key={point} style={[styles.point, { color: colors.muted }]}>• {point}</Text>)}
+  const prompt = open ? <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={() => void answer(false)}>
+      <View style={styles.backdrop}>
+        <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[styles.card, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]} accessibilityViewIsModal>
+          <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+            <ShieldCheck size={28} color={ink} strokeWidth={1.6} />
+            <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: ink }]}>{t('Обработка фото нейросетями')}</Text>
+            {points.map(point => <Text key={point} style={[font('regular'), styles.point, { color: inkSoft(isDark) }]}>• {point}</Text>)}
             <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}>
-              <Text style={[styles.link, { color: colors.accentGold }]}>{t('Политика конфиденциальности')}</Text>
+              <Text style={[font('semibold'), styles.link, { color: ink }]}>{t('Политика конфиденциальности')}</Text>
             </AppPressable>
-            <PrimaryButton title={t('Согласен, продолжить')} variant="gold" onPress={() => void answer(true)} />
-            <PrimaryButton title={t('Не сейчас')} variant="ghost" onPress={() => void answer(false)} />
+            <View style={styles.actions}>
+              <Pill title={t('Согласен, продолжить')} variant="primary" onPress={() => void answer(true)} />
+              <Pill title={t('Не сейчас')} onPress={() => void answer(false)} />
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -67,9 +74,11 @@ export function useAiConsent() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'center', padding: 20 },
-  card: { borderRadius: 4, borderWidth: 1, padding: 20, maxHeight: '88%' },
-  title: { fontSize: 20, fontWeight: '700' },
+  backdrop: { flex: 1, justifyContent: 'center', padding: 16 },
+  card: { width: '100%', maxWidth: 520, alignSelf: 'center', borderRadius: 30, maxHeight: '88%', overflow: 'hidden' },
+  body: { gap: 14, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 20 },
+  title: { fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
   point: { fontSize: 14, lineHeight: 21 },
-  link: { fontSize: 14, fontWeight: '600', paddingVertical: 4 },
+  link: { fontSize: 14, paddingVertical: 4, textDecorationLine: 'underline' },
+  actions: { gap: 10, marginTop: 6 },
 });
