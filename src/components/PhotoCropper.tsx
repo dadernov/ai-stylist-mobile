@@ -6,6 +6,7 @@ import { Check, RotateCcw, X } from 'lucide-react-native';
 import { CropHandle, CropRect, cropPixels, moveCrop } from '../domain/crop';
 import { AppPressable } from './AppPressable';
 import { useT } from '../constants/i18n';
+import { font, INK, useReducedMotion } from './studio/studio';
 
 export type CropPhoto = { uri: string; width: number; height: number };
 const full: CropRect = { x: 0, y: 0, width: 1, height: 1 };
@@ -18,6 +19,7 @@ const handles: { key: CropHandle; x: number; y: number; label: string }[] = [
 
 export function PhotoCropper({ photo, visible, onDismiss, onClose, onDone }: { photo: CropPhoto; visible: boolean; onDismiss: () => void; onClose: () => void; onDone: (uri: string) => void }) {
   const t = useT();
+  const reduced = useReducedMotion();
   const [rect, setRect] = useState(full);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [imageReady, setImageReady] = useState(false);
@@ -50,13 +52,13 @@ export function PhotoCropper({ photo, visible, onDismiss, onClose, onDone }: { p
     finally { setBusy(false); }
   };
   const x = rect.x * width, y = rect.y * height, w = rect.width * width, h = rect.height * height;
-  return <Modal visible={visible} onDismiss={onDismiss} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => !busy && onClose()}>
+  return <Modal visible={visible} onDismiss={onDismiss} animationType={reduced ? 'none' : 'slide'} presentationStyle="fullScreen" onRequestClose={() => !busy && onClose()}>
     <SafeAreaProvider style={styles.screen}>
       <SafeAreaView style={styles.screen}>
         <View style={styles.toolbar}>
-          <AppPressable accessibilityRole="button" accessibilityLabel={t('Отменить обрезку')} disabled={busy} onPress={onClose} style={styles.icon}><X color="#FFFFFF" size={23} /></AppPressable>
-          <Text style={styles.title}>{t('Кадрирование')}</Text>
-          <AppPressable accessibilityRole="button" accessibilityLabel={t('Сбросить обрезку')} disabled={busy} onPress={() => setRect(full)} style={styles.icon}><RotateCcw color="#FFFFFF" size={21} /></AppPressable>
+          <AppPressable accessibilityRole="button" accessibilityLabel={t('Отменить обрезку')} disabled={busy} onPress={onClose} style={styles.icon}><X color="#FFFFFF" size={19} strokeWidth={1.8} /></AppPressable>
+          <Text accessibilityRole="header" style={[font('semibold'), styles.title]}>{t('Кадрирование')}</Text>
+          <AppPressable accessibilityRole="button" accessibilityLabel={t('Сбросить обрезку')} disabled={busy} onPress={() => setRect(full)} style={styles.icon}><RotateCcw color="#FFFFFF" size={18} strokeWidth={1.8} /></AppPressable>
         </View>
         <View style={styles.stage} onLayout={event => setLayout(event.nativeEvent.layout)}>
           {hasLayout && <View style={{ width, height }}>
@@ -78,17 +80,17 @@ export function PhotoCropper({ photo, visible, onDismiss, onClose, onDone }: { p
               <View style={[styles.handleMark, { width: handle.x === 0.5 ? 22 : 5, height: handle.y === 0.5 ? 22 : 5 }]} />
             </View>)}
           </View>}
-          {!imageReady && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#111214' }]}>
+          {!imageReady && <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#101215' }]}>
             {imageError ? <AppPressable accessibilityRole="button" accessibilityLabel={t('Повторить загрузку фото')}
               onPress={() => { setImageError(false); setImageAttempt(value => value + 1); }} style={{ padding: 20, gap: 12, alignItems: 'center' }}>
-              <Text style={styles.error}>{t('Не удалось загрузить фото')}</Text><RotateCcw color="#FFFFFF" size={24} />
+              <Text style={[font('medium'), styles.error]}>{t('Не удалось загрузить фото')}</Text><RotateCcw color="#FFFFFF" size={24} />
             </AppPressable> : <ActivityIndicator color="#FFFFFF" />}
           </View>}
         </View>
         <View style={styles.footer}>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={[font('medium'), styles.error]}>{error}</Text> : null}
           <AppPressable accessibilityRole="button" accessibilityLabel={t('Готово')} disabled={busy || !imageReady} onPress={save} style={[styles.done, !imageReady && { opacity: .45 }]}>
-            {busy ? <ActivityIndicator color="#151619" /> : <Check size={21} color="#151619" />}<Text style={styles.doneText}>{t('Готово')}</Text>
+            {busy ? <ActivityIndicator color={INK} /> : <Check size={19} strokeWidth={1.8} color={INK} />}<Text style={[font('semibold'), styles.doneText]}>{t('Готово')}</Text>
           </AppPressable>
         </View>
       </SafeAreaView>
@@ -97,18 +99,18 @@ export function PhotoCropper({ photo, visible, onDismiss, onClose, onDone }: { p
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#111214' },
-  toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, height: 64 },
-  title: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  icon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  screen: { flex: 1, backgroundColor: '#101215' },
+  toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, height: 64 },
+  title: { color: '#F4F5F7', fontSize: 17, letterSpacing: -0.3 },
+  icon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(40,43,48,0.55)', borderWidth: StyleSheet.hairlineWidth * 2, borderColor: 'rgba(255,255,255,0.10)' },
   stage: { flex: 1, margin: 24, justifyContent: 'center', alignItems: 'center' },
   shade: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.6)' },
   selection: { position: 'absolute', borderWidth: 1, borderColor: '#FFFFFF', ...(Platform.OS === 'web' ? { touchAction: 'none' } as any : {}) },
   gridLine: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.6)' },
   handle: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', ...(Platform.OS === 'web' ? { touchAction: 'none' } as any : {}) },
-  handleMark: { backgroundColor: '#FFFFFF', borderRadius: 2 },
-  footer: { padding: 20, gap: 12 },
-  done: { backgroundColor: '#FFFFFF', minHeight: 52, borderRadius: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  doneText: { color: '#151619', fontWeight: '600', fontSize: 16 },
+  handleMark: { backgroundColor: '#FFFFFF', borderRadius: 3 },
+  footer: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16, gap: 12 },
+  done: { backgroundColor: '#FFFFFF', minHeight: 50, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  doneText: { color: INK, fontSize: 15 },
   error: { color: '#FFB5AA', textAlign: 'center', fontSize: 14 }
 });
