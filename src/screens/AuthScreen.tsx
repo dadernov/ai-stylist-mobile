@@ -5,7 +5,6 @@ import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { StudioBackdrop } from '../components/studio/StudioBackdrop';
 import { Glass, Pill } from '../components/studio/Glass';
 import { font, glassFill, hairline, inkSoft, INK, INK_ON_DARK } from '../components/studio/studio';
 import { AppPressable } from '../components/AppPressable';
@@ -57,7 +56,8 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
     { color: ink, backgroundColor: glassFill(isDark), borderColor: focused === field ? ink : hairline(isDark) }];
 
   return (
-    <StudioBackdrop><FormScrollView contentContainerStyle={styles.container}>
+    // The studio backdrop is drawn by App behind the safe area, so it runs under the notch and home indicator.
+    <FormScrollView contentContainerStyle={styles.container}>
 
       <ScreenHeader
         title={t(mode === 'register' ? 'Регистрация' : 'Вход')}
@@ -128,6 +128,8 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           title={t(mode === 'register' ? 'Создать аккаунт' : 'Войти')}
           onPress={submit}
           disabled={busy}
+          busy={busy}
+          haptics={false}
           style={styles.submitButton}
         />
         {busy && <ActivityIndicator color={ink} />}
@@ -146,7 +148,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           </Text>
         </AppPressable>
       </FadeInView></Glass>
-    </FormScrollView></StudioBackdrop>
+    </FormScrollView>
   );
 }
 

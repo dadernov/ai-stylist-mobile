@@ -35,10 +35,10 @@ export function ProductHelp({ onClose }: { onClose: () => void }) {
       <SafeAreaView style={styles.screen} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.content}>
           <View style={[styles.toolbar, { borderColor: line }]}>
-            {topic ? <Pill icon={ArrowLeft} size="icon" accessibilityLabel={t('К разделам справки')} onPress={() => setTopic(null)} />
+            {topic ? <Pill icon={ArrowLeft} size="icon" accessibilityLabel={t('К разделам справки')} onPress={() => setTopic(null)} haptics={false} />
               : <BookOpen size={23} color={ink} strokeWidth={1.6} />}
             <Text accessibilityRole="header" style={[font('semibold'), styles.toolbarTitle, { color: ink }]}>{t('Справка')}</Text>
-            <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть справку')} onPress={onClose} />
+            <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть справку')} onPress={onClose} haptics={false} />
           </View>
           <ScrollView key={topic?.id || 'contents'} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
             {topic ? <>

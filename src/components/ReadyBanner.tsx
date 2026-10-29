@@ -6,8 +6,7 @@ import { useT } from '../constants/i18n';
 import { useTheme } from '../constants/ThemeContext';
 import { SHADOWS } from '../constants/theme';
 import { AppPressable } from './AppPressable';
-import { Glass } from './studio/Glass';
-import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
+import { font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
 const SHOWN_MS = 3500;
 
@@ -23,12 +22,15 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
   const reduced = useReducedMotion();
+  // The auto-hide timer fires after mount: read the latest setting, not the one it was created with.
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
   const enter = useRef(new Animated.Value(0)).current;
   const hidden = useRef(false);
   const hide = () => {
     if (hidden.current) return;
     hidden.current = true;
-    Animated.timing(enter, { toValue: 0, duration: reduced ? 0 : 220, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onHide());
+    Animated.timing(enter, { toValue: 0, duration: reducedRef.current ? 0 : 220, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onHide());
   };
   useEffect(() => {
     if (reduced) enter.setValue(1);
@@ -43,7 +45,7 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
           { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] }]}>
         <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Образ готов: {name}', { name: title })}
           onPress={() => { onPress(); hide(); }}>
-          <Glass radius={24} intensity={60}>
+          <View style={[styles.card, { backgroundColor: sheetFill(isDark), borderColor: glassEdge(isDark) }]}>
             <View style={styles.banner}>
               {imageUri ? <Image source={{ uri: imageUri }} style={styles.thumb} resizeMode="cover" /> : null}
               <View style={styles.texts}>
@@ -52,7 +54,7 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
               </View>
               <View style={styles.badge}><Check size={16} strokeWidth={2.4} color="#FFFFFF" /></View>
             </View>
-          </Glass>
+          </View>
         </AppPressable>
       </Animated.View>
     </View>
@@ -62,6 +64,8 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
 const styles = StyleSheet.create({
   place: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
   shadow: { width: '100%', maxWidth: 480, borderRadius: 24 },
+  // Near-opaque, not glass: the text must read over whatever light content scrolls beneath.
+  card: { borderRadius: 24, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth * 2 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingLeft: 10, paddingRight: 14 },
   thumb: { width: 38, height: 50, borderRadius: 12, backgroundColor: 'rgba(18,20,23,0.06)' },
   texts: { flex: 1, minWidth: 0, gap: 2 },

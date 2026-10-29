@@ -2,11 +2,12 @@ import { createContext, ReactNode, useCallback, useContext, useMemo, useState } 
 import { Alert as NativeAlert, AlertButton, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Trash2, X } from 'lucide-react-native';
+import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { FormScrollView } from './ui/FormScrollView';
 import { Pill } from './studio/Glass';
-import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
+import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
 type Dialog = { title: string; message?: string; buttons: AlertButton[] };
 type DialogApi = { alert: (title: string, message?: string, buttons?: AlertButton[]) => void; visible: boolean };
@@ -37,17 +38,18 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
     {Platform.OS === 'web' && current && <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={cancel}>
       {current && <View style={styles.backdrop}>
         <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-        <View style={[styles.dialog, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]} accessibilityViewIsModal>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
+        <View style={[styles.dialog, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark) }]} accessibilityViewIsModal>
           <View style={styles.heading}>
             <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: isDark ? INK_ON_DARK : INK }]}>{current.title}</Text>
-            <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть подтверждение')} onPress={cancel} />
+            <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть подтверждение')} onPress={cancel} haptics={false} />
           </View>
           <FormScrollView contentContainerStyle={{ gap: 10 }}>
             {current.message ? <Text style={[font('regular'), styles.message, { color: inkSoft(isDark) }]}>{current.message}</Text> : null}
             {current.buttons.map((button, index) => <Pill key={index} title={button.text || t('Понятно')}
               variant={button.style === 'cancel' ? 'glass' : 'primary'} icon={button.style === 'destructive' ? Trash2 : undefined}
               iconColor={button.style === 'destructive' ? colors.danger : undefined}
-              onPress={() => close(button)} />)}
+              onPress={() => close(button)} haptics={false} />)}
           </FormScrollView>
         </View>
       </View>}

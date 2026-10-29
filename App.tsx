@@ -5,8 +5,8 @@ import { useFonts, Onest_700Bold, Onest_800ExtraBold, Onest_900Black } from '@ex
 import { TenorSans_400Regular } from '@expo-google-fonts/tenor-sans';
 import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { StudioBackdrop } from './src/components/studio/StudioBackdrop';
-import { Glass } from './src/components/studio/Glass';
-import { font, INK } from './src/components/studio/studio';
+import { Glass, Pill } from './src/components/studio/Glass';
+import { font, INK, INK_ON_DARK, inkSoft } from './src/components/studio/studio';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -240,18 +240,19 @@ function SessionGate() {
   }} />;
   // App-wide windows (consent, generation) are drawn in the topmost sheet: see OverlayHost.
   if (session) return <TryOnJobsProvider key={session.login} session={session}><OverlayProvider><AiConsentProvider login={session.login}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></OverlayProvider></TryOnJobsProvider>;
-  return <SafeAreaView style={styles.container}>
+  // The studio fills the whole screen; only the content keeps inside the safe area.
+  return <StudioBackdrop><SafeAreaView style={{ flex: 1 }}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
     {claim ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 20, maxWidth: 480, width: '100%', alignSelf: 'center' }}>
-      <Text style={{ color: colors.text, fontSize: 24, fontWeight: '600' }}>{t('Гардероб на устройстве')}</Text>
-      <Text style={{ color: colors.muted, fontSize: 16, lineHeight: 24 }}>{t('Перенести прежние вещи и образы в аккаунт {login}? Подтверди, только если это твой гардероб.', { login: claim.login })}</Text>
-      <PrimaryButton title={t('Перенести мой гардероб')} onPress={() => void activate(claim, true)} />
-      <PrimaryButton title={t('Начать без переноса')} variant="ghost" onPress={() => {
+      <Text style={[font('semibold'), { color: isDark ? INK_ON_DARK : INK, fontSize: 24 }]}>{t('Гардероб на устройстве')}</Text>
+      <Text style={[font('regular'), { color: inkSoft(isDark), fontSize: 16, lineHeight: 24 }]}>{t('Перенести прежние вещи и образы в аккаунт {login}? Подтверди, только если это твой гардероб.', { login: claim.login })}</Text>
+      <Pill variant="primary" title={t('Перенести мой гардероб')} haptics={false} onPress={() => void activate(claim, true)} />
+      <Pill title={t('Начать без переноса')} haptics={false} onPress={() => {
         void startWithoutLegacy(claim.login).then(() => activate(claim)).catch(() => setError(t('Не удалось сохранить выбор. Попробуй ещё раз.')));
       }} />
     </View> : <AuthScreen onAuthenticated={next => void activate(next)} />}
-    {error ? <Text accessibilityRole="alert" style={{ padding: 20, color: colors.danger }}>{error}</Text> : null}
-  </SafeAreaView>;
+    {error ? <Text accessibilityRole="alert" style={[font('regular'), { padding: 20, color: colors.danger }]}>{error}</Text> : null}
+  </SafeAreaView></StudioBackdrop>;
 }
 
 function AppContent({ session, onLogout, onDeleteAccount, accountError }: { session: Session; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {

@@ -4,7 +4,8 @@ import { ActivityIndicator, Animated, Easing, Image, LayoutChangeEvent, Modal, N
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { ArrowUpRight, Check, ChevronDown, Download, LucideIcon, RefreshCw, Share2, X } from 'lucide-react-native';
+import { ArrowUpRight, Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
+import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { EXPECTED_TRYON_MS } from './tryOnStatus';
@@ -13,10 +14,7 @@ import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Pill } from './studio/Glass';
-import { font, glassFill, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
-
-/** A spinner in a Pill's icon slot: Pill draws its icon with `size` and `color`, so it follows the pill's ink. */
-export const SpinnerIcon = (({ color }: { color?: string }) => <ActivityIndicator size="small" color={color} />) as unknown as LucideIcon;
+import { backdropDim, font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
 /** Before the try-on: how each garment is worn, and the button that starts it. */
 export type StageSetup = {
@@ -121,8 +119,9 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
           <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill,
             { opacity: slide.interpolate({ inputRange: [0, height], outputRange: [1, 0], extrapolate: 'clamp' }) }]}>
             <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
           </Animated.View>
-          <Animated.View style={[styles.sheet, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)', transform: [{ translateY: slide }] }]}>
+          <Animated.View style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
             <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
             <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
               <View style={styles.header}>
@@ -131,7 +130,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                   <Text style={[styles.subtitle, { color: inkSoft(isDark) }]} numberOfLines={1}>{setup ? setup.title : current?.title}</Text>
                 </View>
                 {/* While the look generates the cross folds the window into the corner. */}
-                <Pill size="icon" icon={busy ? ChevronDown : X} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close} />
+                <Pill size="icon" icon={busy ? ChevronDown : X} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close} haptics={false} />
               </View>
               {!setup && pages.length > 1 ? (
                 <View style={styles.dots} accessibilityLabel={t('Образ {page} из {count}', { page: page + 1, count: pages.length })}>
@@ -149,8 +148,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                   {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
                 </ScrollView>
                 <View style={styles.actions}>
-                  <Pill variant="primary" title={t('Примерить')} icon={setup.starting ? SpinnerIcon : ArrowUpRight} onPress={setup.onGenerate}
-                    disabled={setup.starting} accessibilityState={{ disabled: setup.starting }} />
+                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} onPress={setup.onGenerate} haptics={false} />
                 </View>
               </> : (
                 <View style={{ flex: 1 }} onLayout={measure}>
@@ -263,15 +261,15 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
         <View style={styles.actions}>
           {done ? (
             <View style={styles.row}>
-              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} disabled={saveState === 'saving'}
-                icon={saveState === 'saving' ? SpinnerIcon : saveState === 'saved' ? Check : Download}
+              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'} haptics={false}
+                icon={saveState === 'saved' ? Check : Download}
                 title={t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} />
-              {Platform.OS !== 'web' ? <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} /> : null}
+              {Platform.OS !== 'web' ? <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} haptics={false} /> : null}
             </View>
           ) : null}
           <View style={styles.row}>
-            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} />
-            <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} />
+            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} haptics={false} />
+            <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} haptics={false} />
           </View>
         </View>
       ) : null}

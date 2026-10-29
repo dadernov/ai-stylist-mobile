@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, LayoutChangeEvent, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, LayoutChangeEvent, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LucideIcon } from 'lucide-react-native';
 import { useTheme } from '../../constants/ThemeContext';
@@ -41,22 +41,29 @@ function Sheen({ width }: { width: number }) {
 type PillProps = { title?: string; icon?: LucideIcon; onPress?: () => void; disabled?: boolean; style?: StyleProp<ViewStyle>;
   variant?: 'primary' | 'glass'; size?: 'md' | 'sm' | 'icon'; accessibilityLabel?: string; iconColor?: string;
   /** Fills the icon with its own colour, e.g. a saved heart. */ iconFill?: boolean;
-  accessibilityState?: { selected?: boolean; disabled?: boolean } };
+  accessibilityState?: { selected?: boolean; disabled?: boolean; busy?: boolean };
+  /** Work in progress: a spinner takes the icon slot and presses are ignored, without dimming the pill. */ loading?: boolean;
+  /** Announced as busy to screen readers (implied by `loading`). */ busy?: boolean;
+  /** A light tap on press (on by default). */ haptics?: boolean };
 
 /** The studio's buttons: a black pill for the one main action, glass pills for the rest. */
-export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'glass', size = 'md', accessibilityLabel, iconColor, iconFill, accessibilityState }: PillProps) {
+export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'glass', size = 'md', accessibilityLabel, iconColor, iconFill, accessibilityState, loading, busy, haptics = true }: PillProps) {
   const { isDark } = useTheme();
   const height = size === 'md' ? 50 : size === 'sm' ? 38 : 44;
   const primary = variant === 'primary';
   const ink = primary ? (isDark ? INK : '#FFFFFF') : (isDark ? '#FFFFFF' : INK);
   const content = (
     <View style={{ height, minWidth: height, paddingHorizontal: size === 'icon' || !title ? 0 : size === 'sm' ? 14 : 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-      {Icon ? <Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} fill={iconFill ? iconColor || ink : 'none'} /> : null}
+      {loading ? <View style={{ width: size === 'md' ? 19 : 17, height: size === 'md' ? 19 : 17, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="small" color={iconColor || ink} style={{ transform: [{ scale: size === 'md' ? 0.9 : 0.8 }] }} />
+      </View> : Icon ? <Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} fill={iconFill ? iconColor || ink : 'none'} /> : null}
       {title ? <Text style={[font('semibold'), { color: ink, fontSize: size === 'sm' ? 13 : 15 }]} numberOfLines={1}>{title}</Text> : null}
     </View>
   );
   return (
-    <AppPressable haptics accessibilityRole="button" accessibilityLabel={accessibilityLabel || title} accessibilityState={accessibilityState} disabled={disabled} onPress={onPress}
+    <AppPressable haptics={haptics} accessibilityRole="button" accessibilityLabel={accessibilityLabel || title}
+      accessibilityState={{ ...accessibilityState, disabled: Boolean(disabled || loading || accessibilityState?.disabled), busy: Boolean(loading || busy || accessibilityState?.busy) }}
+      disabled={disabled || loading} onPress={onPress}
       style={[{ borderRadius: 999, opacity: disabled ? 0.45 : 1 }, style]}>
       {primary ? (
         <PrimarySurface dark={isDark}>{content}</PrimarySurface>

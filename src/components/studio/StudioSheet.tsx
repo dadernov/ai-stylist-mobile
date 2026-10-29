@@ -9,7 +9,7 @@ import { AppPressable } from '../AppPressable';
 import { OverlayOutlet } from '../OverlayHost';
 import { FormScrollView } from '../ui/FormScrollView';
 import { Pill } from './Glass';
-import { font, INK, INK_ON_DARK, inkSoft } from './studio';
+import { font, INK, INK_ON_DARK, inkSoft, sheetFill } from './studio';
 
 type StudioSheetProps = {
   visible: boolean;
@@ -47,7 +47,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
           onPress={dismissOnBackdrop ? onClose : undefined} style={StyleSheet.absoluteFill}>
           <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         </AppPressable>
-        <View style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]}>
+        <View style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark) }]}>
           <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
           {title ? (
             <View style={styles.header}>

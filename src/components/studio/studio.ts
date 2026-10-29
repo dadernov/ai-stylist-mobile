@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { AccessibilityInfo, TextStyle } from 'react-native';
 import { WardrobeItem } from '../../data/mock';
 import { darkColors } from '../../constants/theme';
@@ -17,6 +17,10 @@ export const inkSoft = (isDark: boolean) => (isDark ? darkColors.muted : INK_SOF
 /** Glass without the blur: its tint and light edge, for many small surfaces at once (a blur each is costly). */
 export const glassFill = (isDark: boolean) => (isDark ? 'rgba(40,43,48,0.55)' : 'rgba(255,255,255,0.55)');
 export const glassEdge = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.75)');
+/** The near-opaque fill of sheets, dialogs and floating cards that carry text. */
+export const sheetFill = (isDark: boolean) => (isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)');
+/** The dim laid over the screen behind a modal (the blur alone does not dim on Android). */
+export const backdropDim = (isDark: boolean) => (isDark ? 'rgba(0,0,0,0.45)' : 'rgba(18,20,23,0.28)');
 /** The hairline between rows on a glass panel or a sheet. */
 export const hairline = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)');
 
@@ -46,14 +50,27 @@ export function studioTint(item?: Pick<WardrobeItem, 'color' | 'profile'> | null
 /** A cut-out garment (PNG with a transparent background) floats on its own; a photo with a ground is shown as a print. */
 export const isCutout = (uri?: string) => Boolean(uri && (/^data:image\/png/i.test(uri) || /\.png(\?|$)/i.test(uri)));
 
+// One shared reduce-motion subscription for the whole app (AppPressable alone mounts hundreds of callers).
+let reducedMotion = false;
+const motionListeners = new Set<() => void>();
+let motionSubscribed = false;
+const setReducedMotion = (value: boolean) => {
+  if (value === reducedMotion) return;
+  reducedMotion = value;
+  motionListeners.forEach(listener => listener());
+};
+function subscribeReducedMotion(listener: () => void) {
+  motionListeners.add(listener);
+  if (!motionSubscribed) {
+    motionSubscribed = true;
+    AccessibilityInfo.isReduceMotionEnabled?.().then(setReducedMotion).catch(() => {});
+    AccessibilityInfo.addEventListener?.('reduceMotionChanged', setReducedMotion);
+  }
+  return () => { motionListeners.delete(listener); };
+}
+const getReducedMotion = () => reducedMotion;
+
 /** Whether the person asked the system to cut motion down: floating and automatic effects stay still then. */
 export function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled().then(value => { if (alive) setReduced(value); }).catch(() => {});
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
-    return () => { alive = false; subscription.remove(); };
-  }, []);
-  return reduced;
+  return useSyncExternalStore(subscribeReducedMotion, getReducedMotion, getReducedMotion);
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TRYON_SECTIONS } from '../domain/accessories';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, StyleSheet, Text, View } from 'react-native';
 import { ArrowUpRight, Check, ChevronRight, Clock3, History, RefreshCw, Save, Shirt, X } from 'lucide-react-native';
@@ -16,7 +16,6 @@ import { OptionPicker } from './ui/OptionPicker';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Pill } from './studio/Glass';
 import { StudioBackdrop } from './studio/StudioBackdrop';
-import { SpinnerIcon } from './GenerationStage';
 import { font, hairline } from './studio/studio';
 
 type Props = {
@@ -37,7 +36,9 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
   const { lang } = useLanguage();
   const [selectedId, setSelectedId] = useState<string>();
   const selected = jobs.find(job => job.id === selectedId);
-  const [checking, setChecking] = useState(false);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
   const [expanded, setExpanded] = useState(false);
   const byId = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
   const labels = useMemo(() => {
@@ -121,9 +122,8 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
               {item && <ChevronRight size={19} color={c.muted} />}
             </AppPressable>;
           })}
-          {selected.status === 'retry' && <Pill title={t('Проверить результат')} icon={checking ? SpinnerIcon : RefreshCw} disabled={checking}
-            accessibilityState={{ disabled: checking }}
-            onPress={() => { setChecking(true); void store.poll(selected).finally(() => setChecking(false)); }} />}
+          {selected.status === 'retry' && <Pill title={t('Проверить результат')} icon={RefreshCw} loading={checkingId === selected.id} haptics={false}
+            onPress={() => { const id = selected.id; setCheckingId(id); void store.poll(selected).finally(() => { if (mounted.current) setCheckingId(value => value === id ? null : value); }); }} />}
           {selected.result && <Pill variant="primary" title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved}
             onPress={() => {
               const result = selected.result!;

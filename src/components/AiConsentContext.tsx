@@ -2,12 +2,13 @@ import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, use
 import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ShieldCheck } from 'lucide-react-native';
+import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { privacyUrl } from '../constants/ai';
 import { hasAiConsent, saveAiConsent } from '../services/aiConsent';
 import { Pill } from './studio/Glass';
-import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio/studio';
+import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 import { AppPressable } from './AppPressable';
 import { useOverlay } from './OverlayHost';
 
@@ -44,7 +45,8 @@ export function AiConsentProvider({ login, children }: { login: string; children
   const prompt = open ? <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={() => void answer(false)}>
       <View style={styles.backdrop}>
         <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-        <View style={[styles.card, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]} accessibilityViewIsModal>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
+        <View style={[styles.card, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark) }]} accessibilityViewIsModal>
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <ShieldCheck size={28} color={ink} strokeWidth={1.6} />
             <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: ink }]}>{t('Обработка фото нейросетями')}</Text>
@@ -53,8 +55,8 @@ export function AiConsentProvider({ login, children }: { login: string; children
               <Text style={[font('semibold'), styles.link, { color: ink }]}>{t('Политика конфиденциальности')}</Text>
             </AppPressable>
             <View style={styles.actions}>
-              <Pill title={t('Согласен, продолжить')} variant="primary" onPress={() => void answer(true)} />
-              <Pill title={t('Не сейчас')} onPress={() => void answer(false)} />
+              <Pill title={t('Согласен, продолжить')} variant="primary" onPress={() => void answer(true)} haptics={false} />
+              <Pill title={t('Не сейчас')} onPress={() => void answer(false)} haptics={false} />
             </View>
           </ScrollView>
         </View>

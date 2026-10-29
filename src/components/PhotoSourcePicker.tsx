@@ -7,7 +7,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { Pill } from './studio/Glass';
-import { font, hairline, INK, INK_ON_DARK } from './studio/studio';
+import { font, hairline, INK, INK_ON_DARK, sheetFill } from './studio/studio';
 
 export type PhotoSource = 'gallery' | 'camera';
 
@@ -36,7 +36,7 @@ export function PhotoSourcePicker({ visible, onClose, onSelect }: {
         <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       </AppPressable>
       <SafeAreaView pointerEvents="box-none" style={styles.backdrop}>
-        <View style={[styles.card, { backgroundColor: isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)' }]}>
+        <View style={[styles.card, { backgroundColor: sheetFill(isDark) }]}>
           <View style={styles.heading}>
             <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: ink }]}>{t('Добавить фото')}</Text>
             <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть выбор фото')} onPress={onClose} />

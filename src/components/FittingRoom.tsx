@@ -20,7 +20,6 @@ import { font, glassEdge, glassFill, INK, INK_SOFT, isCutout, useReducedMotion }
 import { StudioSheet } from './studio/StudioSheet';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
-import { SpinnerIcon } from './GenerationStage';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { TryOnJob } from '../services/tryOnJobs';
@@ -296,8 +295,8 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
                 : current.error ? <Text style={styles.captionError} numberOfLines={3}>{t(current.error)}</Text>
                 : <Text style={styles.captionMeta}>{t('Примерка не завершена')}</Text>}
             </View>
-            {!result && current.status === 'retry' ? <Pill size="icon" icon={checkingId === current.id ? SpinnerIcon : RefreshCw}
-              accessibilityLabel={t('Проверить результат')} disabled={checkingId === current.id} accessibilityState={{ disabled: checkingId === current.id }}
+            {!result && current.status === 'retry' ? <Pill size="icon" icon={RefreshCw} loading={checkingId === current.id} haptics={false}
+              accessibilityLabel={t('Проверить результат')}
               onPress={() => { const id = current.id; setCheckingId(id); void store.poll(current).finally(() => setCheckingId(value => value === id ? null : value)); }} /> : null}
           </View>
         </Glass> : null}
