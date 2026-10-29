@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { ActivityIndicator, Keyboard, StyleSheet, Text, TextInput, View, Linking } from 'react-native';
 import { FormScrollView } from '../components/ui/FormScrollView';
-import { LinearGradient } from 'expo-linear-gradient';
-import { RADII, ThemeColors, TYPE } from '../constants/theme';
+import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { StudioBackdrop } from '../components/studio/StudioBackdrop';
+import { Glass, Pill } from '../components/studio/Glass';
+import { font, glassFill, hairline, inkSoft, INK, INK_ON_DARK } from '../components/studio/studio';
 import { AppPressable } from '../components/AppPressable';
 import { FadeInView } from '../components/ui/FadeInView';
 import { registerAccount, signIn, Session } from '../services/auth';
@@ -24,7 +25,9 @@ type Field = 'login' | 'password' | 'name';
 export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const ink = isDark ? INK_ON_DARK : INK;
+  const soft = inkSoft(isDark);
   const [mode, setMode] = useState<Mode>(returning ? 'register' : 'signIn');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
@@ -50,11 +53,11 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
     }
   };
 
-  const fieldStyle = (field: Field) => [styles.input, focused === field && styles.inputFocused];
+  const fieldStyle = (field: Field) => [styles.input,
+    { color: ink, backgroundColor: glassFill(isDark), borderColor: focused === field ? ink : hairline(isDark) }];
 
   return (
-    <FormScrollView contentContainerStyle={styles.container}>
-      <LinearGradient colors={[colors.heroTo, colors.heroFrom] as const} style={StyleSheet.absoluteFill} pointerEvents="none" />
+    <StudioBackdrop><FormScrollView contentContainerStyle={styles.container}>
 
       <ScreenHeader
         title={t(mode === 'register' ? 'Регистрация' : 'Вход')}
@@ -63,13 +66,13 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           : 'Логин и пароль, чтобы сохранять гардероб и образы.')}
       />
 
-      <FadeInView key={mode} style={styles.form}>
+      <Glass radius={28} style={styles.card}><FadeInView key={mode} style={styles.form}>
         {mode === 'register' && (
           <>
-            <Text style={styles.label}>{t('Имя')}</Text>
+            <Text style={[styles.label, { color: soft }]}>{t('Имя')}</Text>
             <TextInput
               placeholder={t('Например, Алина')}
-              placeholderTextColor={colors.muted}
+              placeholderTextColor={soft}
               style={fieldStyle('name')}
               value={name}
               onChangeText={setName}
@@ -82,10 +85,10 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           </>
         )}
 
-        <Text style={styles.label}>{t('Логин')}</Text>
+        <Text style={[styles.label, { color: soft }]}>{t('Логин')}</Text>
         <TextInput
           placeholder="alina"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor={soft}
           style={fieldStyle('login')}
           value={login}
           onChangeText={setLogin}
@@ -99,10 +102,10 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           onSubmitEditing={Keyboard.dismiss}
         />
 
-        <Text style={styles.label}>{t('Пароль')}</Text>
+        <Text style={[styles.label, { color: soft }]}>{t('Пароль')}</Text>
         <TextInput
           placeholder="••••••••"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor={soft}
           style={fieldStyle('password')}
           value={password}
           onChangeText={setPassword}
@@ -116,22 +119,21 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           returnKeyType="done"
           onSubmitEditing={submit}
         />
-        {mode === 'register' && <Text style={styles.hint}>{t('Не короче 8 символов.')}</Text>}
+        {mode === 'register' && <Text style={[styles.hint, { color: soft }]}>{t('Не короче 8 символов.')}</Text>}
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <PrimaryButton
+        <Pill
+          variant="primary"
           title={t(mode === 'register' ? 'Создать аккаунт' : 'Войти')}
           onPress={submit}
           disabled={busy}
-          variant="gold"
-          size="lg"
           style={styles.submitButton}
         />
-        {busy && <ActivityIndicator color={colors.accentGold} />}
+        {busy && <ActivityIndicator color={ink} />}
         {mode === 'register' && <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}>
-          <Text style={styles.legal}>
-            {t('Создавая аккаунт, ты принимаешь')} <Text style={styles.legalLink}>{t('политику конфиденциальности')}</Text>.
+          <Text style={[styles.legal, { color: soft }]}>
+            {t('Создавая аккаунт, ты принимаешь')} <Text style={[styles.legalLink, { color: ink }]}>{t('политику конфиденциальности')}</Text>.
           </Text>
         </AppPressable>}
 
@@ -139,28 +141,25 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           onPress={() => { setMode(mode === 'register' ? 'signIn' : 'register'); setError(''); }}
           accessibilityRole="button"
         >
-          <Text style={styles.switch}>
+          <Text style={[styles.switch, { color: ink }]}>
             {t(mode === 'register' ? 'Уже есть аккаунт — войти' : 'Нет аккаунта — зарегистрироваться')}
           </Text>
         </AppPressable>
-      </FadeInView>
-    </FormScrollView>
+      </FadeInView></Glass>
+    </FormScrollView></StudioBackdrop>
   );
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, gap: 18, justifyContent: 'center' },
-  form: { gap: 10 },
-  label: { ...TYPE.caption, color: c.muted, marginTop: 6 },
-  input: {
-    borderWidth: 1, borderColor: c.border, borderRadius: RADII.md, paddingHorizontal: 16, paddingVertical: 14,
-    color: c.text, backgroundColor: c.card, fontSize: 16
-  },
-  inputFocused: { borderColor: c.accentGold },
-  hint: { color: c.muted, fontSize: 12 },
-  errorText: { color: c.danger, fontSize: 13 },
+  container: { flexGrow: 1, padding: 20, gap: 18, justifyContent: 'center' },
+  card: { borderRadius: 28 },
+  form: { gap: 10, padding: 20 },
+  label: { ...font('medium'), fontSize: 13, marginTop: 6 },
+  input: { ...font('regular'), borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16 },
+  hint: { ...font('regular'), fontSize: 12 },
+  errorText: { ...font('medium'), color: c.danger, fontSize: 13 },
   submitButton: { marginTop: 14 },
-  switch: { color: c.accentGold, fontSize: 14, textAlign: 'center', paddingVertical: 12 },
-  legal: { color: c.muted, fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  legalLink: { color: c.accentGold, textDecorationLine: 'underline' }
+  switch: { ...font('semibold'), fontSize: 14, textAlign: 'center', paddingVertical: 12 },
+  legal: { ...font('regular'), fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  legalLink: { ...font('medium'), textDecorationLine: 'underline' }
 });

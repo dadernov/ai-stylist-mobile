@@ -8,6 +8,7 @@ import {
   StyleSheet
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useReducedMotion } from './studio/studio';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -30,11 +31,14 @@ export function AppPressable({
 }: AppPressableProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const [pressed, setPressed] = useState(false);
+  // Reduced motion: no springy scale, the opacity dip alone shows the press.
+  const reduced = useReducedMotion();
+  const animate = feedback && !reduced;
 
   const handlePressIn = useCallback(
     (event: GestureResponderEvent) => {
       setPressed(true);
-      if (feedback) {
+      if (animate) {
         Animated.spring(scale, {
           toValue: 0.97,
           speed: 50,
@@ -47,13 +51,13 @@ export function AppPressable({
       }
       onPressIn?.(event);
     },
-    [feedback, haptics, onPressIn, scale]
+    [animate, haptics, onPressIn, scale]
   );
 
   const handlePressOut = useCallback(
     (event: GestureResponderEvent) => {
       setPressed(false);
-      if (feedback) {
+      if (animate) {
         Animated.spring(scale, {
           toValue: 1,
           speed: 40,
@@ -63,7 +67,7 @@ export function AppPressable({
       }
       onPressOut?.(event);
     },
-    [feedback, onPressOut, scale]
+    [animate, onPressOut, scale]
   );
 
   const ripple = android_ripple ?? (feedback ? { color: 'rgba(0,0,0,0.08)' } : undefined);
@@ -76,7 +80,7 @@ export function AppPressable({
       onPressOut={handlePressOut}
       style={[
         typeof style === 'function' ? style({ pressed }) : style,
-        feedback ? { transform: [{ scale }] } : null,
+        animate ? { transform: [{ scale }] } : null,
         feedback && pressed ? styles.pressed : null
       ]}
     >

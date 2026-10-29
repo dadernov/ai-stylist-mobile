@@ -6,6 +6,7 @@ import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
+import { font } from './studio/studio';
 
 export const GarmentTile = memo(function GarmentTile({ item, selected, disabled, status, onPress }: {
   item: WardrobeItem;
@@ -52,19 +53,19 @@ export const GarmentTile = memo(function GarmentTile({ item, selected, disabled,
 const STAGE_INK = '#000000';
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  // A storefront card: a 3:4 photo on a light stage with square corners, the text left-aligned under it.
+  // A storefront card: a 3:4 photo on a light stage with rounded studio corners, the text left-aligned under it.
   tile: { width: '100%', gap: 6 },
-  photoStage: { width: '100%', aspectRatio: 0.75, backgroundColor: c.stage, borderRadius: 0, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
+  photoStage: { width: '100%', aspectRatio: 0.75, backgroundColor: c.stage, borderRadius: 18, overflow: 'hidden', borderWidth: 1.5, borderColor: 'transparent' },
   photoSelected: { borderColor: STAGE_INK },
   photo: { width: '100%', height: '100%', borderWidth: 12, borderColor: 'transparent' },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  missingText: { fontSize: 11, color: c.muted },
+  missingText: { ...font('regular'), fontSize: 11, color: c.muted },
   loading: { position: 'absolute', bottom: 12, left: 12 },
-  badge: { position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.85)' },
+  badge: { position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.85)' },
   badgeSelected: { backgroundColor: STAGE_INK },
-  status: { position: 'absolute', left: 6, bottom: 6, right: 6, backgroundColor: c.card, padding: 6, borderRadius: 4 },
-  statusText: { color: c.muted, fontSize: 10, textAlign: 'center' },
+  status: { position: 'absolute', left: 6, bottom: 6, right: 6, backgroundColor: c.card, padding: 6, borderRadius: 999 },
+  statusText: { ...font('medium'), color: c.muted, fontSize: 10, textAlign: 'center' },
   caption: { gap: 1, paddingHorizontal: 2, paddingBottom: 10 },
-  name: { color: c.text, fontSize: 14, lineHeight: 19, fontWeight: '400', minHeight: 19 },
-  detail: { color: c.muted, fontSize: 12, lineHeight: 16 }
+  name: { ...font('medium'), color: c.text, fontSize: 14, lineHeight: 19, minHeight: 19 },
+  detail: { ...font('regular'), color: c.muted, fontSize: 12, lineHeight: 16 }
 });
