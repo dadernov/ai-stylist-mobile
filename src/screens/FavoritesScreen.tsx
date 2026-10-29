@@ -16,6 +16,7 @@ import { FadeInView } from '../components/ui/FadeInView';
 import { Glass, Pill } from '../components/studio/Glass';
 import { GarmentImage } from '../components/studio/Garment';
 import { layoutLook } from '../components/studio/lookLayout';
+import { useAspects } from '../components/studio/useAspects';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { font, INK_FAINT, studioTint } from '../components/studio/studio';
 
@@ -62,7 +63,8 @@ const FavoriteCard = memo(function FavoriteCard({ look, height, width, index, it
   const styles = useThemedStyles(makeStyles);
   const lookItems = useMemo(() => look.itemIds.map(id => itemsById[id]).filter(Boolean) as WardrobeItem[], [look.itemIds, itemsById]);
   const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
-  const placed = useMemo(() => (tryOnUri || !width ? [] : layoutLook(lookItems, width, height - CAPTION_ROOM)), [tryOnUri, lookItems, width, height]);
+  const aspects = useAspects(lookItems);
+  const placed = useMemo(() => (tryOnUri || !width ? [] : layoutLook(lookItems, width, height - CAPTION_ROOM, aspects)), [tryOnUri, lookItems, width, height, aspects]);
   const byId = new Map(lookItems.map(item => [item.id, item]));
   const tint = studioTint(lookItems.find(item => item.id === placed[0]?.id));
   const title = lookTitle(look, t);

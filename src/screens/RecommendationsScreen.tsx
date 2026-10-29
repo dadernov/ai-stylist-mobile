@@ -9,6 +9,7 @@ import { AppPressable } from '../components/AppPressable';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
 import { FloorShadow, GarmentImage } from '../components/studio/Garment';
 import { layoutLook } from '../components/studio/lookLayout';
+import { useAspects } from '../components/studio/useAspects';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { useStudioTint } from '../components/studio/StudioBackdrop';
 import { font, studioTint, useReducedMotion } from '../components/studio/studio';
@@ -197,7 +198,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
 
   const [stageWidth, setStageWidth] = useState(0);
   const stageHeight = Math.round(Math.min(420, Math.max(280, windowHeight * 0.47)));
-  const placed = about && stageWidth ? layoutLook(about.selection, stageWidth, stageHeight) : [];
+  const aspects = useAspects(about?.selection);
+  const placed = about && stageWidth ? layoutLook(about.selection, stageWidth, stageHeight, aspects) : [];
   const byId = new Map(about?.selection.map(item => [item.id, item]));
   const why = about ? (look?.source === 'stylist' && look.why ? look.why : about.tips[0]) || '' : '';
   const WeatherIcon = precipitation === 'rain' ? CloudRain : precipitation === 'snow' ? CloudSnow : CloudSun;
