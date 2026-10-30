@@ -895,6 +895,8 @@ export const en: Record<string, string> = {
   "Сохранить и добавить ещё": "Save and add another",
   "Примерить образ": "Try on the look",
   "Следующий образ": "Next look",
+  "Предыдущий образ": "Previous look",
+  "Образ {n} из {count}": "Look {n} of {count}",
   "Подробнее": "Details",
   "Образы вокруг «{name}»": "Looks built around “{name}”",
   "Верни отложенные варианты или выбери другой повод.": "Bring back the looks you set aside or pick another occasion.",

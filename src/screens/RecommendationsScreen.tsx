@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Keyboard, Linking, PanResponder, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { ArrowRight, ArrowRightLeft, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Heart, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Heart, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FormScrollView } from '../components/ui/FormScrollView';
@@ -12,7 +12,10 @@ import { layoutLook } from '../components/studio/lookLayout';
 import { useAspects } from '../components/studio/useAspects';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { useStudioTint } from '../components/studio/StudioBackdrop';
-import { font, studioTint, useReducedMotion } from '../components/studio/studio';
+import { font, glassFill, hairline, INK, INK_ON_DARK, inkSoft, studioTint, useReducedMotion } from '../components/studio/studio';
+
+// The one-shot "there are more looks" nudge, once per app session.
+let nudged = false;
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { useLanguage, useT } from '../constants/i18n';
@@ -68,7 +71,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
-  const { colors: c } = useTheme();
+  const { colors: c, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const reduced = useReducedMotion();
   const [event, setEvent] = useState('Прогулка');
@@ -156,9 +159,10 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const slide = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
   const busy = useRef(false);
-  const go = (dir: 1 | -1) => {
-    if (busy.current || visible.length < 2) return;
-    const target = (index + dir + visible.length) % visible.length;
+  // Arrows, swipes and the numbers below all page here; the ends do not wrap, so position stays readable.
+  const go = (dir: 1 | -1, to = index + dir) => {
+    if (busy.current || visible.length < 2 || to === index || to < 0 || to >= visible.length) return;
+    const target = to;
     setReplaceId(null); setExpanded(false);
     if (reduced) { setAt(target); return; }
     busy.current = true;
@@ -176,6 +180,19 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   };
   const goRef = useRef(go);
   goRef.current = go;
+  // The first time several looks are offered, the stage leans once towards the next one: there is more to swipe.
+  const many = visible.length > 1;
+  useEffect(() => {
+    if (!many || reduced || nudged) return;
+    nudged = true;
+    const hint = Animated.sequence([
+      Animated.delay(900),
+      Animated.timing(slide, { toValue: -0.35, duration: 380, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.spring(slide, { toValue: 0, damping: 12, stiffness: 140, useNativeDriver: true })
+    ]);
+    hint.start();
+    return () => hint.stop();
+  }, [many, reduced]);
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy),
     onPanResponderRelease: (_, g) => { if (Math.abs(g.dx) > 40) goRef.current(g.dx < 0 ? 1 : -1); }
@@ -255,8 +272,19 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
             </Animated.View>;
           })}
         </Animated.View>
-        {visible.length > 1 ? <Animated.Text style={[font('regular'), styles.position, textFade]}>{t('{n} из {count}', { n: index + 1, count: visible.length })}</Animated.Text> : null}
+        {many && index > 0 ? <Pill size="sm" icon={ChevronLeft} style={[styles.arrow, { left: 16 }]} accessibilityLabel={t('Предыдущий образ')} onPress={() => go(-1)} /> : null}
+        {many && index < visible.length - 1 ? <Pill size="sm" icon={ChevronRight} style={[styles.arrow, { right: 16 }]} accessibilityLabel={t('Следующий образ')} onPress={() => go(1)} /> : null}
       </View>
+      {many ? <View style={styles.pager} accessibilityRole="tablist">
+        {visible.map((other, n) => {
+          const current = n === index;
+          return <AppPressable key={other.id} accessibilityRole="tab" accessibilityState={{ selected: current }} hitSlop={6}
+            accessibilityLabel={t('Образ {n} из {count}', { n: n + 1, count: visible.length })} onPress={() => go(n > index ? 1 : -1, n)}
+            style={[styles.page, { backgroundColor: current ? (isDark ? INK_ON_DARK : INK) : glassFill(isDark), borderColor: current ? 'transparent' : hairline(isDark) }]}>
+            <Text style={[font(current ? 'semibold' : 'medium'), styles.pageNumber, { color: current ? (isDark ? INK : '#FFFFFF') : inkSoft(isDark) }]}>{n + 1}</Text>
+          </AppPressable>;
+        })}
+      </View> : null}
 
       <Animated.View style={textFade}>
         <Text style={[font('semibold'), styles.lookTitle]} numberOfLines={2}>{about.title}</Text>
@@ -269,7 +297,6 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <View style={styles.actions}>
         <Pill variant="primary" icon={PersonStanding} title={t('Примерить образ')} style={{ flex: 1 }} onPress={() => { told('tryon'); onTryOn(ids); }} />
         <Pill icon={Heart} iconFill={saved} accessibilityLabel={t(saved ? 'Сохранено в избранном' : 'В избранное')} accessibilityState={{ selected: saved }} onPress={favorite} />
-        {visible.length > 1 ? <Pill icon={ArrowRight} accessibilityLabel={t('Следующий образ')} onPress={() => go(1)} /> : null}
       </View>
     </> : null}
 
@@ -370,7 +397,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   word: { fontSize: 13, lineHeight: 18, color: c.muted },
   anchor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   stage: { marginHorizontal: -16, marginTop: 6, alignItems: 'center', justifyContent: 'center' },
-  position: { position: 'absolute', right: 20, bottom: 4, fontSize: 12, color: c.muted },
+  arrow: { position: 'absolute', top: '50%', marginTop: -19 },
+  pager: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4, marginBottom: 10 },
+  page: { minWidth: 28, height: 28, paddingHorizontal: 8, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  pageNumber: { fontSize: 12, lineHeight: 16 },
   lookTitle: { color: c.text, fontSize: 26, lineHeight: 30, letterSpacing: -0.7 },
   why: { color: c.muted, fontSize: 14, lineHeight: 20, marginTop: 6 },
   link: { color: c.text, fontSize: 13, lineHeight: 18 },
