@@ -626,7 +626,7 @@ MAX_UPLOAD_BYTES = _env_int("AI_MAX_UPLOAD_BYTES", 15 * 1024 * 1024)
 # Every use downsizes first (_working_image: 2048 px, try-on: FASHN_IMAGE_MAX_SIDE),
 # and the app already sends at most 4096 px on the long side (4096x3072 = 12.6 MP).
 # The user-facing "до 25 мегапикселей" texts stay as they are: the app translates them by key.
-MAX_IMAGE_PIXELS = min(25_000_000, _env_int("AI_MAX_IMAGE_PIXELS", 13_000_000))
+MAX_IMAGE_PIXELS = min(25_000_000, _env_int("AI_MAX_IMAGE_PIXELS", 25_000_000))
 MAX_IMAGE_SIDE = 10000
 
 
@@ -2534,7 +2534,7 @@ async def tryon_generate_look(
             _TRYON_LOOK_INFLIGHT.pop(task_key, None)
             return result
 
-        access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 3))
+        access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 6))
         if not fal_model and not await asyncio.to_thread(fashn_credits.sufficient, token, cost):
             return {"error": fashn_credits.ERROR}
         async with _TRYON_LOOK_LOCK:

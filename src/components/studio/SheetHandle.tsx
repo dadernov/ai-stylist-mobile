@@ -73,7 +73,7 @@ export function SheetHandle({ onClose, color, style, canDismiss = true, onDismis
   const press = () => { if (canDismiss) onClose(); else onDismissBlocked?.(); };
   return (
     // Only a real tap (small movement, short press) closes: a sideways or diagonal drag released here does not.
-    <View accessible accessibilityRole="button" accessibilityLabel={t('Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')}
+    <View accessible accessibilityRole="button" accessibilityLabel={t('Закрыть')} accessibilityHint={canDismiss ? t('Смахни вниз, чтобы закрыть') : undefined} accessibilityState={{ disabled: !canDismiss }}
       onStartShouldSetResponder={() => true}
       onResponderGrant={e => { start.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, at: Date.now() }; }}
       onResponderRelease={e => {
