@@ -130,7 +130,7 @@ class _TryOnQueue:
 
     @staticmethod
     def limit():
-        return max(1, _env_int('AI_MAX_ACTIVE_TRYONS', 6))
+        return max(1, _env_int('AI_MAX_ACTIVE_TRYONS', 2))
 
     async def acquire(self, publish):
         if self.running < self.limit() and not self.waiting:
@@ -623,7 +623,10 @@ async def _face_locked_output_url(
 
 
 MAX_UPLOAD_BYTES = _env_int("AI_MAX_UPLOAD_BYTES", 15 * 1024 * 1024)
-MAX_IMAGE_PIXELS = min(25_000_000, _env_int("AI_MAX_IMAGE_PIXELS", 25_000_000))
+# Every use downsizes first (_working_image: 2048 px, try-on: FASHN_IMAGE_MAX_SIDE),
+# and the app already sends at most 4096 px on the long side (4096x3072 = 12.6 MP).
+# The user-facing "до 25 мегапикселей" texts stay as they are: the app translates them by key.
+MAX_IMAGE_PIXELS = min(25_000_000, _env_int("AI_MAX_IMAGE_PIXELS", 13_000_000))
 MAX_IMAGE_SIDE = 10000
 
 
@@ -774,7 +777,9 @@ async def _run_fashn_tryon(client: httpx.AsyncClient, token: str, model_name: st
     except httpx.HTTPError as exc:
         return {"error": f"FASHN request failed: {type(exc).__name__}: {str(exc)}"}
     if create_res.status_code >= 400:
-        return {"error": f"FASHN create failed ({create_res.status_code})", "detail": create_res.text}
+        # The body can echo request headers or account details: log the status only.
+        print(f'FASHN create failed: HTTP {create_res.status_code}')
+        return {"error": f"FASHN create failed ({create_res.status_code})", "detail": "Сервис примерки отклонил запрос."}
 
     prediction = create_res.json()
     prediction_id = prediction.get("id")
@@ -792,7 +797,8 @@ async def _run_fashn_tryon(client: httpx.AsyncClient, token: str, model_name: st
         except httpx.HTTPError as exc:
             return {"error": f"FASHN poll request failed: {type(exc).__name__}: {str(exc)}"}
         if get_res.status_code >= 400:
-            return {"error": f"FASHN poll failed ({get_res.status_code})", "detail": get_res.text}
+            print(f'FASHN poll failed: HTTP {get_res.status_code}')
+            return {"error": f"FASHN poll failed ({get_res.status_code})", "detail": "Сервис примерки не ответил на запрос статуса."}
         prediction = get_res.json()
         status = prediction.get("status")
 
@@ -1030,9 +1036,12 @@ def _cache_key_for_tryon_look(
     look_generation_mode: str,
     base_prompt: str,
     quality_mode: str,
-    categories: str = ""
+    categories: str = "",
+    owner: str = ""
 ):
     hasher = hashlib.sha256()
+    # One account's result is never served to another, even for identical photos.
+    hasher.update(b'owner:' + owner.encode('utf-8') + b'\0')
     # Композит и раскладка по слоям поменялись — старые кадры под теми же
     # фотографиями больше не соответствуют тому, что сервер сделал бы сейчас.
     hasher.update(tryon_policy.CACHE_VERSION.encode('utf-8'))
@@ -1118,7 +1127,7 @@ async def _run_fashn_tryon_with_category_fallback(
         if not result.get("error"):
             result["usedCategory"] = category
             return result
-        errors.append({"category": category, "error": result.get("error"), "detail": result.get("detail")})
+        errors.append({"category": category, "error": result.get("error")})
 
     return {
         "error": "FASHN generation failed for all categories",
@@ -2219,7 +2228,8 @@ async def tryon_generate_look(
             + (f"|{json.dumps(slot_options, sort_keys=True)}" if slot_options else '')
             + (f"|legwear|{hashlib.sha256(legwear_content).hexdigest()}" if legwear_content else '')
             + ''.join(f"|{slot}|{hashlib.sha256(content).hexdigest()}" for slot, (content, _) in sorted(accessories.items()))
-            + (f"|bag:{bag_category.strip()}" if 'bag' in accessories else '')
+            + (f"|bag:{bag_category.strip()}" if 'bag' in accessories else ''),
+            owner=device
         )
         request_id = request_id if isinstance(request_id, str) else ''
         if request_id and not re.fullmatch(r'[A-Za-z0-9_-]{16,96}', request_id):
@@ -2524,7 +2534,7 @@ async def tryon_generate_look(
             _TRYON_LOOK_INFLIGHT.pop(task_key, None)
             return result
 
-        access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 6))
+        access.throttle(device, 'tryon', _env_int('AI_TRYON_PER_MINUTE', 3))
         if not fal_model and not await asyncio.to_thread(fashn_credits.sufficient, token, cost):
             return {"error": fashn_credits.ERROR}
         async with _TRYON_LOOK_LOCK:
