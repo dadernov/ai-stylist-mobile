@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { DimensionValue, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, DimensionValue, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { AppPressable } from '../AppPressable';
 import { OverlayOutlet } from '../OverlayHost';
 import { FormScrollView } from '../ui/FormScrollView';
 import { Pill } from './Glass';
+import { SheetHandle, useSheetDrag } from './SheetHandle';
 import { font, INK, INK_ON_DARK, inkSoft, sheetFill } from './studio';
 
 type StudioSheetProps = {
@@ -40,6 +41,8 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
   const bottom = Math.max(insets.bottom, 16) + 16;
   // A content-sized sheet rises with the keyboard; a fixed-height one lets its scroll make room instead.
   const lift = Platform.OS === 'ios' && !height;
+  // The handle and header are the drag zone; the scroll below keeps its own gestures.
+  const drag = useSheetDrag({ onClose, visible });
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={lift ? 'padding' : undefined} style={styles.fill}>
@@ -47,8 +50,10 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
           onPress={dismissOnBackdrop ? onClose : undefined} style={StyleSheet.absoluteFill}>
           <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         </AppPressable>
-        <View style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark) }]}>
-          <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
+        <Animated.View onLayout={drag.onLayout}
+          style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark), transform: [{ translateY: drag.translateY }] }]}>
+          <View {...drag.panHandlers}>
+          <SheetHandle onClose={onClose} color={isDark ? '#3A3D42' : '#D5D7DA'} style={styles.handle} />
           {title ? (
             <View style={styles.header}>
               <View style={styles.heading}>
@@ -58,6 +63,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
               <Pill icon={X} size="icon" onPress={onClose} accessibilityLabel={closeLabel || t('Закрыть')} />
             </View>
           ) : null}
+          </View>
           {scroll ? (
             <FormScrollView automaticallyAdjustKeyboardInsets={Platform.OS === 'ios' && !lift}
               contentContainerStyle={[styles.body, { paddingTop: title ? 16 : 12, paddingBottom: bottom }]}>
@@ -66,7 +72,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
           ) : (
             <View style={[styles.body, styles.frame, { paddingTop: title ? 16 : 12, paddingBottom: bottom }]}>{children}</View>
           )}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
       <OverlayOutlet />
     </Modal>
@@ -77,7 +83,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1, justifyContent: 'flex-end' },
   sheet: { width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
   fit: { maxHeight: '88%' },
-  handle: { alignSelf: 'center', width: 38, height: 5, borderRadius: 3, marginTop: 10 },
+  handle: { marginTop: -8, marginBottom: -21 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, marginTop: 14 },
   heading: { flex: 1, gap: 4 },
   title: { fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
