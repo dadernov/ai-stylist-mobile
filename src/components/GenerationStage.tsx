@@ -95,8 +95,15 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
     setPage(scrollTo.page);
   }, [scrollTo?.at]);
 
+  // A second close while the window slides away (double tap, tap + drag) never calls onClose twice.
+  const closing = useRef(false);
   const close = () => {
-    Animated.timing(slide, { toValue: height, duration: reduced ? 0 : 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onClose());
+    if (closing.current) return;
+    closing.current = true;
+    Animated.timing(slide, { toValue: height, duration: reduced ? 0 : 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(({ finished }) => {
+      if (finished) onClose();
+      closing.current = false;
+    });
   };
   const measure = (event: LayoutChangeEvent) => {
     const { width, height: tall } = event.nativeEvent.layout;
@@ -133,7 +140,8 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
           </Animated.View>
           <Animated.View style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
-            <View {...drag.panHandlers} style={styles.grab} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')}>
+            <View {...drag.panHandlers} style={styles.grab} accessible accessibilityRole="button"
+              accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')} onAccessibilityTap={close}>
               <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
             </View>
             <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
@@ -170,7 +178,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                       onScroll={onScroll} scrollEventThrottle={32} contentOffset={{ x: page * size.width, y: 0 }}>
                       {pages.map(item => (
                         <View key={item.key} style={{ width: size.width, height: size.height }}>
-                          <PageView page={item} onDone={close} />
+                          <PageView page={item} width={size.width} onDone={close} />
                         </View>
                       ))}
                     </ScrollView>
@@ -187,9 +195,8 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
 }
 
 /** One try-on: the look developing out of a soft blur, then the look, its status and actions. */
-function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
+function PageView({ page, width, onDone }: { page: StagePage; width: number; onDone: () => void }) {
   const t = useT();
-  const { width } = useWindowDimensions();
   const { colors: { danger }, isDark } = useTheme();
   const reduced = useReducedMotion();
   const ink = isDark ? INK_ON_DARK : INK;
@@ -207,7 +214,8 @@ function PageView({ page, onDone }: { page: StagePage; onDone: () => void }) {
     });
   }, [busyLabel]);
 
-  const frameWidth = Math.min(width - 32, 480);
+  // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
+  const frameWidth = Math.min(width, 480);
 
   return (
     <View style={{ flex: 1 }}>

@@ -361,9 +361,15 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   // it replaced, which the card offers back until it is closed.
   const [flatBusyId, setFlatBusyId] = useState<string | null>(null);
   const [flatUndo, setFlatUndo] = useState<{ id: string; imageUri: string } | null>(null);
+  // Set synchronously before the consent await: a double tap never sends two paid flatten requests.
+  const flatBusyRef = useRef(false);
   const flattenExisting = async (item: WardrobeItem) => {
     const photo = item.sourceImageUri || item.imageUri;
-    if (!photo || flatBusyId || !(await aiConsent.ensure())) return;
+    if (!photo || flatBusyId || flatBusyRef.current) return;
+    flatBusyRef.current = true;
+    let consented = false;
+    try { consented = await aiConsent.ensure(); } finally { if (!consented) flatBusyRef.current = false; }
+    if (!consented) return;
     setFlatBusyId(item.id);
     try {
       // Only the picture changes: what the item was saved as stays the person's.
@@ -376,6 +382,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
     } catch (error: any) {
       Alert.alert(t('Не удалось выровнять фото'), String(error?.message || t('Попробуй ещё раз.')));
     } finally {
+      flatBusyRef.current = false;
       setFlatBusyId(null);
     }
   };
@@ -541,11 +548,14 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       if (analysisRequestRef.current === requestId) setAnalysisError(t('ИИ-анализ не запускался: нужно согласие на обработку фото. Заполни поля вручную или нажми «AI-анализ».'));
       return;
     }
+    if (analysisRequestRef.current !== requestId) return;
     try {
       setAnalyzing(true);
       setAnalysis(null); setAnalysisError('');
       // One upload-sized copy for both requests: the server matches them by their bytes.
       const upload = await prepareGarmentPhoto(photoUri);
+      // The draft closed (or the photo changed) meanwhile: nothing paid is started for it.
+      if (analysisRequestRef.current !== requestId) return;
       // The flat picture starts together with the analysis instead of after it: the server makes it only once the
       // analysis has read a category of FLAT_SECTIONS, and skips it (unpaid) otherwise. A hint outside them needs none.
       // Dropped when the photo is retaken or the draft closed: the server then stops waiting, before anything is paid.

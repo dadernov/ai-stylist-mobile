@@ -148,7 +148,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const focus = (id: string) => {
     const page = dockJobs.findIndex(job => job.id === id);
     if (windowOpen && page >= 0) setScrollTo({ page, at: Date.now() });
-    else if (!setup) open(id);
+    // Over the setup step the finished look opens in its place (the setup's choices are not lost: «Ещё вариант» brings
+    // them back); only while a try-on is being started from it does the tap wait for that one.
+    else if (!starting) open(id);
   };
 
   // "Another variant" goes back to the setup step in the same window, with the choices of this one.
@@ -176,7 +178,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       await store.start({ modelUri, items: setup.items, context: setup.context, tuckMode, quality: 'quality', fresh: setup.fresh,
         options: setup.options, onJob: id => started(id) });
     } catch (error: any) {
-      setActionError(error?.message || t('Не удалось сгенерировать примерку'));
+      setActionError(error?.message ? t(String(error.message)) : t('Не удалось сгенерировать примерку'));
     } finally {
       setStarting(false);
     }
@@ -191,7 +193,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       setSaveStates(states => ({ ...states, [job.id]: 'saved' }));
     } catch (error: any) {
       setSaveStates(states => ({ ...states, [job.id]: 'error' }));
-      setActionError(error?.message || t('Не удалось сохранить в галерею'));
+      setActionError(error?.message ? t(String(error.message)) : t('Не удалось сохранить в галерею'));
     }
   };
 

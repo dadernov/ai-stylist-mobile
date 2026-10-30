@@ -42,7 +42,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
   // A content-sized sheet rises with the keyboard; a fixed-height one lets its scroll make room instead.
   const lift = Platform.OS === 'ios' && !height;
   // The handle and header are the drag zone; the scroll below keeps its own gestures.
-  const drag = useSheetDrag({ onClose, visible });
+  const drag = useSheetDrag({ onClose, visible, canDismiss: dismissOnBackdrop });
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={lift ? 'padding' : undefined} style={styles.fill}>
@@ -53,7 +53,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
         <Animated.View onLayout={drag.onLayout}
           style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark), transform: [{ translateY: drag.translateY }] }]}>
           <View {...drag.panHandlers}>
-          <SheetHandle onClose={onClose} color={isDark ? '#3A3D42' : '#D5D7DA'} style={styles.handle} />
+          <SheetHandle onClose={onClose} canDismiss={dismissOnBackdrop} color={isDark ? '#3A3D42' : '#D5D7DA'} style={styles.handle} />
           {title ? (
             <View style={styles.header}>
               <View style={styles.heading}>

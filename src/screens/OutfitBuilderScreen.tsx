@@ -380,6 +380,9 @@ export function OutfitBuilderScreen({
   );
 
 
+  // The pause before the looks show: cleared if the screen goes away meanwhile.
+  const generateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (generateTimer.current) clearTimeout(generateTimer.current); }, []);
   const handleGenerateLooks = () => {
     if (isGenerating) return;
     if (!items.length) {
@@ -392,7 +395,8 @@ export function OutfitBuilderScreen({
     // и избранных образах (аудит #42).
     const weatherForLook = weatherReady ? weatherText : '';
     // Короткая пауза, чтобы показать прогресс подбора (сам подбор синхронный).
-    setTimeout(() => {
+    generateTimer.current = setTimeout(() => {
+      generateTimer.current = null;
       const generated = buildLooks(items, activeStyle, activeEvent, weatherForLook, temperature, gender, beautyAdvice, {
         precipitation: liveWeather?.precipitation ?? null, wind: liveWeather?.wind ?? null, t
       });

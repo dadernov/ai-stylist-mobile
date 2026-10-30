@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, GestureResponderHandlers, LayoutChangeEvent, PanResponder, Platform, StyleSheet, View, ViewStyle } from 'react-native';
 import { useT } from '../../constants/i18n';
+import { dragOffset, isTap, releaseCloses } from './sheetGesture';
 import { useReducedMotion } from './studio';
 
 type SheetDragOptions = {
@@ -12,6 +13,9 @@ type SheetDragOptions = {
   velocity?: number;
   /** Resets the offset when the sheet is shown again. */
   visible?: boolean;
+  /** false: a drag only rubber-bands and springs back (e.g. unsaved changes); onDismissBlocked is told instead. */
+  canDismiss?: boolean;
+  onDismissBlocked?: () => void;
 };
 
 export type SheetDrag = {
@@ -28,12 +32,12 @@ export type SheetDrag = {
  * `threshold` of the sheet's height or a fast flick calls onClose, anything else springs back (snaps back with
  * reduced motion). Taps inside the zone still reach its buttons: the gesture is claimed only once the finger moves down.
  */
-export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visible }: SheetDragOptions): SheetDrag {
+export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visible, canDismiss = true, onDismissBlocked }: SheetDragOptions): SheetDrag {
   const reduced = useReducedMotion();
   const translateY = useRef(new Animated.Value(0)).current;
   const height = useRef(400);
-  const latest = useRef({ onClose, reduced });
-  latest.current = { onClose, reduced };
+  const latest = useRef({ onClose, reduced, canDismiss, onDismissBlocked });
+  latest.current = { onClose, reduced, canDismiss, onDismissBlocked };
   useEffect(() => { if (visible !== false) translateY.setValue(0); }, [visible, translateY]);
   const panHandlers = useMemo(() => {
     const back = () => {
@@ -45,10 +49,14 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       onMoveShouldSetPanResponder: (_, g) => downward(g.dx, g.dy),
       onMoveShouldSetPanResponderCapture: (_, g) => downward(g.dx, g.dy),
       onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, g) => translateY.setValue(Math.max(0, g.dy)),
+      onPanResponderMove: (_, g) => translateY.setValue(dragOffset(g.dy, latest.current.canDismiss)),
       onPanResponderRelease: (_, g) => {
-        if (g.dy > height.current * threshold || (g.vy > velocity && g.dy > 0)) latest.current.onClose();
-        else back();
+        const { canDismiss: allowed } = latest.current;
+        if (releaseCloses({ dy: g.dy, vy: g.vy, height: height.current, threshold, velocity, canDismiss: allowed })) latest.current.onClose();
+        else {
+          back();
+          if (!allowed && releaseCloses({ dy: g.dy, vy: g.vy, height: height.current, threshold, velocity, canDismiss: true })) latest.current.onDismissBlocked?.();
+        }
       },
       onPanResponderTerminate: back
     }).panHandlers;
@@ -58,12 +66,21 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
 }
 
 /** The sheet's grab bar as a real control: a 44pt target, «Закрыть» for assistive tech; a tap closes too. */
-export function SheetHandle({ onClose, color, style }: { onClose: () => void; color: string; style?: ViewStyle }) {
+export function SheetHandle({ onClose, color, style, canDismiss = true, onDismissBlocked }:
+  { onClose: () => void; color: string; style?: ViewStyle; canDismiss?: boolean; onDismissBlocked?: () => void }) {
   const t = useT();
+  const start = useRef({ x: 0, y: 0, at: 0 });
+  const press = () => { if (canDismiss) onClose(); else onDismissBlocked?.(); };
   return (
-    // A drag is taken over by the zone's pan responder (this one yields), so a release here is a tap.
+    // Only a real tap (small movement, short press) closes: a sideways or diagonal drag released here does not.
     <View accessible accessibilityRole="button" accessibilityLabel={t('Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')}
-      onStartShouldSetResponder={() => true} onResponderRelease={onClose} onAccessibilityTap={onClose} style={[styles.hit, style]}>
+      onStartShouldSetResponder={() => true}
+      onResponderGrant={e => { start.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, at: Date.now() }; }}
+      onResponderRelease={e => {
+        const s0 = start.current;
+        if (isTap(e.nativeEvent.pageX - s0.x, e.nativeEvent.pageY - s0.y, Date.now() - s0.at)) press();
+      }}
+      onAccessibilityTap={press} style={[styles.hit, style]}>
       <View style={[styles.bar, { backgroundColor: color }]} />
     </View>
   );
