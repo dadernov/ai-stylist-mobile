@@ -18,7 +18,7 @@ import { GenerationStage, StagePage } from './GenerationStage';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
-import { EXPECTED_TRYON_MS, tryOnStatusLabel } from './tryOnStatus';
+import { tryOnStatusLabel } from './tryOnStatus';
 
 /** A look about to be tried on: the window first asks how to wear each garment. */
 export type TryOnRequest = { items: WardrobeItem[]; context: string; fresh: boolean; options?: GarmentOptions };
@@ -318,12 +318,11 @@ function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
     ? job.progress?.stage === 'queue' ? t('Очередь: {position}', { position: job.progress.position || 1 })
       : job.progress?.stage === 'upload' ? t('Отправка…') : clock
     : result ? t('Готово') : t('Ошибка');
-  const share = startedAt ? Math.min(0.95, 1 - Math.exp(-2.2 * (now - startedAt) / EXPECTED_TRYON_MS)) : 0.05;
   const photo = result || job.progress?.previewUrl || modelUri;
   return (
     <AppPressable accessibilityRole="button" accessibilityLabel={t('Развернуть примерку: {name}', { name: job.name })}
       onPress={() => onOpen(job.id)} style={styles.page}>
-      {photo ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      {photo ? <Image source={{ uri: photo }} blurRadius={pending ? 14 : 0} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
       {pending ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.veil,
         { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.45] }) }]} /> : null}
       <View style={styles.footer} pointerEvents="none">
@@ -331,7 +330,6 @@ function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
           : result ? <Check size={14} color="#FFFFFF" /> : <AlertCircle size={14} color="#FFFFFF" />}
         <Text style={styles.footerText} numberOfLines={1}>{label}</Text>
       </View>
-      {pending ? <View style={styles.track} pointerEvents="none"><View style={[styles.bar, { width: `${Math.round(share * 100)}%` }]} /></View> : null}
       {!pending ? (
         <AppPressable accessibilityRole="button" accessibilityLabel={t('Убрать из списка')} hitSlop={8}
           onPress={() => onDismiss(job.id)} style={[styles.dismiss, failed && styles.dismissFailed]}>
@@ -350,8 +348,6 @@ const styles = StyleSheet.create({
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 10, paddingTop: 16, paddingBottom: 11, backgroundColor: 'rgba(18,20,23,0.5)' },
   footerText: { ...font('semibold'), color: '#FFFFFF', fontSize: 12, lineHeight: 16, flexShrink: 1 },
-  track: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.3)' },
-  bar: { height: 3, backgroundColor: '#FFFFFF' },
   dismiss: { position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(18,20,23,0.5)', borderWidth: StyleSheet.hairlineWidth * 2, borderColor: 'rgba(255,255,255,0.35)' },
   dismissFailed: { backgroundColor: 'rgba(166,61,47,0.85)' },
