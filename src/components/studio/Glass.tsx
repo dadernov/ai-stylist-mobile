@@ -51,12 +51,23 @@ export function Pill({ title, icon: Icon, onPress, disabled, style, variant = 'g
   const { isDark } = useTheme();
   const height = size === 'md' ? 50 : size === 'sm' ? 38 : 44;
   const primary = variant === 'primary';
+  // A heart (any filled icon) pops the moment it fills.
+  const reduced = useReducedMotion();
+  const pop = useRef(new Animated.Value(1)).current;
+  const wasFilled = useRef(iconFill);
+  useEffect(() => {
+    if (iconFill && !wasFilled.current && !reduced) {
+      pop.setValue(0.7);
+      Animated.spring(pop, { toValue: 1, damping: 7, stiffness: 320, mass: 0.6, useNativeDriver: true }).start();
+    }
+    wasFilled.current = iconFill;
+  }, [iconFill, reduced, pop]);
   const ink = primary ? (isDark ? INK : '#FFFFFF') : (isDark ? '#FFFFFF' : INK);
   const content = (
     <View style={{ height, minWidth: height, paddingHorizontal: size === 'icon' || !title ? 0 : size === 'sm' ? 14 : 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
       {loading ? <View style={{ width: size === 'md' ? 19 : 17, height: size === 'md' ? 19 : 17, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="small" color={iconColor || ink} style={{ transform: [{ scale: size === 'md' ? 0.9 : 0.8 }] }} />
-      </View> : Icon ? <Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} fill={iconFill ? iconColor || ink : 'none'} /> : null}
+      </View> : Icon ? <Animated.View style={{ transform: [{ scale: pop }] }}><Icon size={size === 'md' ? 19 : 17} strokeWidth={1.8} color={iconColor || ink} fill={iconFill ? iconColor || ink : 'none'} /></Animated.View> : null}
       {title ? <Text style={[font('semibold'), { color: ink, fontSize: size === 'sm' ? 13 : 15 }]} numberOfLines={1}>{title}</Text> : null}
     </View>
   );

@@ -93,6 +93,8 @@ const garments: Record<string, Garment> = {
 const EXTRAS = new Set(['Сумки', 'Аксессуары']);
 
 const fallbackGarment: Garment = { section: 'Верх', formality: 3, warmth: 2, volume: 2 };
+/** What the table knows of this piece's category; null for one it does not list. */
+export const garmentFacts = (item: Pick<WardrobeItem, 'category'>): Garment | null => garments[item.category] || null;
 const describe = (item: WardrobeItem): Garment => garments[item.category] || fallbackGarment;
 const isOnePiece = (item: WardrobeItem) => Boolean(describe(item).onePiece);
 // Trousers, a skirt or shorts: the look's bottom. Tights are worn under one.
@@ -157,6 +159,7 @@ function targetFormality(context: OutfitContext) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 3;
 }
 
+export const isNeutralColorName = (color: string) => neutralNames.has(color) || baseColorNames.has(color);
 const neutralNames = new Set(['Белый', 'Молочный', 'Кремовый', 'Бежевый', 'Песочный', 'Черный', 'Чёрный', 'Графит', 'Серый', 'Серебристый', 'Коричневый']);
 const colors: Record<string, string> = {
   Белый: '#ffffff', Молочный: '#f5f2e8', Кремовый: '#f3ead6', Бежевый: '#c5b39a', Песочный: '#d8c8a8', Черный: '#181818', Чёрный: '#181818',

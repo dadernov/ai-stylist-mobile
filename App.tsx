@@ -36,7 +36,7 @@ import { PrimaryButton } from './src/components/ui/PrimaryButton';
 import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
-import { Shirt, ScanLine, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
+import { Shirt, PersonStanding, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
@@ -55,7 +55,7 @@ const PROFILED_SECTIONS = new Set(['Верх', 'Низ', 'Обувь', 'Верх
 
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
-  { key: 'builder', icon: ScanLine, label: 'Примерка' },
+  { key: 'builder', icon: PersonStanding, label: 'Образ' },
   { key: 'recommendations', icon: Layers, label: 'Идеи' },
   { key: 'favorites', icon: Heart, label: 'Избранное' },
   { key: 'profile', icon: UserRound, label: 'Профиль' }

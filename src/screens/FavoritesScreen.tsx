@@ -1,4 +1,4 @@
-import { ArrowUpRight, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
+import { ArrowUpRight, Heart, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
 import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -143,9 +143,9 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
 
       {!looks.length ? (
         <EmptyState
-          emoji=""
-          title={t('Пока нет избранных образов')}
-          hint={t('Сохрани образ сердцем в «Идеях», и он будет здесь.')}
+          icon={Heart}
+          title={t('Здесь будут образы, которые запали в душу')}
+          hint={t('Нажми на сердце в «Идеях», и образ останется здесь.')}
           actionLabel={onGoToBuilder ? t('Собрать образ') : undefined}
           onAction={onGoToBuilder}
         />
@@ -160,7 +160,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {!shown.length ? (
-          <EmptyState emoji="" title={t('Нет образов с примеркой')} hint={t('Примерь образ на себе, и он появится здесь.')} />
+          <EmptyState title={t('Пока ничего не примерено')} hint={t('Примерь любой образ на себе, и он появится здесь.')} />
         ) : (
           <View style={styles.grid} onLayout={event => setGridWidth(event.nativeEvent.layout.width)}>
             {columns.map((column, col) => (

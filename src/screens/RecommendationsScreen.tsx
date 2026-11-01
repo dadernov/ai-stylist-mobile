@@ -251,7 +251,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <Text style={[font('regular'), styles.muted, { marginTop: 14 }]}>{t('Стилист подбирает образы…')}</Text>
     </View> : null}
 
-    {!visible.length && !thinking ? <EmptyState emoji="" title={t(!items.length ? 'Начнём с гардероба' : hidden.length ? 'Все варианты просмотрены' : 'Пока нет подходящих вещей')}
+    {!visible.length && !thinking ? <EmptyState title={t(!items.length ? 'Начнём с гардероба' : hidden.length ? 'Все варианты просмотрены' : 'Пока нет подходящих вещей')}
       hint={t(!items.length ? 'Добавь вещи в гардероб, чтобы подобрать сочетания.' : hidden.length ? 'Верни отложенные варианты или выбери другой повод.' : 'Добавь вещи или выбери другой повод и стиль.')}
       actionLabel={t(hidden.length ? 'Вернуть варианты' : 'К гардеробу')} onAction={hidden.length ? () => { setHidden([]); setAt(0); } : onWardrobe} /> : null}
 
