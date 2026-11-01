@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Linking, Platform, ScrollView, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { Alert, Animated, Easing, Linking, Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useFonts, Onest_700Bold, Onest_800ExtraBold, Onest_900Black } from '@expo-google-fonts/onest';
 import { TenorSans_400Regular } from '@expo-google-fonts/tenor-sans';
 import { Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold } from '@expo-google-fonts/manrope';
@@ -32,11 +32,9 @@ import { decodeGarmentProfile } from './src/domain/garmentTraits';
 import { hasAiConsent } from './src/services/aiConsent';
 import { GeneratedLook, SavedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
-import { PrimaryButton } from './src/components/ui/PrimaryButton';
-import { SectionLabel } from './src/components/ui/SectionLabel';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
-import { Shirt, ScanLine, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
+import { Shirt, ScanLine, Layers, Heart, UserRound, LucideIcon } from 'lucide-react-native';
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
@@ -44,6 +42,8 @@ import { GenerationDockProvider } from './src/components/GenerationDock';
 import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
+import { FirstLook, useFirstLookGate } from './src/components/onboarding/FirstLook';
+import { hasLocalHistory } from './src/components/onboarding/firstLookLogic';
 import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
 
 type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
@@ -117,72 +117,6 @@ function LoadingScreen() {
   );
 }
 
-function Onboarding({ onClose }: { onClose: () => void }) {
-  const styles = useThemedStyles(makeStyles);
-  const { colors } = useTheme();
-  const t = useT();
-
-  const steps = [
-    t('В профиле добавь фото в полный рост. Чем ровнее свет и поза, тем лучше примерка.'),
-    t('В гардеробе сфоткай вещи по одной: верх, низ, обувь. Лучше на однотонном фоне.'),
-    t('В конструкторе выбери стиль и событие. Мы покажем только подходящие луки.'),
-    t('Нажми генерацию, выбери вариант посадки верха и сохрани удачный образ в избранное.')
-  ];
-
-  return (
-    <View style={styles.container}>
-      <LinearGradient colors={[colors.heroFrom, colors.heroTo] as const} style={StyleSheet.absoluteFill} />
-      <SafeAreaView style={styles.onboardingSafe} edges={['top', 'left', 'right', 'bottom']}>
-        <ScrollView contentContainerStyle={styles.onboardingWrap} showsVerticalScrollIndicator={false}>
-          <FadeInView>
-            <Text style={styles.eyebrow}>{t('AI СТИЛИСТ')}</Text>
-            <Text style={styles.heroTitle}>{t('Собери гардероб и примеряй луки на себе')}</Text>
-            <Text style={styles.heroSubtitle}>
-              {t('Приложение подбирает образы из твоих вещей, учитывает стиль, мероприятие, погоду и показывает сгенерированную примерку.')}
-            </Text>
-          </FadeInView>
-
-          <FadeInView delay={80} style={styles.stepsBlock}>
-            <SectionLabel>{t('Как начать')}</SectionLabel>
-            {steps.map((step, index) => (
-              <View key={index} style={styles.stepCard}>
-                <View style={styles.stepBadge}>
-                  <Text style={styles.stepBadgeText}>{index + 1}</Text>
-                </View>
-                <Text style={styles.stepText}>{step}</Text>
-              </View>
-            ))}
-          </FadeInView>
-
-          <FadeInView delay={180}>
-            <View style={styles.tipCard}>
-              <View style={styles.tipHeader}>
-                <View style={styles.tipEmojiCircle}>
-                  <Lightbulb size={15} strokeWidth={1.7} color={colors.accentGold} />
-                </View>
-                <Text style={styles.tipTitle}>{t('Для лучшего результата')}</Text>
-              </View>
-              <Text style={styles.tipText}>
-                {t('Результаты остаются в недавних примерках, даже если сменить вкладку. Для нового варианта используй перегенерацию.')}
-              </Text>
-            </View>
-          </FadeInView>
-
-          <FadeInView delay={260}>
-            <PrimaryButton
-              title={t('Понятно, начать')}
-              onPress={onClose}
-              variant="gold"
-              size="lg"
-              style={styles.onboardingCta}
-            />
-          </FadeInView>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
-  );
-}
-
 function SessionGate() {
   const language = useLanguage();
   const { isDark, colors } = useTheme();
@@ -234,12 +168,12 @@ function SessionGate() {
   };
   if (!ready || !language.ready) return <LoadingScreen />;
   if (!language.chosen) return <LanguageChooser />;
-  if (onboarding) return <Onboarding onClose={() => {
+  const finishFirstLook = () => {
     setOnboarding(false);
     void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
-  }} />;
+  };
   // App-wide windows (consent, generation) are drawn in the topmost sheet: see OverlayHost.
-  if (session) return <TryOnJobsProvider key={session.login} session={session}><OverlayProvider><AiConsentProvider login={session.login}><AppContent session={session} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></OverlayProvider></TryOnJobsProvider>;
+  if (session) return <TryOnJobsProvider key={session.login} session={session}><OverlayProvider><AiConsentProvider login={session.login}><AppContent session={session} firstLookPending={onboarding} onFirstLookDone={finishFirstLook} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></OverlayProvider></TryOnJobsProvider>;
   // The studio fills the whole screen; only the content keeps inside the safe area.
   return <StudioBackdrop><SafeAreaView style={{ flex: 1 }}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -255,7 +189,7 @@ function SessionGate() {
   </SafeAreaView></StudioBackdrop>;
 }
 
-function AppContent({ session, onLogout, onDeleteAccount, accountError }: { session: Session; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {
+function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDeleteAccount, accountError }: { session: Session; firstLookPending: boolean; onFirstLookDone: () => void; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {
   const aiConsent = useAiConsent();
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
@@ -546,6 +480,22 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
     }, 1400);
   };
 
+  const changeAvatar = (uri: string) => {
+    setAvatarUri(uri);
+    setModelUri((prev) => prev || uri);
+    storeProfilePhoto(uri, (stored) => {
+      setAvatarUri((current) => (current === uri ? stored : current));
+      setModelUri((current) => (current === uri ? stored : current));
+    });
+  };
+
+  // Decided on what this account already has, before the flow adds anything of its own.
+  const firstLook = useFirstLookGate({
+    pending: firstLookPending, ready: isReady && jobsReady, session, onRemember: onFirstLookDone,
+    unreadable: unreadableKeys.current.size > 0,
+    local: hasLocalHistory({ items: items.length, photo: Boolean(modelUri || avatarUri), jobs: jobsStore.getSnapshot().jobs.length, looks: favoriteLooks.length + savedLooks.length }),
+  });
+
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
     const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
@@ -598,7 +548,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen items={items} login={session.login} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+      return <RecommendationsScreen items={items} login={session.login} initialStyle={lastContext.style} initialEvent={lastContext.event} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
         dismissed={dismissedLooks.map(entry => entry.core)}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
         onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}
@@ -626,14 +576,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         beautyAdvice={beautyAdvice}
         onGenderChange={setGender}
         onBeautyChange={setBeautyAdvice}
-        onAvatarChange={(uri) => {
-          setAvatarUri(uri);
-          setModelUri((prev) => prev || uri);
-          storeProfilePhoto(uri, (stored) => {
-            setAvatarUri((current) => (current === uri ? stored : current));
-            setModelUri((current) => (current === uri ? stored : current));
-          });
-        }}
+        onAvatarChange={changeAvatar}
         onModelChange={(uri) => {
           setModelUri(uri);
           storeProfilePhoto(uri, (stored) => setModelUri((current) => (current === uri ? stored : current)));
@@ -666,6 +609,16 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
       <PreferencesScreen onComplete={preferences => { setGender(preferences.gender); setBeautyAdvice(preferences.beautyAdvice); }} />
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </SafeAreaView>;
+  }
+
+  if (firstLook === 'checking' && firstLookPending) {
+    return <SafeAreaView style={styles.container} edges={['left', 'right']}><LoadingScreen /></SafeAreaView>;
+  }
+  if (firstLook === 'show') {
+    return <FirstLook login={session.login} items={items} modelUri={modelUri || avatarUri} onProfilePhoto={changeAvatar}
+      onAddItem={item => handleItemsChange([item, ...items])}
+      onPreference={(field, value) => setLastContext(current => ({ ...current, [field]: value }))}
+      onDone={exit => { setActiveTab(exit); onFirstLookDone(); }} />;
   }
 
   // Screens leave this much room at the bottom so the floating bar never covers their last row.
@@ -786,104 +739,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   loadingSkeletonGap: {
     marginTop: 8
-  },
-  // --- Онбординг ---
-  onboardingSafe: {
-    flex: 1
-  },
-  onboardingWrap: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-    gap: 18
-  },
-  eyebrow: {
-    ...TYPE.eyebrow,
-    color: c.accentGold,
-    marginBottom: 10
-  },
-  heroTitle: {
-    ...TYPE.display,
-    fontSize: 34,
-    lineHeight: 40,
-    color: c.text,
-    marginBottom: 10
-  },
-  heroSubtitle: {
-    ...TYPE.body,
-    fontSize: 16,
-    color: c.muted
-  },
-  stepsBlock: {
-    gap: 10
-  },
-  stepCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    backgroundColor: c.card,
-    borderRadius: RADII.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-    padding: 14,
-    ...SHADOWS.card
-  },
-  stepBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: c.accentGoldSoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.goldHairline,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  stepBadgeText: {
-    fontFamily: SERIF,
-    fontSize: 14,
-    color: c.accentGold
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 14.5,
-    lineHeight: 20,
-    color: c.text
-  },
-  tipCard: {
-    backgroundColor: c.accentGoldSoft,
-    borderRadius: RADII.lg,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    padding: 16,
-    gap: 10
-  },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  tipEmojiCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 4,
-    backgroundColor: c.card,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  tipTitle: {
-    ...TYPE.title,
-    fontSize: 15,
-    color: c.text
-  },
-  tipText: {
-    ...TYPE.caption,
-    fontSize: 13,
-    lineHeight: 19,
-    color: c.muted
-  },
-  onboardingCta: {
-    marginTop: 6
   },
   // --- Плавающий таб-бар ---
   // Docked, flat, a hairline above: the storefront kind of tab bar.

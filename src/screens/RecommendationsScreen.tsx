@@ -40,6 +40,8 @@ type Props = {
   dismissed?: string[]; onDismiss?: (core: string) => void;
   // The account the stylist model is asked for; without it only the rule-based ideas are shown.
   login?: string;
+  initialStyle?: string;
+  initialEvent?: string;
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 type T = ReturnType<typeof useT>;
@@ -67,15 +69,15 @@ function describeLook(look: GeneratedLook, ids: string[], index: number, items: 
   return { selection, advice, match, swaps, savedId, palette, tips, title, main };
 }
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent }: Props) {
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
   const { colors: c, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const reduced = useReducedMotion();
-  const [event, setEvent] = useState('Прогулка');
-  const [style, setStyle] = useState('Кэжуал');
+  const [event, setEvent] = useState(initialEvent && EVENTS.includes(initialEvent) ? initialEvent : 'Прогулка');
+  const [style, setStyle] = useState(initialStyle && STYLES.includes(initialStyle) ? initialStyle : 'Кэжуал');
   const [anchorId, setAnchorId] = useState(anchorRequest?.id || 'any');
   useEffect(() => { if (anchorRequest) { setAnchorId(anchorRequest.id); setAt(0); } }, [anchorRequest?.at]);
   const [weather, setWeather] = useState('');

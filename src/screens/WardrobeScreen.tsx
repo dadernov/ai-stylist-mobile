@@ -186,7 +186,7 @@ const sectionByCategory: Record<string, string> = {
   Перчатки: 'Аксессуары'
 };
 
-const getSectionByCategory = (category: string) => sectionByCategory[category] || 'Верх';
+export const getSectionByCategory = (category: string) => sectionByCategory[category] || 'Верх';
 
 const namedColors = [
   { name: 'Белый', hex: '#FFFFFF' },
@@ -218,9 +218,9 @@ const namedColors = [
   { name: 'Лавандовый', hex: '#B39DDB' }
 ];
 
-const colorOptions = namedColors.map((item) => item.name);
+export const colorOptions = namedColors.map((item) => item.name);
 
-const normalizeHex = (value: string) => {
+export const normalizeHex = (value: string) => {
   if (!value) return '';
   const trimmed = value.trim().toUpperCase();
   const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
@@ -243,7 +243,7 @@ const hexToRgb = (hex: string) => {
   return { r, g, b };
 };
 
-const getClosestColorName = (hex: string) => {
+export const getClosestColorName = (hex: string) => {
   const rgb = hexToRgb(hex);
   if (!rgb) return 'Не определено';
   let best = namedColors[0];

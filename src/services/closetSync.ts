@@ -10,6 +10,7 @@ import { accountKey } from './accountStorage';
 import { fetchJson } from './http';
 import { accountPhotoDirectory } from './photos';
 import { loadJson, saveJson } from './storage';
+import { remoteHasCloset } from '../components/onboarding/firstLookLogic';
 
 /**
  * The wardrobe and the try-on photo, kept on the server as well (server: closet.py).
@@ -104,6 +105,11 @@ const received = async (session: Session, blob: unknown, known?: PhotoRef, curre
 
 // A photo still on its way into the app's folder gets a new path in a moment: it waits for it.
 const settled = (session: Session, uri?: string) => !uri || Platform.OS === 'web' || uri.startsWith(accountPhotoDirectory(session.login));
+
+/** Whether the server keeps a wardrobe or a try-on photo of this account: an existing account on a new phone. */
+export async function closetHasContent(session: Session) {
+  return remoteHasCloset(await call<Remote>(session, '/closet?since=0', {}, 8000));
+}
 
 export async function syncCloset(session: Session, io: ClosetIO, options: { canDelete: boolean }) {
   const key = accountKey(session.login, STATE_KEY);
