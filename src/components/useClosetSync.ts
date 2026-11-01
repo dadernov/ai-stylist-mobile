@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { WardrobeItem } from '../data/mock';
+import { hasAiConsent, onAiConsentChange } from '../services/aiConsent';
 import { Session } from '../services/auth';
 import { ClosetProfile, syncCloset } from '../services/closetSync';
 
@@ -8,7 +9,8 @@ import { ClosetProfile, syncCloset } from '../services/closetSync';
  * Keeps the wardrobe and the try-on photo mirrored on the server: once they
  * are read, a few seconds after each change and when the app comes back.
  * Nothing syncs while the local copy could not be read: an empty list read by
- * mistake must never reach the server as a deletion.
+ * mistake must never reach the server as a deletion. Photos go only with the
+ * AI consent; the rest syncs without it, and the photos follow once it is given.
  */
 export function useClosetSync({ session, ready, blocked, items, setItems, profile, applyProfile }: {
   session: Session; ready: boolean; blocked: () => boolean;
@@ -30,7 +32,7 @@ export function useClosetSync({ session, ready, blocked, items, setItems, profil
         await syncCloset(session, {
           items: () => latest.current.items, applyItems: setItems,
           profile: () => latest.current.profile, applyProfile: next => latest.current.applyProfile(next),
-        }, { canDelete: true });
+        }, { canDelete: true, photos: () => hasAiConsent(session.login) });
       } while (again.current);
     } catch (error) {
       // No connection or the server is away: the next change or return tries again.
@@ -45,6 +47,11 @@ export function useClosetSync({ session, ready, blocked, items, setItems, profil
     const timer = setTimeout(() => { void run(); }, 3000);
     return () => clearTimeout(timer);
   }, [ready, run, items, profile.gender, profile.beautyAdvice, profile.modelUri, profile.avatarUri]);
+
+  useEffect(() => {
+    if (!ready) return;
+    return onAiConsentChange((login, granted) => { if (granted && login === session.login) void run(); });
+  }, [ready, run, session.login]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => { if (state === 'active' && ready) void run(); });

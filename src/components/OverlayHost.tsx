@@ -36,6 +36,9 @@ class OverlayStore {
 const StoreContext = createContext<OverlayStore | null>(null);
 // Where a window is drawn: over the screens at the app root, or over a sheet.
 const PlaceContext = createContext<'root' | 'sheet'>('root');
+// Set by an outlet around what it draws. A sheet inside a window must not take the window's place: its outlet would
+// become the topmost, the outlet drawing that window would then draw nothing and unmount it with the sheet, over and over.
+const InsideOverlayContext = createContext(false);
 
 /** 'sheet' when drawn inside a sheet's outlet: a floating window then sits at the sheet's own bottom. */
 export const useOverlayPlace = () => useContext(PlaceContext);
@@ -59,15 +62,16 @@ export function useOverlay(key: string, node: ReactNode) {
 /** Put inside a sheet's modal: app-wide windows opened while it is on top appear in it. */
 export function OverlayOutlet() {
   const store = useContext(StoreContext);
+  const inside = useContext(InsideOverlayContext);
   const id = useId();
-  useEffect(() => store?.register(id), [store, id]);
-  return store ? <Outlet store={store} id={id} /> : null;
+  useEffect(() => inside ? undefined : store?.register(id), [store, id, inside]);
+  return store && !inside ? <Outlet store={store} id={id} /> : null;
 }
 
 function Outlet({ store, id }: { store: OverlayStore; id: string | null }) {
   useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
   if (store.top() !== id) return null;
-  return <PlaceContext.Provider value={id === null ? 'root' : 'sheet'}>
+  return <InsideOverlayContext.Provider value><PlaceContext.Provider value={id === null ? 'root' : 'sheet'}>
     {store.nodes().map(([key, node]) => <Fragment key={key}>{node}</Fragment>)}
-  </PlaceContext.Provider>;
+  </PlaceContext.Provider></InsideOverlayContext.Provider>;
 }

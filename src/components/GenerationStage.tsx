@@ -253,9 +253,9 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
       <View style={styles.status}>
         {busy ? (
           <>
-            <Animated.Text style={[styles.statusText, { color: ink, opacity: fade }]} numberOfLines={1} accessibilityLiveRegion="polite">{label}</Animated.Text>
+            <Animated.Text style={[styles.statusText, { color: ink, opacity: fade }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">{label}</Animated.Text>
             <StylistWhile items={items} active={active} />
-            <Text style={[styles.note, styles.centered, { color: inkSoft(isDark) }]}>{t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={[styles.note, styles.centered, { color: inkSoft(isDark) }]}>{t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}</Text>
           </>
         ) : null}
         {error && !busy ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
@@ -289,6 +289,8 @@ function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolea
   const t = useT();
   const { isDark } = useTheme();
   const reduced = useReducedMotion();
+  // On a small screen the photo needs the room more than the thumbnails do.
+  const { height } = useWindowDimensions();
   const comments = useMemo(() => lookComments(items, t), [items.map(item => item.id).join(), t]);
   const [at, setAt] = useState(0);
   const fade = useRef(new Animated.Value(1)).current;
@@ -307,8 +309,8 @@ function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolea
   const pictured = items.filter(item => item.imageUri).slice(0, 6);
   return (
     <>
-      <Animated.Text style={[styles.comment, { color: inkSoft(isDark), opacity: fade }]} numberOfLines={3}>{comments[at % comments.length]}</Animated.Text>
-      {pictured.length ? (
+      <Animated.Text style={[styles.comment, { color: inkSoft(isDark), opacity: fade }]} numberOfLines={3} maxFontSizeMultiplier={1.3}>{comments[at % comments.length]}</Animated.Text>
+      {pictured.length && height >= 700 ? (
         <View style={styles.thumbs}>
           {pictured.map(item => (
             <View key={item.id} style={[styles.thumb, { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]}>
@@ -324,7 +326,7 @@ function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolea
 const styles = StyleSheet.create({
   compare: { position: 'absolute', right: 12, bottom: 12 },
   centered: { textAlign: 'center' },
-  comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 40, textAlign: 'center' },
+  comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 60, textAlign: 'center' },
   thumbs: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   thumb: { width: 44, height: 56, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   backdrop: { flex: 1, justifyContent: 'flex-end' },
@@ -337,7 +339,7 @@ const styles = StyleSheet.create({
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: -4, marginBottom: 10 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
-  frame: { flex: 1, alignSelf: 'center', borderRadius: 30, overflow: 'hidden' },
+  frame: { flex: 1, minHeight: 200, alignSelf: 'center', borderRadius: 30, overflow: 'hidden' },
   status: { paddingTop: 14, gap: 10, minHeight: 20 },
   statusText: { ...font('medium'), fontSize: 15, lineHeight: 20, textAlign: 'center' },
   note: { ...font('regular'), fontSize: 13, lineHeight: 18 },

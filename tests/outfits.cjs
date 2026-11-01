@@ -314,3 +314,34 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   assert.equal(decodeTraits('short'), undefined);
   console.log('PASS: options and sleeves follow each garment\'s photo, its category only when unread');
 }
+
+{
+  const { matchesFavoriteColors } = require('../src/domain/outfits.ts');
+  const colored = color => item('c', 'Футболка', 'Верх', { color });
+  assert.equal(matchesFavoriteColors(colored('Белый'), 'neutral'), true);
+  assert.equal(matchesFavoriteColors(colored('Черный'), 'dark'), true);
+  assert.equal(matchesFavoriteColors(colored('Белый'), 'dark'), false);
+  assert.equal(matchesFavoriteColors(colored('#ffc0d0'), 'pastel'), true);
+  assert.equal(matchesFavoriteColors(colored('#ff2010'), 'pastel'), false);
+  assert.equal(matchesFavoriteColors(colored('#ff2010'), 'bright'), true);
+  assert.equal(matchesFavoriteColors(colored('Черный'), 'bright'), false);
+  assert.equal(matchesFavoriteColors(colored('нечто'), 'neutral'), false, 'an unknown colour is of no family');
+  assert.equal(matchesFavoriteColors(item('j', 'Джинсы', 'Низ', { color: '#2040ff' }), 'neutral'), true, 'jeans are a base whatever their blue');
+
+  // Two otherwise equal tops: the liked family comes first; the other one is still offered.
+  const red = item('red', 'Футболка', 'Верх', { color: '#ff2010' }), black = item('black', 'Футболка', 'Верх', { color: 'Черный' });
+  const wardrobe = [black, red, jeans, shoes];
+  const firstTop = favoriteColors => buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'unspecified', false, { now: 0, favoriteColors })[0].itemIds;
+  const bright = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'unspecified', false, { now: 0, favoriteColors: 'bright' });
+  const dark = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'unspecified', false, { now: 0, favoriteColors: 'dark' });
+  assert.ok(firstTop('bright').includes('red'), 'bright asked: the red top leads');
+  assert.ok(firstTop('dark').includes('black'), 'dark asked: the black top leads');
+  assert.ok(bright.some(look => look.itemIds.includes('black')), 'no penalty: the other colour is still there');
+  assert.ok(dark.some(look => look.itemIds.includes('red')));
+  // Without an answer nothing changes.
+  assert.deepEqual(buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'unspecified', false, { now: 0 }).map(look => look.itemIds),
+    buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 20, 'unspecified', false, { now: 0, favoriteColors: null }).map(look => look.itemIds));
+  const screens = ['screens/RecommendationsScreen.tsx', 'components/DailyLookHero.tsx'].map(file => fs.readFileSync(`${__dirname}/../src/${file}`, 'utf8'));
+  screens.forEach(source => assert.match(source, /useFavoriteColors\(login\)[\s\S]*buildLooks\([\s\S]*favoriteColors/));
+  console.log('PASS: the colours the user likes rise, the others are not punished');
+}

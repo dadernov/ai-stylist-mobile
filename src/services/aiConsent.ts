@@ -11,7 +11,15 @@ export async function hasAiConsent(login: string) {
   try { return (await storage.getItem(key(login))) === AI_CONSENT_VERSION; } catch { return false; }
 }
 
+const listeners = new Set<(login: string, granted: boolean) => void>();
+/** Told each time an answer is stored: what waited for the consent (the photos of the wardrobe sync) can go. */
+export function onAiConsentChange(listener: (login: string, granted: boolean) => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
 export async function saveAiConsent(login: string, granted: boolean) {
   if (granted) await storage.setItem(key(login), AI_CONSENT_VERSION);
   else await storage.removeItem(key(login));
+  listeners.forEach(listener => listener(login, granted));
 }

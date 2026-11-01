@@ -4,6 +4,7 @@ import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Clou
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FormScrollView } from '../components/ui/FormScrollView';
+import { useFavoriteColors } from '../components/useFavoriteColors';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { AppPressable } from '../components/AppPressable';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
@@ -96,6 +97,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [favoriteItemIds] = useState(() => [...new Set(favorites.flatMap(look => look.itemIds))]);
   // Read once: a look hidden now leaves the screen at once, and sinks from the next visit.
   const [dismissedAtStart] = useState(() => dismissed || []);
+  const favoriteColors = useFavoriteColors(login);
+  // A sideways swipe of the hero's card holds the page still.
+  const [heroSwiping, setHeroSwiping] = useState(false);
   const manualTemperature = weather.trim() && Number.isFinite(Number(weather.replace(',', '.'))) && Math.abs(Number(weather.replace(',', '.'))) <= 60 ? Number(weather.replace(',', '.')) : null;
   // Ручной ввод главнее, иначе — реальная погода рядом.
   const temperature = manualTemperature ?? (live ? Math.round(live.temperature) : null);
@@ -106,8 +110,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
   const ruleLooks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart
-  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart]);
+    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart, favoriteColors
+  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart, favoriteColors]);
   // The stylist model's looks come first; the rule-based ones fill the list after them, and stand
   // in alone while it is off, or when it failed.
   const stylist = useStylistLooks(items, { style, event, gender, temperature, precipitation, anchorId: anchor?.id, avoid: dismissedAtStart.slice(0, 20),
@@ -248,11 +252,11 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const alternatives = selectedForSwap ? items.filter(item => item.section === selectedForSwap.section && !ids.includes(item.id) && onePiece(item) === onePiece(selectedForSwap)) : [];
   const textFade = { opacity: fade };
 
-  return <FormScrollView contentContainerStyle={styles.content}>
+  return <FormScrollView contentContainerStyle={styles.content} scrollEnabled={!heroSwiping}>
     <ScreenHeader title={t('Что надеть')} right={<Pill size="sm" icon={WeatherIcon} title={degrees} accessibilityLabel={`${t('Погода и основа образа')}: ${degrees}`} onPress={() => { Keyboard.dismiss(); setTuning(true); }} />} />
 
     <DailyLookHero items={items} gender={gender} beautyAdvice={beautyAdvice} favoriteItemIds={favoriteItemIds} dismissed={dismissedAtStart} login={login} displayName={displayName}
-      weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} />
+      weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} onSwiping={setHeroSwiping} />
 
     {/* Occasion, then the style as quieter words */}
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.chipRow} keyboardShouldPersistTaps="handled">

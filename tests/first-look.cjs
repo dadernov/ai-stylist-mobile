@@ -55,3 +55,18 @@ assert.ok(flow.indexOf('aiConsent.ensure()', flow.indexOf('const start = async')
 const storage = fs.readFileSync(path.join(__dirname, '../src/services/accountStorage.ts'), 'utf8');
 assert.ok(storage.includes("'favoriteColors'"), 'deleting the account deletes the colour answer');
 console.log('PASS: first look gate, steps, try-on eligibility, job views, question values, consent order');
+
+{
+  // «Подождать в приложении» hands the try-on to the small window, also when its id comes after the exit.
+  const dock = fs.readFileSync(path.join(__dirname, '../src/components/GenerationDock.tsx'), 'utf8');
+  assert.match(flow, /waiting\.current = true; onDone\('wardrobe', jobId\)/);
+  assert.match(flow, /if \(waiting\.current\) onLateJob\(id\)/);
+  assert.ok(flow.indexOf('askReadyNotificationPermission(', flow.indexOf('const start = async')) > flow.indexOf('aiConsent.ensure()', flow.indexOf('const start = async')), 'notifications are asked after the consent');
+  assert.match(app, /initialDocked=\{firstLookJob\}/);
+  assert.match(dock, /useState<string\[\]>\(\(\) => initialDocked \? \[initialDocked\] : \[\]\)/, 'in the dock from its first render, finished or not');
+  // Once per account, and existing accounts are never shown it.
+  assert.match(app, /accountKey\(next\.login, ONBOARDING_SEEN\)/);
+  assert.match(app, /accountKey\(stored\.login, ONBOARDING_SEEN\), 'true'/, 'the old device flag goes to the signed-in account');
+  assert.ok(storage.includes("'onboardingSeen'"), 'deleting the account deletes the flag');
+  console.log('PASS: first try-on reaches the dock; onboarding is per account');
+}

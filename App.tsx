@@ -131,13 +131,22 @@ function SessionGate() {
     setReady(false); setError('');
     try {
       if (await prepareAccountStorage(next.login, confirmed) === 'claim') setClaim(next);
-      else { setClaim(null); setSession(next); }
+      else {
+        // Per account: another account on this phone has its own first minute. useFirstLookGate still hides it for anyone with data.
+        const seen = await loadRaw(accountKey(next.login, ONBOARDING_SEEN));
+        setOnboarding(seen.value !== 'true');
+        setClaim(null); setSession(next);
+      }
     } catch { setError(t('Не удалось прочитать данные на устройстве. Попробуй ещё раз.')); }
     finally { setReady(true); }
   };
   useEffect(() => {
-    void Promise.all([readStoredSession(), loadRaw('onboardingSeen')]).then(async ([stored, seen]) => {
-      setOnboarding(seen.value !== 'true');
+    void Promise.all([readStoredSession(), loadRaw(ONBOARDING_SEEN)]).then(async ([stored, legacy]) => {
+      // The old flag was one per device: it now belongs to the account signed in when it is met, once.
+      if (legacy.value === 'true') {
+        if (stored) await AsyncStorage.setItem(accountKey(stored.login, ONBOARDING_SEEN), 'true').catch(() => {});
+        await AsyncStorage.removeItem(ONBOARDING_SEEN).catch(() => {});
+      }
       if (stored) await activate(stored);
       else setReady(true);
     });
@@ -170,7 +179,7 @@ function SessionGate() {
   if (!language.chosen) return <LanguageChooser />;
   const finishFirstLook = () => {
     setOnboarding(false);
-    void AsyncStorage.setItem('onboardingSeen', 'true').catch(() => {});
+    if (session) void AsyncStorage.setItem(accountKey(session.login, ONBOARDING_SEEN), 'true').catch(() => {});
   };
   // App-wide windows (consent, generation) are drawn in the topmost sheet: see OverlayHost.
   if (session) return <TryOnJobsProvider key={session.login} session={session}><OverlayProvider><AiConsentProvider login={session.login}><AppContent session={session} firstLookPending={onboarding} onFirstLookDone={finishFirstLook} onLogout={() => void logout()} onDeleteAccount={() => void removeAccount()} accountError={error} /></AiConsentProvider></OverlayProvider></TryOnJobsProvider>;
@@ -189,6 +198,8 @@ function SessionGate() {
   </SafeAreaView></StudioBackdrop>;
 }
 
+const ONBOARDING_SEEN = 'onboardingSeen';
+
 function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDeleteAccount, accountError }: { session: Session; firstLookPending: boolean; onFirstLookDone: () => void; onLogout: () => void; onDeleteAccount: () => void; accountError: string }) {
   const aiConsent = useAiConsent();
   const insets = useSafeAreaInsets();
@@ -196,6 +207,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const styles = useThemedStyles(makeStyles);
   const t = useT();
   const [activeTab, setActiveTab] = useState<TabKey>('wardrobe');
+  // The first try-on the user chose to wait for in the app: the small window takes it over.
+  const [firstLookJob, setFirstLookJob] = useState<string | undefined>();
   const [tryOnItemId, setTryOnItemId] = useState<string | undefined>();
   const [tryOnItemIds, setTryOnItemIds] = useState<string[] | undefined>();
   // A garment card asks the ideas to be built around that garment.
@@ -618,7 +631,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     return <FirstLook login={session.login} items={items} modelUri={modelUri || avatarUri} onProfilePhoto={changeAvatar}
       onAddItem={item => handleItemsChange([item, ...items])}
       onPreference={(field, value) => setLastContext(current => ({ ...current, [field]: value }))}
-      onDone={exit => { setActiveTab(exit); onFirstLookDone(); }} />;
+      onLateJob={setFirstLookJob}
+      onDone={(exit, jobId) => { setActiveTab(exit); if (jobId) setFirstLookJob(jobId); onFirstLookDone(); }} />;
   }
 
   // Screens leave this much room at the bottom so the floating bar never covers their last row.
@@ -628,7 +642,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     <StudioBackdrop>
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
       {/* Try-ons run above every screen; the folded window sits over the fitting room's own button. */}
-      <GenerationDockProvider items={items} modelUri={modelUri || avatarUri} bottom={tabBarSpace + 76}>
+      <GenerationDockProvider items={items} modelUri={modelUri || avatarUri} bottom={tabBarSpace + 76} initialDocked={firstLookJob}>
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
 

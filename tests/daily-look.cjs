@@ -73,3 +73,15 @@ assert.ok(!/useTryOnJobs|useGenerationDock|store\.start|tryOnJobs/.test(hero), '
 assert.equal([...hero.matchAll(/\bonTryOn\(/g)].length, 1, 'one call of onTryOn');
 assert.match(hero, /onPress=\{tryOn\}/);
 console.log('daily-look ok');
+
+{
+  const { isDailyLook } = require('../src/domain/dailyLook.ts');
+  const record = { day: '2026-11-01', lookId: 'l', itemIds: ['a', 'b'], temperature: null, skipped: [] };
+  assert.equal(isDailyLook(record, ['b', 'a'], '2026-11-01'), true);
+  assert.equal(isDailyLook(record, ['a'], '2026-11-01'), false);
+  assert.equal(isDailyLook(record, ['a', 'c'], '2026-11-01'), false);
+  assert.equal(isDailyLook(record, ['a', 'b'], '2026-11-02'), false, 'yesterday\'s look is not today\'s');
+  assert.equal(isDailyLook(null, ['a'], '2026-11-01'), false);
+  assert.equal(isDailyLook({ ...record, lookId: '' }, ['a', 'b'], '2026-11-01'), false);
+  console.log('PASS: the poster says «Образ дня» only for the day\'s own look');
+}

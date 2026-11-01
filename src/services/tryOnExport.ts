@@ -6,11 +6,22 @@ import { cacheTryOnImage, isRemoteUri } from './tryOnPhotos';
 const localFile = async (uri: string, login: string, prefix: string) =>
   isRemoteUri(uri) || uri.startsWith('data:') ? (await cacheTryOnImage(uri, `${prefix}-${Date.now()}`, login)).imageUri : uri;
 
-/** The one way out to the system's share sheet, for a file already on the device. A dismissed sheet is not an error. */
+const MIME_TYPES: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic' };
+const mimeTypeOf = (fileUri: string) => MIME_TYPES[fileUri.split(/[?#]/)[0].split('.').pop()?.toLowerCase() || ''] || 'image/jpeg';
+
+/**
+ * The one way out to the system's share sheet, for a file already on the device. A dismissed sheet is not an error.
+ * Android's Share takes only text, and a path sent as text reaches nobody: there the file goes through expo-sharing,
+ * a native module an older build may not have (hence the lazy require), and a failure is thrown for the user to see.
+ */
 export async function shareLocalFile(fileUri: string) {
-  try {
-    await Share.share(Platform.OS === 'ios' ? { url: fileUri } : { message: fileUri, url: fileUri });
-  } catch { /* The share sheet was dismissed or unavailable. */ }
+  if (Platform.OS === 'android') {
+    const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+    if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available');
+    await Sharing.shareAsync(fileUri, { mimeType: mimeTypeOf(fileUri) });
+    return;
+  }
+  try { await Share.share({ url: fileUri }); } catch { /* The share sheet was dismissed or unavailable. */ }
 }
 
 // A browser shares the picture itself where it can, and downloads it where it cannot.
@@ -26,7 +37,8 @@ async function shareOnWeb(uri: string, login: string) {
 /** Straight to a messenger or a story, without saving to the gallery. */
 export async function shareTryOn(uri: string, login: string) {
   if (Platform.OS === 'web') return shareOnWeb(uri, login);
-  try { await shareLocalFile(await localFile(uri, login, 'share')); } catch { /* The photo could not be stored for sharing. */ }
+  // A failure reaches the sheet, which says so.
+  await shareLocalFile(await localFile(uri, login, 'share'));
 }
 
 /** Saves the look to the photo gallery; throws with a message the user can act on. */

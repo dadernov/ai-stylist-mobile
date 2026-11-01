@@ -53,14 +53,17 @@ const titleOf = (job: TryOnJob) => job.garments?.map(garment => garment.name).jo
  * window and in the big one alike, the first look first. The moment a look
  * is ready a green banner says so, wherever the user is.
  */
-export function GenerationDockProvider({ items, modelUri, bottom, children }: {
-  items: WardrobeItem[]; modelUri?: string; bottom: number; children: ReactNode;
+export function GenerationDockProvider({ items, modelUri, bottom, initialDocked, children }: {
+  items: WardrobeItem[]; modelUri?: string; bottom: number;
+  /** The try-on of the first minute the user went on waiting for in the app. If it finished meanwhile it still shows here, ready to open. */
+  initialDocked?: string;
+  children: ReactNode;
 }) {
   const t = useT();
   const { jobs, store, login } = useTryOnJobs();
   const aiConsent = useAiConsent();
   // Try-ons in the dock, the first started first; a finished one stays until it is seen.
-  const [docked, setDocked] = useState<string[]>([]);
+  const [docked, setDocked] = useState<string[]>(() => initialDocked ? [initialDocked] : []);
   // The big window: leafing through the docked try-ons, on `initialPage` when it opens.
   const [windowOpen, setWindowOpen] = useState(false);
   const [initialPage, setInitialPage] = useState(0);
@@ -94,6 +97,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     setVisibleId(typeof page === 'string' ? page : null);
     setWindowOpen(true);
   }, []);
+  // The same try-on when its id came only after the app had opened.
+  useEffect(() => { if (initialDocked) dock(initialDocked); }, [initialDocked, dock]);
   const open = useCallback((id: string, from?: () => void) => {
     setWindowKey(key => key + 1);
     dock(id);
@@ -202,6 +207,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   };
 
   const sharing = useShareChoice(login);
+  // The share sheet lives in the window: a request left behind would pop up when the window next opens.
+  const showsPages = windowOpen && !setup;
+  useEffect(() => { if (!showsPages) sharing.clear(); }, [showsPages]);
   const pageOf = (job: TryOnJob): StagePage => {
     const failed = job.status === 'failed' || job.status === 'retry';
     return {

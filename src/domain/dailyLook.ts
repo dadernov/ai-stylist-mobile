@@ -52,3 +52,10 @@ export function pickDailyLook(candidates: Candidate[], items: WardrobeItem[], re
 /** The look is put aside for today; the next pick passes over it. */
 export const skipDailyLook = (record: DailyLookRecord, core: string): DailyLookRecord =>
   ({ ...record, lookId: '', itemIds: [], skipped: record.skipped.includes(core) ? record.skipped : [...record.skipped, core] });
+
+/** Whether a look of these items is today's own look of the day: other try-ons must not be labelled as it. */
+export const isDailyLook = (record: DailyLookRecord | null | undefined, itemIds: string[], day: string) => {
+  if (!record || record.day !== day || !record.lookId || !itemIds.length) return false;
+  const ids = new Set(itemIds);
+  return ids.size === new Set(record.itemIds).size && record.itemIds.every(id => ids.has(id));
+};

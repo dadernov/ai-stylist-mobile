@@ -6,6 +6,7 @@ import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TryOnProgre
 import { ApiError } from './http';
 import { accountKey } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
+import { reanchorPhoto } from './photos';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
 import { effectiveOptions, GarmentOptions } from '../domain/garmentOptions';
 import { isLegwear } from '../domain/legwear';
@@ -102,7 +103,7 @@ export class TryOnJobStore {
       return value as TryOnJob[];
     });
     this.writable = !result.failed;
-    this.snapshot = { ready: true, readOnly: result.failed, jobs: (result.value || []).map(job => job.result ? { ...job, result: { ...job.result, imageUri: reanchorTryOnUri(job.result.imageUri) || job.result.imageUri } } : job),
+    this.snapshot = { ready: true, readOnly: result.failed, jobs: (result.value || []).map(job => job.result ? { ...job, result: { ...job.result, imageUri: reanchorTryOnUri(job.result.imageUri) || job.result.imageUri } } : job).map(job => job.sourceUri ? { ...job, sourceUri: reanchorPhoto(job.sourceUri) } : job),
       error: result.failed ? 'История примерок не читается. Исходные данные сохранены без изменений.' : undefined };
     this.emit();
   }

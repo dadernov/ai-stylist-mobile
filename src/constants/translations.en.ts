@@ -1012,4 +1012,6 @@ export const en: Record<string, string> = {
   "Сначала посмотри на образ целиком, а потом уже на детали.": "Look at the whole outfit first, then at the details.",
   "Картинка покажет сочетание и силуэт, но не точный размер. Посадку лучше проверить вживую.": "The picture shows the combination and silhouette, not the exact size. Check the fit in person.",
   "Сомневаешься в цвете? Сравни результат с исходным фото кнопкой «До».": "Unsure about a colour? Compare the result with the original using the Before button.",
+  "Мой образ": "My look",
+  "Не удалось открыть меню «Поделиться». Попробуй ещё раз или обнови приложение.": "Couldn't open the share menu. Try again or update the app.",
 };

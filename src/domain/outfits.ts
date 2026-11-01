@@ -8,7 +8,10 @@ export type Precipitation = 'rain' | 'snow' | null;
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
 export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator; now?: number;
   // Cores (lookCore) of looks the user put aside with "Not now": they sink, not vanish.
-  dismissed?: string[] };
+  dismissed?: string[];
+  // The answer to «Какие цвета тебе по душе?» from the first minute: matching pieces rise, the others are not punished.
+  favoriteColors?: FavoriteColors | null };
+export type FavoriteColors = 'neutral' | 'dark' | 'pastel' | 'bright';
 
 /** What makes a look itself: its tops and bottom. The same core with other shoes or tights is the same look. */
 export const lookCore = (items: WardrobeItem[]) => items.filter(item => ['Верх', 'Низ'].includes(item.section) && !isLegwear(item)).map(item => item.id).sort().join(',');
@@ -597,6 +600,16 @@ const sleeveless = (item: WardrobeItem) => item.traits?.sleeves ? item.traits.sl
 const WARM_ONLY_BELOW = 15;
 const canLayer = (inner: WardrobeItem, over: WardrobeItem) => inner.id !== over.id && Boolean(LAYER_PAIRS[inner.category]?.includes(over.category));
 // Light inside, dark outside reads as depth; the reverse looks accidental.
+/** Whether an item's colour is of the family the user likes; an unknown colour is of none. */
+export function matchesFavoriteColors(item: WardrobeItem, favorite: FavoriteColors) {
+  const info = itemColor(item);
+  if (!info) return false;
+  if (favorite === 'neutral') return info.neutral;
+  if (favorite === 'dark') return info.lightness <= 0.3;
+  if (favorite === 'pastel') return info.saturation >= 0.2 && info.lightness >= 0.72 && info.lightness <= 0.93;
+  return !info.neutral && info.saturation >= 0.5 && info.lightness > 0.3 && info.lightness < 0.72;
+}
+
 const layerShade = (inner: WardrobeItem, over: WardrobeItem) => {
   const a = itemColor(inner), b = itemColor(over);
   return a && b ? (a.lightness >= b.lightness ? 2 : -2) : 0;
@@ -623,7 +636,8 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     return true;
   };
   const now = options.now ?? Date.now();
-  const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0) + noveltyBonus(item, now);
+  const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0)
+    + (options.favoriteColors && matchesFavoriteColors(item, options.favoriteColors) ? 2 : 0) + noveltyBonus(item, now);
   const choose = (section: string, limit: number) => {
     if (anchor?.section === section && !tightsAnchor) return [anchor];
     if (anchor && isOnePiece(anchor) && section === 'Низ') return [];

@@ -17,6 +17,7 @@ import { GarmentImage } from './studio/Garment';
 import { layoutLook } from './studio/lookLayout';
 import { font, useReducedMotion } from './studio/studio';
 import { useAspects } from './studio/useAspects';
+import { useFavoriteColors } from './useFavoriteColors';
 
 // The everyday base of the hero: the choices on the screen below do not change the look of the day.
 const HERO_STYLE = 'Кэжуал';
@@ -37,13 +38,15 @@ type Props = {
   onTryOn: (ids: string[]) => void;
   /** Swiped away: goes to the same «not now» store as the button in a look's details. */
   onSkip: (core: string) => void;
+  /** A sideways drag of the card began or ended: the page holds its vertical scroll meanwhile. */
+  onSwiping?: (swiping: boolean) => void;
 };
 
 /**
  * «Что надеть сегодня»: one look for today, on the wardrobe's own rules and the weather. It never
  * generates anything: a try-on costs real money, so this only opens the fitting room, on the tap.
  */
-export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, dismissed, login, displayName, weather, weatherSettled, precipitation, about, onTryOn, onSkip }: Props) {
+export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, dismissed, login, displayName, weather, weatherSettled, precipitation, about, onTryOn, onSkip, onSwiping }: Props) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
   const reduced = useReducedMotion();
@@ -68,15 +71,17 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   useEffect(() => { const timer = setTimeout(() => setPatient(false), WEATHER_PATIENCE); return () => clearTimeout(timer); }, []);
   const settled = weatherSettled || !patient;
   const temperature = weather ? Math.round(weather.temperature) : null;
+  const favoriteColors = useFavoriteColors(login);
   const candidates = useMemo(() => buildLooks(items, HERO_STYLE, HERO_EVENT, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    favoriteItemIds, precipitation, wind: weather?.wind ?? null, dismissed
-  }), [items, temperature, gender, beautyAdvice, favoriteItemIds, precipitation, weather?.wind, dismissed]);
+    favoriteItemIds, precipitation, wind: weather?.wind ?? null, dismissed, favoriteColors
+  }), [items, temperature, gender, beautyAdvice, favoriteItemIds, precipitation, weather?.wind, dismissed, favoriteColors]);
   // Picked once the weather is known or given up on, so the day's look is not locked in on no weather.
   useEffect(() => {
-    if (record === undefined || !settled) return;
+    // The colour answer counts too: the day's look is not locked in before it is read.
+    if (record === undefined || !settled || favoriteColors === undefined) return;
     const next = pickDailyLook(candidates, items, record, day, dismissed);
     if (next !== record) remember(next);
-  }, [record, settled, candidates, items, day, dismissed]);
+  }, [record, settled, favoriteColors, candidates, items, day, dismissed]);
 
   const current = record?.day === day && record.lookId ? record : null;
   const look: GeneratedLook | null = useMemo(() => current ? { id: current.lookId, title: '', itemIds: current.itemIds, weather: current.temperature === null ? '' : `${current.temperature}°C`,
@@ -105,13 +110,17 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   };
   const releaseRef = useRef(release);
   releaseRef.current = release;
+  const swiping = useRef(onSwiping);
+  swiping.current = onSwiping;
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy),
-    // A sideways drag belongs to the card until released: the page's vertical scroll does not take it over.
+    // A sideways drag belongs to the card until released: JS asks the responder to stay here, and the page's
+    // scroll is switched off for it (onSwiping), since a native scroll view can take the touch regardless.
     onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => swiping.current?.(true),
     onPanResponderMove: (_, g) => swipe.setValue(g.dx),
-    onPanResponderRelease: (_, g) => releaseRef.current(g.dx),
-    onPanResponderTerminate: () => releaseRef.current(0)
+    onPanResponderRelease: (_, g) => { swiping.current?.(false); releaseRef.current(g.dx); },
+    onPanResponderTerminate: () => { swiping.current?.(false); releaseRef.current(0); }
   })).current;
 
   const [width, setWidth] = useState(0);

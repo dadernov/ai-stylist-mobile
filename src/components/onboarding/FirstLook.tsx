@@ -11,6 +11,7 @@ import { accountKey, decodeTraits } from '../../services/accountStorage';
 import { saveJson } from '../../services/storage';
 import { closetHasContent } from '../../services/closetSync';
 import { Session } from '../../services/auth';
+import { askReadyNotificationPermission } from '../../services/readyNotification';
 import { tryOnContext } from '../../services/tryOnJobs';
 import { suggestItemName } from '../../domain/itemName';
 import { readingColourName } from '../../domain/flatReading';
@@ -53,14 +54,17 @@ export function useFirstLookGate({ pending, ready, local, unreadable, session, o
   return pending ? state : 'hide';
 }
 
-export function FirstLook({ login, items, modelUri, onProfilePhoto, onAddItem, onPreference, onDone }: {
+export function FirstLook({ login, items, modelUri, onProfilePhoto, onAddItem, onPreference, onDone, onLateJob }: {
   login: string;
   items: WardrobeItem[];
   modelUri?: string;
   onProfilePhoto: (uri: string) => void;
   onAddItem: (item: WardrobeItem) => void;
   onPreference: (field: 'style' | 'event', value: string) => void;
-  onDone: (exit: FirstLookExit) => void;
+  /** `jobId`: the try-on still running that the small window should show in the app. */
+  onDone: (exit: FirstLookExit, jobId?: string) => void;
+  /** «Wait in the app» was tapped before the try-on had its id: here it is. */
+  onLateJob: (jobId: string) => void;
 }) {
   const t = useT();
   const { isDark } = useTheme();
@@ -81,7 +85,7 @@ export function FirstLook({ login, items, modelUri, onProfilePhoto, onAddItem, o
         {step === 'garment' ? <GarmentStep hasPhoto={Boolean(modelUri)} garment={garment}
           onAddItem={item => { onAddItem(item); setGarment(item); }} onNext={() => go('garment', true)} onSkip={() => onDone('wardrobe')} /> : null}
         {step === 'magic' && garment && modelUri ? <MagicStep login={login} modelUri={modelUri}
-          garment={items.find(item => item.id === garment.id) || garment} onPreference={onPreference} onDone={onDone} /> : null}
+          garment={items.find(item => item.id === garment.id) || garment} onPreference={onPreference} onDone={onDone} onLateJob={onLateJob} /> : null}
       </ScrollView>
     </SafeAreaView>
   </StudioBackdrop>;
@@ -142,9 +146,13 @@ function GarmentStep({ hasPhoto, garment, onAddItem, onNext, onSkip }: {
   const [review, setReview] = useState<{ photo: string; result: AiResult; category: string } | null>(null);
   const request = useRef(0);
   useEffect(() => () => { request.current = -1; }, []);
+  // A double tap on «Да, верно» lands before the card is gone: one reading makes one item.
+  const savedReading = useRef<AiResult | null>(null);
 
   // As the wardrobe's draft saves it, from the same reading (WardrobeScreen: applyReading, handleSaveItem).
   const save = (photo: string, result: AiResult, category: string) => {
+    if (savedReading.current === result) return;
+    savedReading.current = result;
     const hex = normalizeHex(result.dominantColor || '');
     const color = readingColourName({ colorName: result.colorName, dominantColor: hex }, getClosestColorName, colorOptions);
     const palette = [color, ...(result.palette || []).map(normalizeHex).filter(Boolean).map(getClosestColorName)]
@@ -206,8 +214,9 @@ function GarmentStep({ hasPhoto, garment, onAddItem, onNext, onSkip }: {
   </>;
 }
 
-function MagicStep({ login, modelUri, garment, onPreference, onDone }: {
-  login: string; modelUri: string; garment: WardrobeItem; onPreference: (field: 'style' | 'event', value: string) => void; onDone: (exit: FirstLookExit) => void;
+function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }: {
+  login: string; modelUri: string; garment: WardrobeItem; onPreference: (field: 'style' | 'event', value: string) => void;
+  onDone: (exit: FirstLookExit, jobId?: string) => void; onLateJob: (jobId: string) => void;
 }) {
   const t = useT();
   const { isDark } = useTheme();
@@ -221,6 +230,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone }: {
   const [asked, setAsked] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const busy = useRef(false);
+  const waiting = useRef(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   // Fixed at the first send: photos move to their folder meanwhile, and a retry must find the same job, not pay for a second.
@@ -232,9 +242,10 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone }: {
     setStarting(true); setStartError(''); setDeclined(false);
     try {
       if (!(await aiConsent.ensure())) { if (alive.current) setDeclined(true); return; }
+      void askReadyNotificationPermission(t('Готовые образы'));
       const { modelUri: model, garment: item } = inputs.current;
       const context = await tryOnContext(model, [item]);
-      await store.start({ modelUri: model, items: [item], context, tuckMode: 'auto', quality: 'quality', onJob: id => { if (alive.current) setJobId(id); } });
+      await store.start({ modelUri: model, items: [item], context, tuckMode: 'auto', quality: 'quality', onJob: id => { if (alive.current) setJobId(id); if (waiting.current) onLateJob(id); } });
     } catch (error: any) {
       if (alive.current) setStartError(error?.message ? t(String(error.message)) : t('Не удалось сгенерировать примерку'));
     } finally {
@@ -291,7 +302,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone }: {
         <Pill size="sm" title={t('Пропустить вопрос')} haptics={false} onPress={() => setAsked(index => index + 1)} />
       </> : <Text style={[font('medium'), styles.question, { color: ink }]}>{t('Спасибо! Осталось чуть-чуть.')}</Text>}
     </View></Glass> : null}
-    {!ready ? <Pill title={t('Подождать в приложении')} haptics={false} onPress={() => onDone('wardrobe')} /> : null}
+    {!ready ? <Pill title={t('Подождать в приложении')} haptics={false} onPress={() => { waiting.current = true; onDone('wardrobe', jobId); }} /> : null}
     {ready && job?.result?.warning ? <Note>{t(String(job.result.warning))}</Note> : null}
     {ready && revealed ? <>
       <Pill variant="primary" title={t('Добавить ещё вещи')} haptics={false} onPress={() => onDone('wardrobe')} />
