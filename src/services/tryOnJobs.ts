@@ -16,6 +16,8 @@ export type TryOnJob = { id: string; context: string; itemIds: string[]; garment
   quality?: TryOnQualityMode;
   // How each garment was worn (tucked, buttoned), by item id: "another variant" keeps it.
   options?: GarmentOptions;
+  // The photo this try-on started from: before/after shows it, even after the profile photo changes.
+  sourceUri?: string;
   status: 'pending' | 'succeeded' | 'failed' | 'retry'; result?: TryOnHistoryItem; error?: string;
   // Live stage of a running job (kept in memory only; previews are throwaway frames).
   progress?: TryOnProgress };
@@ -159,7 +161,7 @@ export class TryOnJobStore {
     const sameOptions = (job: TryOnJob) => JSON.stringify(job.options || {}) === JSON.stringify(effectiveOptions(input.items, input.options));
     const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode
       && qualityOf(job) === input.quality && job.status === 'retry' && sameOptions(job));
-    const job: TryOnJob = retry || { id: Crypto.randomUUID(), context: input.context, itemIds: input.items.map(i => i.id),
+    const job: TryOnJob = retry ? { ...retry, sourceUri: input.modelUri } : { id: Crypto.randomUUID(), sourceUri: input.modelUri, context: input.context, itemIds: input.items.map(i => i.id),
       garments: input.items.map(i => ({ id: i.id, name: i.name })),
       name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality,
       options: effectiveOptions(input.items, input.options) };

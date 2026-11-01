@@ -11,6 +11,7 @@ import { TryOnQualityMode, TuckMode } from '../services/ai';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { useShareChoice } from './SharePoster';
+import { askReadyNotificationPermission } from '../services/readyNotification';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
@@ -260,6 +261,7 @@ export function AiTryOnPreview({
   const run = async (quality: TryOnQualityMode, fresh = false) => {
     if (!canGenerate || isBusy || !context || !modelUri) return;
     if (!(await aiConsent.ensure())) return;
+    void askReadyNotificationPermission(t('Готовые образы'));
     setLoading(true);
     setError(null);
     setWarning(null);

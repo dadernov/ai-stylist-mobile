@@ -44,7 +44,7 @@ import { StudioBackdrop, useStudioTint } from '../components/studio/StudioBackdr
 import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from '../components/studio/studio';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { decodeTraits } from '../domain/garmentTraits';
-import { ImagePlus, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
+import { ImagePlus, Shirt, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { IconButton } from '../components/ui/IconButton';
@@ -811,12 +811,12 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         )}
         ListEmptyComponent={
           <EmptyState
-            emoji="👗"
-            title={t('Здесь пока пусто')}
+            icon={Shirt}
+            title={t(items.length === 0 ? 'Гардероб ждёт первую вещь' : 'В этом разделе пока пусто')}
             hint={
               items.length === 0
-                ? t('Сфотографируй первую вещь — AI сам определит категорию, цвет и сезон.')
-                : t('В этом разделе пока ничего нет. Попробуй другой фильтр.')
+                ? t('Сфотографируй любимую вещь, а категорию, цвет и сезон мы определим сами.')
+                : t('Загляни в другой раздел или добавь что-нибудь новое.')
             }
             actionLabel={items.length === 0 ? t('Добавить вещь') : undefined}
             onAction={items.length === 0 ? openPhotoSources : undefined}
@@ -906,10 +906,10 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                 <DraftPhoto uri={draftPhoto} float={draftFloat} maxWidth={Math.min(width * 0.7, 320)} maxHeight={draftStageHeight - 70} />
               ) : null}
               {isAnalyzing ? <ScanBeam height={draftStageHeight} reduced={reduced} /> : null}
-              {!isAnalyzing ? draftTags.map(({ key, label, swatch, at }, slot) => label ? (
+              {!isAnalyzing ? draftTags.filter(tag => tag.label).map(({ key, label, swatch, at }, slot) => (
                 <RevealTag key={`${key}:${label}`} label={label} swatch={swatch} delay={slot * 250} reduced={reduced} ink={ink}
                   style={{ left: at.left, right: at.right, top: Math.round(at.top * draftStageHeight) }} />
-              ) : null) : null}
+              )) : null}
               {isAnalyzing ? (
                 <Glass style={styles.draftStatus}>
                   <View accessibilityLiveRegion="polite" style={styles.draftStatusInner}>

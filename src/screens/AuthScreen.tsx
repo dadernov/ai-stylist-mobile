@@ -129,7 +129,6 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           onPress={submit}
           disabled={busy}
           busy={busy}
-          haptics={false}
           style={styles.submitButton}
         />
         {busy && <ActivityIndicator color={ink} />}

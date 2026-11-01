@@ -12,6 +12,7 @@ import { GarmentOptions } from '../domain/garmentOptions';
 import { isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { useShareChoice } from './SharePoster';
+import { askReadyNotificationPermission, notifyLookReady } from '../services/readyNotification';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
@@ -128,6 +129,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       lastStatus.current.set(job.id, job.status);
       const uri = resultOf(job);
       if (before !== 'pending' || job.status !== 'succeeded' || !uri) continue;
+      void notifyLookReady(t('Образ готов'), t('Загляни посмотреть, как получилось.'));
       const show = () => setReady({ id: job.id, title: titleOf(job), uri, at: Date.now() });
       if (isRemoteUri(uri)) void Image.prefetch(uri).catch(() => false).then(show); else show();
     }
@@ -170,6 +172,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
   const generate = async () => {
     if (!setup || !modelUri || starting) return;
     if (!(await aiConsent.ensure())) return;
+    void askReadyNotificationPermission(t('Готовые образы'));
     setStarting(true);
     setActionError(null);
     const base = setup.items.find(item => item.section === 'Верх' && item.imageUri);
@@ -206,6 +209,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       title: titleOf(job),
       busy: job.status === 'pending',
       busyLabel: tryOnStatusLabel(job.progress, t),
+      stage: job.progress?.stage,
+      items: job.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[],
+      sourceUri: job.sourceUri || null,
       startedAt: startedAt.current[job.id],
       photoUri: job.progress?.previewUrl || modelUri || null,
       resultUri: resultOf(job),

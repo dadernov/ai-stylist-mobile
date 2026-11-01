@@ -26,7 +26,7 @@ import { buildLooks, evaluateLook, EVENTS, STYLES } from '../domain/outfits';
 import { describeWeatherCode } from '../services/weather';
 import { useWeather } from '../components/useWeather';
 import { MatchSummary } from '../components/MatchSummary';
-import { ArrowUpRight, ChevronDown, ChevronUp, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, LucideIcon, Sun } from 'lucide-react-native';
+import { ArrowUpRight, ChevronDown, ChevronUp, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Layers, LucideIcon, Sun } from 'lucide-react-native';
 import { Gender } from '../types/profile';
 
 const stylePresets = STYLES;
@@ -608,7 +608,7 @@ export function OutfitBuilderScreen({
   return (
     <View style={styles.container}>
       <View style={styles.pageHeader}>
-        <ScreenHeader title={t('Примерка')} />
+        <ScreenHeader title={t('Образ')} />
 
         {/* A glass track with the open part as a black pill sliding along it. */}
         <Glass style={styles.segmentGlass}>
@@ -753,9 +753,9 @@ export function OutfitBuilderScreen({
           <View style={styles.looksWrap}>
             {!savedLooks.length ? (
               <EmptyState
-                emoji="👗"
-                title={t('Пока нет сохраненных образов')}
-                hint={t('Собери лук вручную и добавь его в образы.')}
+                icon={Layers}
+                title={t('Твои образы будут жить здесь')}
+                hint={t('Собери первый, и он всегда будет под рукой.')}
                 actionLabel={t('Собрать образ')}
                 onAction={() => setActiveTab('fitting')}
               />

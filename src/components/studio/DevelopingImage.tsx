@@ -12,24 +12,47 @@ type Props = {
   isDark: boolean;
   /** The sharp result once revealed (e.g. a zoomable image). */
   children?: React.ReactNode;
+  /** The page is the one on screen: a look that finished on another page waits to be revealed until it is leafed to. */
+  active?: boolean;
+  /** The photo the look was made from, for the before/after wipe; without it there is no comparison. */
+  beforeUri?: string | null;
+  /** The user asks to see the photo before the try-on. */
+  showBefore?: boolean;
+  /** The sharp reveal of a look that just finished begins (not a look reopened later). */
+  onRevealStart?: () => void;
 };
 
 const REVEAL_MS = 1200;
 const FEATHER = 90;
+const GLINT_MS = 700;
+// The automatic peek at the source photo: there, a look, and back, about 1.5 s in all.
+const WIPE_MS = 520;
+const WIPE_HOLD_MS = 460;
 
 /**
  * A picture that develops like a photograph, after ChatGPT's image generation:
  * a soft blurred field of the photo with slowly drifting light while it works,
  * then the finished look sharpens in a band that travels from top to bottom.
- * With reduced motion the field stays still and the look simply crossfades.
+ * A soft glint crosses the finished look, then a slider wipes to the source photo and back.
+ * With reduced motion the field stays still, the look simply crossfades, and the glint and the peek are skipped.
  */
-export function DevelopingImage({ photoUri, resultUri, developing, isDark, children }: Props) {
+export function DevelopingImage({ photoUri, resultUri, developing, isDark, children, active = true, beforeUri, showBefore = false, onRevealStart }: Props) {
   const reduced = useReducedMotion();
   const drift = useRef(new Animated.Value(0)).current;
   const breathe = useRef(new Animated.Value(0)).current;
   const haze = useRef(new Animated.Value(resultUri && !developing ? 1 : 0)).current;
   const sweep = useRef(new Animated.Value(resultUri && !developing ? 1 : 0)).current;
+  const glint = useRef(new Animated.Value(0)).current;
+  const wipe = useRef(new Animated.Value(showBefore ? 1 : 0)).current;
   const [tall, setTall] = useState(0);
+  const [wide, setWide] = useState(0);
+  // Set when a reveal plays: the glint and the peek belong to it, not to a finished look reopened later.
+  const ceremony = useRef(false);
+  const peekRunning = useRef<(() => void) | null>(null);
+  const showBeforeRef = useRef(showBefore);
+  showBeforeRef.current = showBefore;
+  const revealStart = useRef(onRevealStart);
+  revealStart.current = onRevealStart;
   const [revealed, setRevealed] = useState(Boolean(resultUri) && !developing);
   const done = Boolean(resultUri) && !developing;
 
@@ -46,20 +69,50 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
 
   useEffect(() => {
     if (!done) { haze.setValue(0); sweep.setValue(0); setRevealed(false); return; }
-    if (revealed) return;
+    if (revealed || !active) return;
+    revealStart.current?.();
     if (reduced) {
       Animated.timing(haze, { toValue: 1, duration: 300, useNativeDriver: false }).start();
       sweep.setValue(1);
       setRevealed(true);
       return;
     }
+    ceremony.current = true;
     Animated.parallel([
       Animated.timing(haze, { toValue: 1, duration: 350, easing: Easing.out(Easing.quad), useNativeDriver: false }),
       Animated.timing(sweep, { toValue: 1, duration: REVEAL_MS, delay: 120, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
     ]).start(({ finished }) => { if (finished) setRevealed(true); });
-  }, [done]);
+  }, [done, active]);
 
-  const measure = (event: LayoutChangeEvent) => setTall(event.nativeEvent.layout.height);
+  // After the reveal: the glint, then the peek. Leafing away ends them and puts the look back.
+  useEffect(() => {
+    if (!revealed || !active || !ceremony.current || reduced) return;
+    ceremony.current = false;
+    glint.setValue(0);
+    const peek = beforeUri && !showBeforeRef.current ? [
+      Animated.timing(wipe, { toValue: 1, duration: WIPE_MS, delay: 200, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
+      Animated.delay(WIPE_HOLD_MS),
+      Animated.timing(wipe, { toValue: 0, duration: WIPE_MS, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
+    ] : [];
+    const glintRun = Animated.timing(glint, { toValue: 1, duration: GLINT_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true });
+    const peekRun = Animated.sequence(peek);
+    let cancelled = false;
+    peekRunning.current = () => { cancelled = true; peekRun.stop(); };
+    glintRun.start(({ finished }) => { if (finished && !cancelled) peekRun.start(); });
+    return () => { cancelled = true; glintRun.stop(); peekRun.stop(); glint.setValue(1); wipe.setValue(showBeforeRef.current ? 1 : 0); };
+  }, [revealed, active]);
+
+  // The manual before/after: it takes over from the peek wherever that is.
+  const firstCompare = useRef(true);
+  useEffect(() => {
+    if (firstCompare.current) { firstCompare.current = false; return; }
+    peekRunning.current?.();
+    wipe.stopAnimation();
+    if (reduced) wipe.setValue(showBefore ? 1 : 0);
+    else Animated.timing(wipe, { toValue: showBefore ? 1 : 0, duration: 360, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }).start();
+  }, [showBefore]);
+
+  const measure = (event: LayoutChangeEvent) => { setTall(event.nativeEvent.layout.height); setWide(event.nativeEvent.layout.width); };
   const glow = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.55)';
   const tint = isDark ? 'rgba(160,170,190,0.16)' : 'rgba(200,190,230,0.28)';
   const shiftX = drift.interpolate({ inputRange: [0, 0.5, 1], outputRange: [-40, 40, -40] });
@@ -93,6 +146,25 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
           )}
         </>
       ) : null}
+      {/* The glint, above the look and never in the way of its gestures. */}
+      {revealed && !reduced && wide ? (
+        <Animated.View pointerEvents="none" style={[styles.glint, { width: wide * 0.45, opacity: glint.interpolate({ inputRange: [0, 0.1, 0.9, 1], outputRange: [0, 1, 1, 0] }),
+          transform: [{ translateX: glint.interpolate({ inputRange: [0, 1], outputRange: [-wide * 0.6, wide * 1.15] }) }, { rotate: '14deg' }] }]}>
+          <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+      ) : null}
+      {/* Before/after: the source photo slides over the look from the left edge, its edge a thin bright line. */}
+      {revealed && beforeUri && wide ? (
+        <>
+          <Animated.View pointerEvents="none" style={[styles.before, { width: wipe.interpolate({ inputRange: [0, 1], outputRange: [0, wide] }) }]}>
+            <View style={{ width: wide, height: tall, backgroundColor: isDark ? '#1C1E23' : '#F2F1EE' }}>
+              <Image source={{ uri: beforeUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
+            </View>
+          </Animated.View>
+          <Animated.View pointerEvents="none" style={[styles.wipeEdge, { left: wipe.interpolate({ inputRange: [0, 1], outputRange: [0, wide] }),
+            opacity: wipe.interpolate({ inputRange: [0, 0.02, 0.98, 1], outputRange: [0, 1, 1, 0] }) }]} />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -100,5 +172,8 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
 const styles = StyleSheet.create({
   field: { position: 'absolute', top: -60, bottom: -60, left: -60, right: -60 },
   band: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
+  glint: { position: 'absolute', top: '-15%', bottom: '-15%', left: 0 },
+  before: { position: 'absolute', top: 0, bottom: 0, left: 0, overflow: 'hidden' },
+  wipeEdge: { position: 'absolute', top: 0, bottom: 0, width: 2, marginLeft: -1, backgroundColor: '#FFFFFF' },
   feather: { position: 'absolute', left: 0, right: 0, height: FEATHER },
 });

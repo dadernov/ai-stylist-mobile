@@ -136,7 +136,7 @@ async function login(page, name) {
       return route.fulfill({ json: job.index >= 3 && !release ? { status: 'processing', jobId: id } : job });
     });
     await page.goto(BASE, { waitUntil: 'networkidle' });
-    await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+    await page.getByRole('tab', { name: 'Образ', exact: true }).click();
     await page.getByRole('checkbox', { name: item.name, exact: true }).click();
     await page.getByRole('button', { name: /^К примерке/ }).click();
     await page.getByRole('button', { name: 'Примерить', exact: true }).click();
@@ -156,7 +156,7 @@ async function login(page, name) {
     await page.getByRole('tab', { name: 'Гардероб', exact: true }).click();
     release = true;
     await eventually(async () => assert.equal((await read(page, 'account:alice:tryOnJobs'))[0].status, 'succeeded'));
-    await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+    await page.getByRole('tab', { name: 'Образ', exact: true }).click();
     await page.getByText('Недавние примерки', { exact: true }).waitFor();
     await page.getByRole('button', { name: `Открыть примерку: ${item.name}`, exact: true }).first().click();
     await page.getByRole('button', { name: 'Сохранить образ', exact: true }).click();
@@ -191,7 +191,7 @@ async function login(page, name) {
     await page.getByRole('button', { name: 'Удалить', exact: true }).click();
     await page.getByRole('button', { name: 'Удалить', exact: true }).last().click();
     await eventually(async () => assert.deepEqual(await read(page, 'account:alice:wardrobeItems'), []));
-    await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+    await page.getByRole('tab', { name: 'Образ', exact: true }).click();
     await page.getByRole('tab', { name: 'История', exact: true }).click();
     await page.getByRole('button', { name: `Открыть генерацию: ${item.name}`, exact: true }).first().click();
     await page.getByText('Удалена из гардероба', { exact: true }).waitFor();
@@ -213,7 +213,7 @@ async function login(page, name) {
         }]));
       }, { image: images[2] });
       await page.goto(BASE, { waitUntil: 'networkidle' });
-      await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+      await page.getByRole('tab', { name: 'Образ', exact: true }).click();
       await page.getByRole('tab', { name: 'История', exact: true }).click();
       await page.getByRole('button', { name: 'Открыть генерацию: OTHER LOOK', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: /^Открыть генерацию:/ }).count(), 2);
@@ -323,7 +323,7 @@ async function login(page, name) {
       await route.fulfill({ json: { status: 'succeeded', outputUrl: images[fitRequests.length % images.length], updatedAt: Date.now() } });
     });
     await page.goto(BASE, { waitUntil: 'networkidle' });
-    await page.getByRole('tab', { name: 'Примерка', exact: true }).click();
+    await page.getByRole('tab', { name: 'Образ', exact: true }).click();
     await page.getByRole('checkbox', { name: item.name, exact: true }).click();
     await page.getByRole('button', { name: /^К примерке/ }).click();
     await page.getByRole('button', { name: 'Настройки примерки', exact: true }).click();

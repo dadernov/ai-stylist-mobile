@@ -2,12 +2,11 @@ import { ReactNode, useCallback, useRef, useState } from 'react';
 import {
   Animated,
   GestureResponderEvent,
-  Platform,
   Pressable,
   PressableProps,
   StyleSheet
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { tapHaptic } from '../services/haptics';
 import { useReducedMotion } from './studio/studio';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -46,9 +45,7 @@ export function AppPressable({
           useNativeDriver: true
         }).start();
       }
-      if (haptics && Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      }
+      if (haptics) tapHaptic();
       onPressIn?.(event);
     },
     [animate, haptics, onPressIn, scale]

@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, LayoutChangeEvent, Modal, PanResponder, NativeScrollEvent, NativeSyntheticEvent, Platform, ScrollView,
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, LayoutChangeEvent, Modal, PanResponder, NativeScrollEvent, NativeSyntheticEvent, Platform, ScrollView,
   StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -11,6 +11,8 @@ import { DevelopingImage } from './studio/DevelopingImage';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
+import { lookComments } from '../domain/lookComments';
+import { selectionHaptic, successHaptic } from '../services/haptics';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Pill } from './studio/Glass';
 import { backdropDim, font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
@@ -32,6 +34,12 @@ export type StagePage = {
   title: string;
   busy: boolean;
   busyLabel: string;
+  /** The stage of the running try-on: a new one is felt as well as read. */
+  stage?: string | null;
+  /** The look's garments that are still in the wardrobe, for the comments and thumbnails while waiting. */
+  items: WardrobeItem[];
+  /** The photo this try-on started from, for before/after (looks made before this was recorded have none). */
+  sourceUri: string | null;
   /** When the running try-on started, for the progress bar. */
   startedAt?: number;
   /** The photo being dressed, or the intermediate frame once there is one. */
@@ -151,7 +159,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                   <Text style={[styles.subtitle, { color: inkSoft(isDark) }]} numberOfLines={1}>{setup ? setup.title : current?.title}</Text>
                 </View>
                 {/* While the look generates the cross folds the window into the corner. */}
-                <Pill size="icon" icon={busy ? ChevronDown : X} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close} haptics={false} />
+                <Pill size="icon" icon={busy ? ChevronDown : X} accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} onPress={close} />
               </View>
               {!setup && pages.length > 1 ? (
                 <View style={styles.dots} accessibilityLabel={t('Образ {page} из {count}', { page: page + 1, count: pages.length })}>
@@ -169,16 +177,16 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                   {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
                 </ScrollView>
                 <View style={styles.actions}>
-                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} onPress={setup.onGenerate} haptics={false} />
+                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} onPress={setup.onGenerate} />
                 </View>
               </> : (
                 <View style={{ flex: 1 }} onLayout={measure}>
                   {size.width ? (
                     <ScrollView ref={pager} horizontal pagingEnabled showsHorizontalScrollIndicator={false} bounces={pages.length > 1}
                       onScroll={onScroll} scrollEventThrottle={32} contentOffset={{ x: page * size.width, y: 0 }}>
-                      {pages.map(item => (
+                      {pages.map((item, index) => (
                         <View key={item.key} style={{ width: size.width, height: size.height }}>
-                          <PageView page={item} width={size.width} onDone={close} />
+                          <PageView page={item} width={size.width} active={index === page} onDone={close} />
                         </View>
                       ))}
                     </ScrollView>
@@ -195,12 +203,12 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
 }
 
 /** One try-on: the look developing out of a soft blur, then the look, its status and actions. */
-function PageView({ page, width, onDone }: { page: StagePage; width: number; onDone: () => void }) {
+function PageView({ page, width, active, onDone }: { page: StagePage; width: number; active: boolean; onDone: () => void }) {
   const t = useT();
   const { colors: { danger }, isDark } = useTheme();
   const reduced = useReducedMotion();
   const ink = isDark ? INK_ON_DARK : INK;
-  const { busy, busyLabel, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
+  const { busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
   const done = Boolean(resultUri) && !busy;
   // The status line changes calmly: the old words fade out, the new ones in.
   const [label, setLabel] = useState(busyLabel);
@@ -214,22 +222,40 @@ function PageView({ page, width, onDone }: { page: StagePage; width: number; onD
     });
   }, [busyLabel]);
 
+  // Each new stage of the try-on on screen is a small tick under the thumb.
+  const lastStage = useRef(stage);
+  useEffect(() => {
+    if (stage === lastStage.current) return;
+    lastStage.current = stage;
+    if (stage && busy && active) selectionHaptic();
+  }, [stage, busy, active]);
+
+  // Before/after of the finished look: a new result starts on the result.
+  const [showBefore, setShowBefore] = useState(false);
+  useEffect(() => { setShowBefore(false); }, [resultUri]);
+
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
   const frameWidth = Math.min(width, 480);
 
   return (
     <View style={{ flex: 1 }}>
       <View style={[styles.frame, { width: frameWidth, backgroundColor: glassFill(isDark) }]}>
-        <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy} isDark={isDark}>
+        <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
+          onRevealStart={successHaptic}>
           {resultUri ? <ZoomableImage uri={resultUri} accessibilityLabel={t('Результат')} /> : null}
         </DevelopingImage>
+        {done && sourceUri ? (
+          <Pill size="sm" title={t(showBefore ? 'После' : 'До')} accessibilityLabel={t(showBefore ? 'Показать результат' : 'Показать исходное фото')}
+            accessibilityState={{ selected: showBefore }} onPress={() => setShowBefore(value => !value)} style={styles.compare} />
+        ) : null}
       </View>
 
       <View style={styles.status}>
         {busy ? (
           <>
             <Animated.Text style={[styles.statusText, { color: ink, opacity: fade }]} numberOfLines={1} accessibilityLiveRegion="polite">{label}</Animated.Text>
-            <Text style={[styles.note, { color: inkSoft(isDark) }]}>{t('Обычно около минуты. Окно можно свернуть — примерка продолжится.')}</Text>
+            <StylistWhile items={items} active={active} />
+            <Text style={[styles.note, styles.centered, { color: inkSoft(isDark) }]}>{t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}</Text>
           </>
         ) : null}
         {error && !busy ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
@@ -240,15 +266,15 @@ function PageView({ page, width, onDone }: { page: StagePage; width: number; onD
         <View style={styles.actions}>
           {done ? (
             <View style={styles.row}>
-              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'} haptics={false}
+              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'}
                 icon={saveState === 'saved' ? Check : Download}
                 title={t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} />
-              <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} haptics={false} />
+              <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} />
             </View>
           ) : null}
           <View style={styles.row}>
-            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} haptics={false} />
-            <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} haptics={false} />
+            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} />
+            <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} />
           </View>
         </View>
       ) : null}
@@ -256,7 +282,51 @@ function PageView({ page, width, onDone }: { page: StagePage; width: number; onD
   );
 }
 
+const COMMENT_MS = 8000;
+
+/** While the look is put on: what the stylist thinks of this very look, one remark every few seconds, and its pieces. */
+function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolean }) {
+  const t = useT();
+  const { isDark } = useTheme();
+  const reduced = useReducedMotion();
+  const comments = useMemo(() => lookComments(items, t), [items.map(item => item.id).join(), t]);
+  const [at, setAt] = useState(0);
+  const fade = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!active || comments.length < 2) return;
+    const timer = setInterval(() => {
+      if (reduced) { setAt(index => index + 1); return; }
+      Animated.timing(fade, { toValue: 0, duration: 240, useNativeDriver: true }).start(({ finished }) => {
+        if (!finished) return;
+        setAt(index => index + 1);
+        Animated.timing(fade, { toValue: 1, duration: 360, useNativeDriver: true }).start();
+      });
+    }, COMMENT_MS);
+    return () => { clearInterval(timer); fade.stopAnimation(); fade.setValue(1); };
+  }, [active, comments.length, reduced, fade]);
+  const pictured = items.filter(item => item.imageUri).slice(0, 6);
+  return (
+    <>
+      <Animated.Text style={[styles.comment, { color: inkSoft(isDark), opacity: fade }]} numberOfLines={3}>{comments[at % comments.length]}</Animated.Text>
+      {pictured.length ? (
+        <View style={styles.thumbs}>
+          {pictured.map(item => (
+            <View key={item.id} style={[styles.thumb, { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]}>
+              <Image source={{ uri: item.imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" accessibilityLabel={item.name} />
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
+  compare: { position: 'absolute', right: 12, bottom: 12 },
+  centered: { textAlign: 'center' },
+  comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 40, textAlign: 'center' },
+  thumbs: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  thumb: { width: 44, height: 56, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { height: '94%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, overflow: 'hidden' },
   grab: { alignSelf: 'stretch', paddingTop: 10, paddingBottom: 14 },
