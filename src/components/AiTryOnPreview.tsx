@@ -1,4 +1,4 @@
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View, Platform, Share } from 'react-native';
+import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
@@ -10,6 +10,7 @@ import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
 import { saveTryOnToGallery } from '../services/tryOnExport';
+import { useShareChoice } from './SharePoster';
 import { tryOnContext } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
@@ -177,14 +178,8 @@ export function AiTryOnPreview({
   useEffect(() => { setSaveState('idle'); setSaveMessage(null); }, [resultUri]);
 
   // Поделиться — сразу в мессенджер или сторис, без сохранения в галерею.
-  const shareResult = async () => {
-    if (!resultUri) return;
-    try {
-      const fileUri = isRemoteUri(resultUri) || resultUri.startsWith('data:')
-        ? (await cacheTryOnImage(resultUri, `share-${Date.now()}`, login)).imageUri : resultUri;
-      await Share.share(Platform.OS === 'ios' ? { url: fileUri } : { message: fileUri, url: fileUri });
-    } catch { /* The share sheet was dismissed or unavailable. */ }
-  };
+  const sharing = useShareChoice(login);
+  const shareResult = () => { if (resultUri) sharing.offer({ uri: resultUri, items, title: items.map(item => item.name).join(' + ') }); };
 
   const saveToGallery = async () => {
     if (!resultUri || saveState === 'saving' || isBusy) return;
@@ -454,9 +449,10 @@ export function AiTryOnPreview({
             : isDraft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')}</Text>
           </View></Glass>
         </AppPressable>
-        {Platform.OS !== 'web' ? <AppPressable haptics style={styles.shareButton} onPress={() => { void shareResult(); }} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
+        <AppPressable haptics style={styles.shareButton} onPress={shareResult} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
           <Glass style={styles.shareButton}><View style={styles.center}><Share2 size={17} strokeWidth={1.6} color={colors.text} /></View></Glass>
-        </AppPressable> : null}
+        </AppPressable>
+        {sharing.sheet}
       </View>) : null}
       {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
       {errorsBlock}

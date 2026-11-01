@@ -10,7 +10,8 @@ import { TryOnJob, tryOnContext } from '../services/tryOnJobs';
 import { TuckMode } from '../services/ai';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
-import { saveTryOnToGallery, shareTryOn } from '../services/tryOnExport';
+import { saveTryOnToGallery } from '../services/tryOnExport';
+import { useShareChoice } from './SharePoster';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
@@ -197,6 +198,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
     }
   };
 
+  const sharing = useShareChoice(login);
   const pageOf = (job: TryOnJob): StagePage => {
     const failed = job.status === 'failed' || job.status === 'retry';
     return {
@@ -211,7 +213,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
       saveState: saveStates[job.id] || 'idle',
       onSave: () => { void save(job); },
-      onShare: () => { const uri = resultOf(job); if (uri) void shareTryOn(uri, login); },
+      onShare: () => { const uri = resultOf(job); if (uri) sharing.offer({ uri, title: titleOf(job), items: job.itemIds.flatMap(id => items.filter(item => item.id === id)) }); },
       onRegenerate: () => { void again(job); },
     };
   };
@@ -237,7 +239,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, children }: {
       scrollTo={scrollTo}
       onPageChange={page => { setVisibleId(dockJobs[page]?.id || null); setActionError(null); }}
       onClose={close}
-      banner={banner}
+      // Inside the window's modal, as the banner: iOS shows a sheet only from the screen on top.
+      banner={<>{banner}{sharing.sheet}</>}
     />
   ) : null;
   const inline = useOverlay('generation-stage', stage);

@@ -598,7 +598,7 @@ function AppContent({ session, onLogout, onDeleteAccount, accountError }: { sess
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen items={items} login={session.login} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+      return <RecommendationsScreen items={items} login={session.login} displayName={displayName} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
         dismissed={dismissedLooks.map(entry => entry.core)}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
         onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}

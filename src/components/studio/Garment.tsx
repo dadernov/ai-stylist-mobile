@@ -20,15 +20,15 @@ export function FloorShadow({ width, opacity = 0.32 }: { width: number; opacity?
 }
 
 /** A garment on the stage: a cut-out floats bare, a photo with its own ground becomes a rounded print (`print`). */
-export function GarmentImage({ item, style, blur, print, printRadius = 28 }: { item?: WardrobeItem; style: StyleProp<ImageStyle>; blur?: number; print?: boolean; printRadius?: number }) {
+export function GarmentImage({ item, style, blur, print, printRadius = 28, onLoadEnd }: { item?: WardrobeItem; style: StyleProp<ImageStyle>; blur?: number; print?: boolean; printRadius?: number; onLoadEnd?: () => void }) {
   if (!item?.imageUri) return <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}><Shirt size={48} strokeWidth={1} color={INK_FAINT} /></View>;
   if (print && !isCutout(item.imageUri)) {
     return (
       <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Image source={{ uri: item.imageUri }} resizeMode="cover" blurRadius={blur}
+        <Image source={{ uri: item.imageUri }} resizeMode="cover" blurRadius={blur} onLoadEnd={onLoadEnd}
           style={{ width: '84%', height: '92%', borderRadius: printRadius }} />
       </View>
     );
   }
-  return <Image source={{ uri: item.imageUri }} style={style} resizeMode="contain" blurRadius={blur} />;
+  return <Image source={{ uri: item.imageUri }} style={style} resizeMode="contain" blurRadius={blur} onLoadEnd={onLoadEnd} />;
 }

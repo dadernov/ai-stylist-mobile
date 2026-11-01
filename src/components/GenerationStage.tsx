@@ -243,7 +243,7 @@ function PageView({ page, width, onDone }: { page: StagePage; width: number; onD
               <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'} haptics={false}
                 icon={saveState === 'saved' ? Check : Download}
                 title={t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} />
-              {Platform.OS !== 'web' ? <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} haptics={false} /> : null}
+              <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} haptics={false} />
             </View>
           ) : null}
           <View style={styles.row}>
