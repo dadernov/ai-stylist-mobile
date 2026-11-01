@@ -24,12 +24,13 @@ import { WardrobeItem } from '../data/mock';
 import { Gender } from '../types/profile';
 import { buildLooks, evaluateLook, EVENTS, getOutfitAdvice, getOutfitSwaps, lookCore, OutfitContext, Precipitation, STYLES, wardrobeGaps } from '../domain/outfits';
 import { MatchSummary } from '../components/MatchSummary';
-import { isLegwear as isTights } from '../domain/legwear';
 import { useWeather } from '../components/useWeather';
 import { describeWeatherCode } from '../services/weather';
 import { useStylistLooks } from '../services/stylistLooks';
 import { LookAction, sendLookFeedback } from '../services/ai';
 import { hasAiConsent } from '../services/aiConsent';
+import { DailyLookHero } from '../components/DailyLookHero';
+import { lookName } from '../domain/lookName';
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
@@ -42,6 +43,7 @@ type Props = {
   login?: string;
   initialStyle?: string;
   initialEvent?: string;
+  displayName?: string;
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 type T = ReturnType<typeof useT>;
@@ -61,15 +63,13 @@ function describeLook(look: GeneratedLook, ids: string[], index: number, items: 
   const asComposed = look.source === 'stylist' && ids.join(',') === look.itemIds.join(',');
   const tips = asComposed ? [...(look.why ? [look.why] : []), ...(look.stylingTips || [])] : advice.tips;
   // A rule-made look is named by its pieces, top first: «Свитшот с вышивкой и голубые джинсы».
-  const named = selection.filter(item => ['Верх', 'Низ'].includes(item.section) && !isTights(item)).map(item => item.name.trim()).filter(Boolean);
-  const title = asComposed && look.title ? look.title
-    : named.length ? named.map((name, i) => i ? name.charAt(0).toLocaleLowerCase() + name.slice(1) : name).join(` ${t('и')} `) : t('Образ {number}', { number: index + 1 });
+  const title = asComposed && look.title ? look.title : lookName(selection, t('и')) || t('Образ {number}', { number: index + 1 });
   // The light takes the colour of what is worn on the body: a one-piece, else the top, else the outer layer.
   const main = selection.find(onePiece) || selection.find(item => item.section === 'Верх') || selection.find(item => item.section === 'Верхняя одежда') || selection[0];
   return { selection, advice, match, swaps, savedId, palette, tips, title, main };
 }
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName }: Props) {
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
@@ -157,6 +157,27 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode });
   };
 
+  // The hero's own look, with the same saved form and the same teaching as the stage below; only the live weather decides it.
+  const heroPrecipitation: Precipitation = live?.precipitation ?? null;
+  const dailyAbout = (daily: GeneratedLook) => {
+    const { selection, advice, savedId, tips, title } = describeLook(daily, daily.itemIds, 0, items, undefined, heroPrecipitation, t);
+    const tell = (action: LookAction) => { if (login) void hasAiConsent(login).then(ok => { if (ok) sendLookFeedback(action, daily, selection, 0, heroPrecipitation); }); };
+    const isSaved = favorites.some(other => other.id === savedId);
+    return { selection, title, saved: isSaved, told: tell, favorite: () => {
+      if (isSaved) return;
+      tell('favorite');
+      onFavorite({ ...daily, title, id: savedId, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode });
+    } };
+  };
+  // Put aside in the hero: it leaves the ideas below at once too, and sinks from the next visit.
+  const skipDaily = (core: string) => {
+    const known = new Map(items.map(item => [item.id, item]));
+    const same = looks.filter(other => lookCore(other.itemIds.map(id => known.get(id)).filter(Boolean) as WardrobeItem[]) === core).map(other => other.id);
+    setDetailsOpen(false);
+    setHidden(previous => [...previous, ...same]);
+    onDismiss?.(core);
+  };
+
   // Changing the look: the composition slides out to one side and the next comes in from the other, as in the wardrobe.
   const slide = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
@@ -229,6 +250,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
 
   return <FormScrollView contentContainerStyle={styles.content}>
     <ScreenHeader title={t('Что надеть')} right={<Pill size="sm" icon={WeatherIcon} title={degrees} accessibilityLabel={`${t('Погода и основа образа')}: ${degrees}`} onPress={() => { Keyboard.dismiss(); setTuning(true); }} />} />
+
+    <DailyLookHero items={items} gender={gender} beautyAdvice={beautyAdvice} favoriteItemIds={favoriteItemIds} dismissed={dismissedAtStart} login={login} displayName={displayName}
+      weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} />
 
     {/* Occasion, then the style as quieter words */}
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.chipRow} keyboardShouldPersistTaps="handled">
