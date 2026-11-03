@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, FlatList, Image, PanResponder, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { SheetFlatList } from '../ui/FormScrollView';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line, Path } from 'react-native-svg';
 import { CircleHelp, Layers, LayoutGrid, PersonStanding, Plus, Search } from 'lucide-react-native';
@@ -463,7 +464,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
           <TextInput value={query} onChangeText={setQuery} placeholder={t('Найти вещь')} placeholderTextColor={INK_FAINT}
             style={[font('regular'), { flex: 1, fontSize: 15, color: ink, height: '100%' }]} returnKeyType="done" accessibilityLabel={t('Найти вещь')} />
         </View>
-        <FlatList data={found} numColumns={3} keyExtractor={entry => entry.id} columnWrapperStyle={{ gap: 10 }}
+        <SheetFlatList data={found} numColumns={3} keyExtractor={entry => entry.id} columnWrapperStyle={{ gap: 10 }}
           contentContainerStyle={{ gap: 10, paddingBottom: 8 }} showsVerticalScrollIndicator={false}
           renderItem={({ item: entry }) => (
             <AppPressable accessibilityRole="button" accessibilityLabel={entry.name} style={{ flex: 1 / 3 }}
