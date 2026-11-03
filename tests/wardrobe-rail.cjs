@@ -1,4 +1,4 @@
-// The wardrobe rail's decisions: flicks are never lost, ends and small lists hold, the swing stays bounded.
+// The wardrobe showcase's decisions: flicks are never lost, ends and small lists hold, the depth is continuous and symmetric.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
@@ -53,15 +53,6 @@ assert.ok(m.rubberBand(3, 0, 1) < 1.22 && m.rubberBand(3, 0, 1) > 1);
 assert.ok(m.rubberBand(-3, 0, 1) > -0.22 && m.rubberBand(-3, 0, 1) < 0);
 assert.ok(m.rubberBand(1.2, 0, 1) < m.rubberBand(1.6, 0, 1));
 
-// The swing grows with speed, keeps its sign and never leaves its range.
-assert.equal(m.swingFromVelocity(0), 0);
-assert.ok(m.swingFromVelocity(0.5) < m.swingFromVelocity(2));
-assert.ok(m.swingFromVelocity(-2) < 0);
-assert.ok(Math.abs(m.swingFromVelocity(50)) <= 1);
-assert.equal(m.swingKick(100), 6);
-assert.equal(m.swingKick(-100), -6);
-for (let at = -5; at < 5; at++) assert.ok(m.swingFactor(at) >= 0.85 && m.swingFactor(at) <= 1.15);
-
 // One tick per piece passing the centre, none while wobbling at the same one.
 assert.equal(m.centreTick(5.1, 5), null);
 assert.equal(m.centreTick(5.5, 5), null);
@@ -80,10 +71,6 @@ assert.equal(m.stripOffset(10, 20, 390), 16 + 700 + 30 - 195);
 assert.equal(m.stripOffset(19, 20, 390), 20 * 70 + 32 - 390);
 assert.equal(m.stripOffset(1, 2, 390), 0, 'a short strip does not scroll');
 
-// Resting by section, not by item; anything unknown hangs.
-for (const section of ['Обувь', 'Сумки', 'Аксессуары']) assert.equal(m.restingKind(section), 'stand');
-for (const section of ['Верх', 'Низ', 'Верхняя одежда', 'Новый раздел', undefined]) assert.equal(m.restingKind(section), 'hang');
-
 // A box fits the side by its longer edge; an unmeasured picture is a square.
 assert.deepEqual(m.fitBox(0.5, 200), { width: 100, height: 200 });
 assert.deepEqual(m.fitBox(2, 200), { width: 200, height: 100 });
@@ -99,4 +86,44 @@ assert.equal(m.nearestPlace(-3.2, 0, 2), 0);
 assert.equal(m.neighbourIndex(2, 5), 2);
 assert.equal(m.neighbourIndex(4, 4), 3);
 assert.equal(m.neighbourIndex(0, 0), 0);
+
+// The depth: frontal in the centre, mirrored either side, and the same for every place on the rail.
+const depth = m.depthKeyframes(5, 200, false);
+assert.deepEqual(depth.rotateY.inputRange, [4, 5, 6]);
+assert.equal(depth.rotateY.outputRange[1], '0deg');
+const angle = parseFloat(depth.rotateY.outputRange[2]);
+assert.ok(angle >= 35 && angle <= 45);
+assert.equal(parseFloat(depth.rotateY.outputRange[0]), -angle);
+assert.equal(depth.scale.outputRange[1], 1);
+assert.equal(depth.scale.outputRange[0], depth.scale.outputRange[2]);
+assert.ok(depth.scale.outputRange[0] < 1);
+assert.deepEqual([depth.opacity.outputRange[0], depth.opacity.outputRange[4]], [0, 0], 'two places off is gone');
+assert.equal(depth.opacity.outputRange[2], 1);
+assert.deepEqual(depth.translateX, { inputRange: [4, 6], outputRange: [200, -200] }, 'the piece keeps to the finger: one pitch per place');
+assert.deepEqual(m.depthKeyframes(9, 200, false).scale.outputRange, depth.scale.outputRange);
+// Reduced motion only slides and fades.
+const plain = m.depthKeyframes(5, 200, true);
+assert.equal(plain.rotateY, undefined);
+assert.equal(plain.scale, undefined);
+assert.equal(plain.rise, undefined);
+assert.ok(plain.opacity && plain.translateX);
+// The light is the same ramp: the two pieces around the position always add up to the whole of it.
+const ramp = (range, x) => x <= range.inputRange[0] || x >= range.inputRange[2] ? 0 : 1 - Math.abs(x - range.inputRange[1]);
+for (const x of [5, 5.2, 5.5, 5.9]) assert.ok(Math.abs(ramp(m.depthKeyframes(5, 1, false).focus, x) + ramp(m.depthKeyframes(6, 1, false).focus, x) - 1) < 1e-9);
+
+// Reflections only around the centre.
+assert.deepEqual([3, 4, 5, 6, 7].filter(at => m.showsReflection(at, 5)), [4, 5, 6]);
+
+// The stage holds the piece and its reflection at any height, and the floor is where the piece ends.
+for (const height of [220, 320, 420, 700]) {
+  const g = m.showcaseGeometry(height, 390);
+  assert.ok(g.top + g.side + g.reflection <= height);
+  assert.equal(g.floorY, g.top + g.side);
+  assert.ok(g.reflection > 0);
+  assert.ok(g.side <= 300);
+}
+assert.ok(m.showcaseGeometry(400, 390, true).pitch > m.showcaseGeometry(400, 390).pitch, 'flat neighbours sit farther out');
+// A print's picture is centred in its box.
+const printed = m.printRect({ width: 100, height: 100 });
+assert.ok(Math.abs(printed.x - 8) < 1e-9 && Math.abs(printed.y - 4) < 1e-9 && Math.abs(printed.width - 84) < 1e-9 && Math.abs(printed.height - 92) < 1e-9);
 console.log('wardrobe-rail: ok');

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { Animated, Easing, FlatList, Image, PanResponder, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SheetFlatList } from '../ui/FormScrollView';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line, Path } from 'react-native-svg';
+import Svg, { Defs, G, Image as SvgImage, LinearGradient as SvgLinearGradient, Mask, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { CircleHelp, Layers, LayoutGrid, PersonStanding, Plus, Search } from 'lucide-react-native';
 import { WardrobeItem } from '../../data/mock';
 import { useT } from '../../constants/i18n';
@@ -10,87 +10,134 @@ import { useTheme } from '../../constants/ThemeContext';
 import { selectionHaptic } from '../../services/haptics';
 import { AppPressable } from '../AppPressable';
 import { Glass, Pill } from './Glass';
-import { useStudioTint } from './StudioBackdrop';
-import { FloorShadow, GarmentImage } from './Garment';
-import { centreTick, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestPlace, neighbourIndex, railBounds, railWindow, restingKind, rubberBand, shortestDelta, snapTarget, stripOffset, swingFactor, swingFromVelocity, swingKick, THUMB_PITCH, WINDOW_RADIUS } from './railMotion';
+import { FloorShadow, GarmentImage, PRINT_RADIUS } from './Garment';
+import { centreTick, depthKeyframes, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestPlace, neighbourIndex, printRect, railBounds, railWindow, rubberBand, shortestDelta, showcaseGeometry, showsReflection, snapTarget, stripOffset, THUMB_PITCH, WINDOW_RADIUS } from './railMotion';
 import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from './studio';
 import { StudioSheet } from './StudioSheet';
 import { useAspects } from './useAspects';
 
 const NATIVE = Platform.OS !== 'web';
-const RAIL_Y = 12;
-/** The hook's top above the rail, and the garment's top below the hook's: the shoulders disappear inside the piece. */
-const HOOK_UP = 7;
-const HANG_DROP = 24;
-const SIDE_SCALE = 0.62;
-const SIDE_OPACITY = 0.5;
-const MAX_LEAN_DEG = 9;
-const IDLE_SWAY = 0.06;
+const PERSPECTIVE = 900;
+/** How much the centre piece grows under a finger, and how far it drifts up at rest. */
+const LIFT = 0.03;
+const FLOAT_PX = 2;
 const TICK_GAP_MS = 40;
 
-/** A hanger as one thin line: the hook round the rail, the neck, the shoulders and the bar. */
-const Hanger = memo(function Hanger({ width, color }: { width: number; color: string }) {
-  const c = width / 2;
-  const hook = `M${c} 19 L${c} 14 C${c} 11 ${c + 5} 10 ${c + 5} 5.5 C${c + 5} 2.5 ${c + 2.5} 1 ${c} 1 C${c - 2.5} 1 ${c - 4.6} 2.6 ${c - 5} 5`;
-  const body = `M${c} 19 L3 34 Q0.5 37 4 37 L${width - 4} 37 Q${width - 0.5} 37 ${width - 3} 34 Z`;
+type Geometry = ReturnType<typeof showcaseGeometry>;
+
+/**
+ * The piece mirrored on the floor. A real alpha mask over the backdrop rather than a gradient in the stage's
+ * colour: the backdrop is a radial light, no single colour would match it. The same rounded corners as the print.
+ */
+const Reflection = memo(function Reflection({ id, uri, print, box, height, opacity }: { id: string; uri: string; print: boolean; box: { width: number; height: number }; height: number; opacity: number }) {
+  const picture = print ? printRect(box) : { x: 0, y: 0, ...box };
+  const foot = picture.y + picture.height;
   return (
-    <Svg width={width} height={38}>
-      <Path d={`${hook} ${body}`} stroke={color} strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Svg width={box.width} height={height}>
+      <Defs>
+        <SvgLinearGradient id={`${id}-fade`} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2={height}>
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={opacity} />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
+        </SvgLinearGradient>
+        <Mask id={`${id}-mask`} maskUnits="userSpaceOnUse" x={0} y={0} width={box.width} height={height}>
+          <Rect x={picture.x} y={0} width={picture.width} height={Math.min(picture.height, height + PRINT_RADIUS)} rx={print ? PRINT_RADIUS : 0} ry={print ? PRINT_RADIUS : 0} fill={`url(#${id}-fade)`} />
+        </Mask>
+      </Defs>
+      <G mask={`url(#${id}-mask)`}>
+        <G transform={`translate(0 ${foot}) scale(1 -1)`}>
+          <SvgImage href={{ uri }} x={picture.x} y={picture.y} width={picture.width} height={picture.height} preserveAspectRatio={print ? 'xMidYMid slice' : 'xMidYMid meet'} />
+        </G>
+      </G>
     </Svg>
   );
 });
 
-type SlotGeometry = { side: number; shelfSide: number; shelfY: number; pitch: number; stageWidth: number };
+/** The light behind one piece, in the middle of the stage however the piece moves: it is at full only while that piece is. */
+const Glow = memo(function Glow({ at, color, position, geometry, opacity }: { at: number; position: Animated.Value; color: string; geometry: Geometry; opacity: number }) {
+  const shown = useMemo(() => position.interpolate({ ...depthKeyframes(at, 0, false).focus, extrapolate: 'clamp' }), [position, at]);
+  const id = `showcase-glow-${at}`;
+  // Centred on the piece and dying out at the stage's top: the stage clips, and a cut light would show as a line.
+  const height = 2 * geometry.top + geometry.side;
+  return (
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height, opacity: shown }}>
+      <Svg width="100%" height="100%">
+        <Defs>
+          <RadialGradient id={id} cx="50%" cy="50%" r="50%" rx="50%" ry="50%" fx="50%" fy="50%">
+            <Stop offset="0" stopColor={color} stopOpacity={opacity} />
+            <Stop offset="0.55" stopColor={color} stopOpacity={opacity * 0.5} />
+            <Stop offset="1" stopColor={color} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${id})`} />
+      </Svg>
+    </Animated.View>
+  );
+});
 
 type SlotProps = {
   at: number;
   item?: WardrobeItem;
-  geometry: SlotGeometry;
+  geometry: Geometry;
   position: Animated.Value;
-  angle: Animated.AnimatedAddition<number>;
-  front: boolean;
+  lift: Animated.Value;
+  floatY: Animated.AnimatedInterpolation<number>;
+  depth: number;
+  reflected: boolean;
   reduced: boolean;
-  line: string;
+  reflectionOpacity: number;
   onPress: (at: number) => void;
 };
 
 /**
- * One place on the rail. Everything it does between renders is an interpolation of the rail's position on the
- * native side, so a finger moving costs no React work. A piece turns and scales about its hook (or its foot on
- * the shelf), which keeps it on the line however far from the centre it is.
+ * One place in the showcase. Everything it does between renders is an interpolation of the position on the
+ * native side, so a finger moving costs no React work. It turns and scales about its foot, so the piece and its
+ * reflection stay joined at the floor; every category does the same.
  */
-const RailSlot = memo(function RailSlot({ at, item, geometry, position, angle, front, reduced, line, onPress }: SlotProps) {
-  const { side, shelfSide, shelfY, pitch, stageWidth } = geometry;
-  const standing = restingKind(item?.section) === 'stand';
+const ShowcaseSlot = memo(function ShowcaseSlot({ at, item, geometry, position, lift, floatY, depth, reflected, reduced, reflectionOpacity, onPress }: SlotProps) {
+  const { side, reflection, top, pitch, stageWidth } = geometry;
   const aspects = useAspects(useMemo(() => item ? [item] : undefined, [item]));
-  const print = Boolean(item?.imageUri && !isCutout(item.imageUri));
-  const box = print ? { width: side, height: side } : fitBox(item ? aspects[item.id] : undefined, standing ? shelfSide : side);
-  const height = standing ? shelfSide : HANG_DROP + side;
-  const width = Math.max(side, box.width);
-  const top = standing ? shelfY - shelfSide : RAIL_Y - HOOK_UP;
-  // From the slot's centre to the point it turns about: the hook above, the foot below.
-  const pivot = standing ? height / 2 : HOOK_UP - height / 2;
+  const uri = item?.imageUri;
+  const print = Boolean(uri && !isCutout(uri));
+  const box = print ? { width: side, height: side } : fitBox(item ? aspects[item.id] : undefined, side);
+  // A print's picture stops short of its box: it stands on the floor by the picture.
+  const sink = print ? box.height - (printRect(box).y + printRect(box).height) : 0;
+  const height = side + reflection;
+  // From the slot's centre to the floor line.
+  const pivot = side - height / 2;
   const motion = useMemo(() => {
-    const lean = MAX_LEAN_DEG * swingFactor(at);
-    const translateX = position.interpolate({ inputRange: [at - 1, at + 1], outputRange: [pitch, -pitch] });
-    const scale = position.interpolate({ inputRange: [at - 1, at, at + 1], outputRange: [SIDE_SCALE, 1, SIDE_SCALE], extrapolate: 'clamp' });
-    const opacity = position.interpolate({ inputRange: [at - 1, at, at + 1], outputRange: [SIDE_OPACITY, 1, SIDE_OPACITY], extrapolate: 'clamp' });
-    const rotate = angle.interpolate({ inputRange: [-1, 1], outputRange: [`${-lean}deg`, `${lean}deg`] });
-    return { translateX, scale, opacity, rotate };
-  }, [at, pitch, position, angle]);
-  const swings = !standing && !reduced;
-  const hanger = Math.max(56, Math.min(box.width * 0.72, side * 0.62));
+    const frames = depthKeyframes(at, pitch, reduced);
+    const translateX = position.interpolate(frames.translateX);
+    const opacity = position.interpolate({ ...frames.opacity, extrapolate: 'clamp' });
+    if (!frames.rotateY || !frames.scale || !frames.rise) return { translateX, opacity, deep: null };
+    const focus = position.interpolate({ ...frames.focus, extrapolate: 'clamp' });
+    const up = Animated.multiply(focus, floatY);
+    return {
+      translateX, opacity,
+      deep: {
+        scale: Animated.add(position.interpolate({ ...frames.scale, extrapolate: 'clamp' }), Animated.multiply(focus, lift)),
+        rise: position.interpolate({ ...frames.rise, extrapolate: 'clamp' }),
+        rotateY: position.interpolate({ ...frames.rotateY, extrapolate: 'clamp' }),
+        up, down: Animated.multiply(up, -1)
+      }
+    };
+  }, [at, pitch, reduced, position, lift, floatY]);
+  const { deep } = motion;
+  const transform = deep
+    ? [{ perspective: PERSPECTIVE }, { translateX: motion.translateX }, { translateY: deep.rise }, { translateY: pivot }, { scale: deep.scale }, { rotateY: deep.rotateY }, { translateY: -pivot }]
+    : [{ translateX: motion.translateX }];
   return (
     <Animated.View pointerEvents="box-none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-      style={{ position: 'absolute', top, left: (stageWidth - width) / 2, width, height, zIndex: front ? 2 : 1, opacity: motion.opacity,
-        transform: [{ translateX: motion.translateX }, { translateY: pivot }, { scale: motion.scale },
-          ...(swings ? [{ rotate: motion.rotate }] : []), { translateY: -pivot }] }}>
-      {standing ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: -17, alignItems: 'center' }}><FloorShadow width={box.width * 0.8} opacity={0.22} /></View>
-        : <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: (width - hanger) / 2, width: hanger }}><Hanger width={hanger} color={line} /></View>}
-      <AppPressable accessible={false} onPress={() => onPress(at)}
-        style={{ position: 'absolute', left: (width - box.width) / 2, top: standing ? height - box.height : HANG_DROP - (print ? side * 0.04 : 0), width: box.width, height: box.height }}>
-        <GarmentImage item={item} print style={{ width: box.width, height: box.height }} />
-      </AppPressable>
+      style={{ position: 'absolute', top, left: (stageWidth - side) / 2, width: side, height, zIndex: depth, opacity: motion.opacity, transform }}>
+      {reflected && reflection > 0 ? (uri
+        ? <Animated.View pointerEvents="none" style={{ position: 'absolute', top: side, left: (side - box.width) / 2, width: box.width, height: reflection, transform: deep ? [{ translateY: deep.down }] : [] }}>
+            <Reflection id={`showcase-${at}`} uri={uri} print={print} box={box} height={reflection} opacity={reflectionOpacity} />
+          </Animated.View>
+        : <View pointerEvents="none" style={{ position: 'absolute', top: side - 17, left: 0, right: 0, alignItems: 'center' }}><FloorShadow width={box.width * 0.8} opacity={0.22} /></View>) : null}
+      <Animated.View pointerEvents="box-none" style={{ position: 'absolute', left: (side - box.width) / 2, top: side - box.height + sink, width: box.width, height: box.height, transform: deep ? [{ translateY: deep.up }] : [] }}>
+        <AppPressable accessible={false} onPress={() => onPress(at)} style={{ width: box.width, height: box.height }}>
+          <GarmentImage item={item} print style={{ width: box.width, height: box.height }} />
+        </AppPressable>
+      </Animated.View>
     </Animated.View>
   );
 });
@@ -113,14 +160,14 @@ type Props = {
   onStyleWith?: (item: WardrobeItem) => void;
   onHelp?: () => void;
   addDisabled?: boolean;
-  /** Something covers the rail (the piece's card): it stops breathing meanwhile. */
+  /** Something covers the showcase (the piece's card): it stops breathing meanwhile. */
   paused?: boolean;
 };
 
 /**
- * The wardrobe as a rail in a photo studio: pieces hang on a thin rail (what does not hang stands on a shelf line)
- * and slide along it under the finger, swinging about their hooks and ticking past the centre; the light turns
- * to the piece that stays. Tap the row below to go to one. «Все вещи» opens everything as a grid with search.
+ * The wardrobe as a lit showcase: the piece in focus stands frontal on a glossy floor over its own reflection,
+ * its neighbours turn away and recede behind it, and the light behind takes the colour of whichever piece is
+ * coming in as you swipe. Tap the row below to go to one. «Все вещи» opens everything as a grid with search.
  *
  * The rail's position is one number in pieces on the native side. `rail.center` is the whole place nearest to
  * it, moved on only when another piece becomes nearest; that and nothing else re-renders this screen in motion.
@@ -151,34 +198,20 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   // The last piece of a section gone: back to everything rather than to an empty stage with no way to name it.
   useEffect(() => { if (section !== 'Все' && !present.includes(section)) setSection('Все'); }, [present, section]);
 
-  // The light follows the piece that stays: a full-screen gradient per piece passed would cost a flick its frames.
-  const tint = studioTint(item);
-  const [restingTint, setRestingTint] = useState(tint);
-  useEffect(() => {
-    const timer = setTimeout(() => setRestingTint(tint), 160);
-    return () => clearTimeout(timer);
-  }, [tint]);
-  useStudioTint(restingTint, 0.46);
-
   const position = useRef(new Animated.Value(0)).current;
-  const swing = useRef(new Animated.Value(0)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const angle = useRef(Animated.add(swing, sway)).current;
+  const lift = useRef(new Animated.Value(0)).current;
+  const float = useRef(new Animated.Value(0)).current;
+  const floatY = useRef(float.interpolate({ inputRange: [0, 1], outputRange: [0, -FLOAT_PX] })).current;
   const textFade = useRef(new Animated.Value(1)).current;
-  const shelf = useRef(new Animated.Value(0)).current;
   const stripRef = useRef<FlatList<WardrobeItem>>(null);
 
-  const heroSide = Math.max(150, Math.min(stageHeight - (RAIL_Y - HOOK_UP) - HANG_DROP - 14, width - 90));
-  const shelfY = Math.max(RAIL_Y + 120, stageHeight - 20);
-  const geometry = useMemo<SlotGeometry>(() => ({
-    side: heroSide, shelfSide: Math.max(100, Math.min(heroSide * 0.8, shelfY - RAIL_Y - 30)), shelfY, pitch: width * 0.58, stageWidth: width
-  }), [heroSide, shelfY, width]);
+  const geometry = useMemo(() => showcaseGeometry(stageHeight, width, reduced), [stageHeight, width, reduced]);
 
   // What gesture handlers, created once, read: updated in place by a move so that the next one, even before
   // React has rendered, already counts from it.
   const live = useRef({
     list, index, center, reduced, pitch: geometry.pitch, onOpen,
-    now: 0, staleUntil: 0, target: 0, swing: 0, swingFree: false, lastTick: 0, lastTickAt: 0, run: 0,
+    now: 0, staleUntil: 0, target: 0, lastTick: 0, lastTickAt: 0, run: 0,
     drag: null as null | { base: number; grab: number; dx: number; origin: number }
   }).current;
   live.list = list;
@@ -222,16 +255,15 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   useEffect(() => {
     if (!NATIVE) return;
     Animated.timing(position, { toValue: 0, duration: 0, useNativeDriver: true }).start();
-    Animated.timing(swing, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+    Animated.timing(lift, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+    Animated.timing(float, { toValue: 0, duration: 0, useNativeDriver: true }).start();
   }, []);
 
-  const swingTo = useCallback((velocity: number) => {
+  // Under a finger the centre piece comes up a little to meet it, and settles when it lets go.
+  const raise = (up: boolean) => {
     if (live.reduced) return;
-    // The spring's start is whatever lean it finds; the push carries on from there, then dies away.
-    live.swingFree = true;
-    Animated.spring(swing, { toValue: 0, velocity, stiffness: 72, damping: 6, mass: 1, restSpeedThreshold: 0.01, restDisplacementThreshold: 0.002, useNativeDriver: NATIVE })
-      .start();
-  }, []);
+    Animated.spring(lift, { toValue: up ? LIFT : 0, stiffness: 320, damping: up ? 26 : 20, mass: 1, useNativeDriver: NATIVE }).start();
+  };
 
   const runTo = useCallback((target: number, velocity: number) => {
     live.target = target;
@@ -248,7 +280,6 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     const target = Math.min(max, Math.max(min, live.target + delta));
     if (target === live.target) return;
     const direction = Math.sign(delta);
-    swingTo(direction * -4);
     const from = Math.round(live.now);
     if (Math.abs(target - from) <= WINDOW_RADIUS) { runTo(target, 0); return; }
     // Too far to fly past every piece: start two places short of it, the last stretch is the slide people see.
@@ -286,22 +317,15 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   const listKey = useMemo(() => list.map(entry => entry.id).join('|'), [list]);
   useLayoutEffect(settle, [listKey]);
 
-  const pauseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(pauseTimer.current), []);
   const land = (velocityX: number) => {
     const drag = live.drag;
     live.drag = null;
-    clearTimeout(pauseTimer.current);
     if (!drag) return;
+    raise(false);
     discardEchoes();
     const { min, max } = bounds();
     const target = snapTarget({ position: Math.min(max, Math.max(min, live.now)), velocityX, anchor: live.target, origin: drag.origin, min, max });
     runTo(target, Math.max(-14, Math.min(14, -velocityX * 1000 / live.pitch)));
-    swingTo(swingKick(velocityX));
-  };
-  const catchSwing = () => {
-    live.swingFree = false;
-    swing.stopAnimation(value => { live.swing = value; });
   };
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
@@ -319,7 +343,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
         position.setValue(next);
         arrive(next);
       });
-      catchSwing();
+      raise(true);
     },
     onPanResponderMove: (_, g) => {
       const drag = live.drag;
@@ -329,25 +353,19 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
       const next = rubberBand(drag.base - (g.dx - drag.grab) / live.pitch, min, max);
       position.setValue(next);
       arrive(next);
-      if (live.reduced) return;
-      if (live.swingFree) { catchSwing(); return; }
-      live.swing += (swingFromVelocity(g.vx) - live.swing) * 0.35;
-      swing.setValue(live.swing);
-      // A finger that stops sends no events: the piece comes to rest under it by itself.
-      clearTimeout(pauseTimer.current);
-      pauseTimer.current = setTimeout(() => { if (live.drag) swingTo(0); }, 90);
     },
     onPanResponderRelease: (_, g) => land(g.vx),
     onPanResponderTerminate: (_, g) => land(g.vx)
   })).current;
 
-  // At rest they breathe a little around the hook; it adds to the swing rather than competing with it.
+  // At rest the centre piece drifts a little. Each round starts where the last one ended, so the loop has no seam.
   useEffect(() => {
-    if (reduced) { sway.setValue(0); swing.stopAnimation(); swing.setValue(0); return; }
-    if (allOpen || paused) return;
+    if (reduced) { float.setValue(0); lift.setValue(0); return; }
+    if (allOpen || paused) { raise(false); return; }
+    float.setValue(0);
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(sway, { toValue: IDLE_SWAY, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE }),
-      Animated.timing(sway, { toValue: -IDLE_SWAY, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE })
+      Animated.timing(float, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE }),
+      Animated.timing(float, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE })
     ]));
     loop.start();
     return () => loop.stop();
@@ -359,12 +377,6 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     textFade.setValue(0.4);
     Animated.timing(textFade, { toValue: 1, duration: 180, useNativeDriver: NATIVE }).start();
   }, [focusId, reduced]);
-
-  // The shelf line comes up only for what stands on it.
-  const standing = restingKind(item?.section) === 'stand';
-  useEffect(() => {
-    Animated.timing(shelf, { toValue: standing ? 1 : 0, duration: reduced ? 0 : 200, useNativeDriver: NATIVE }).start();
-  }, [standing, reduced]);
 
   // The row keeps the piece in focus in view.
   useEffect(() => {
@@ -401,7 +413,6 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     const places = railWindow(center, index, count);
     return places.length ? places.map(at => ({ at, entry: list[mod(index + at - center, count)] as WardrobeItem | undefined })) : [{ at: center, entry: undefined }];
   }, [center, index, count, list]);
-  const line = isDark ? 'rgba(244,245,247,0.42)' : 'rgba(18,20,23,0.34)';
   const renderThumb = useCallback(({ item: entry, index: at }: { item: WardrobeItem; index: number }) => (
     <StripThumb entry={entry} at={at} on={entry.id === focusId} onPick={pickIndex} />
   ), [focusId, pickIndex]);
@@ -438,6 +449,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
 
       {/* The stage */}
       <View style={styles.stage} onLayout={event => setStageHeight(event.nativeEvent.layout.height)} {...pan.panHandlers}
+        onTouchStart={() => raise(true)} onTouchEnd={() => raise(false)} onTouchCancel={() => raise(false)}
         accessible focusable={Platform.OS === 'web'} accessibilityRole={count > 1 ? 'adjustable' : 'button'} accessibilityLabel={openLabel}
         accessibilityValue={count > 1 ? { text: placeText } : undefined}
         accessibilityActions={count > 1 ? [{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }] : [{ name: 'activate' }]}
@@ -446,12 +458,12 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
           else if (event.nativeEvent.actionName === 'decrement') moveBy(-1);
           else if (item) onOpen(item);
         }}>
-        <View pointerEvents="none" style={{ position: 'absolute', top: RAIL_Y - 1, left: 0 }}>
-          <Svg width={width} height={2}><Line x1={0} y1={1} x2={width} y2={1} stroke={line} strokeWidth={1.2} /></Svg>
-        </View>
-        {stageHeight ? <Animated.View pointerEvents="none" style={{ position: 'absolute', top: shelfY, left: 0, right: 0, height: StyleSheet.hairlineWidth * 2, backgroundColor: line, opacity: shelf }} /> : null}
+        {stageHeight ? slots.filter(({ at, entry }) => entry && showsReflection(at, center)).map(({ at, entry }) => (
+          <Glow key={at} at={at} position={position} geometry={geometry} color={studioTint(entry) || '#FFFFFF'} opacity={isDark ? 0.32 : 0.95} />
+        )) : null}
         {stageHeight ? slots.map(({ at, entry }) => (
-          <RailSlot key={at} at={at} item={entry} geometry={geometry} position={position} angle={angle} front={at === center} reduced={reduced} line={line} onPress={pressSlot} />
+          <ShowcaseSlot key={`${at}:${reduced}`} at={at} item={entry} geometry={geometry} position={position} lift={lift} floatY={floatY}
+            depth={3 - Math.abs(at - center)} reflected={showsReflection(at, center)} reduced={reduced} reflectionOpacity={isDark ? 0.34 : 0.42} onPress={pressSlot} />
         )) : null}
         {count > 1 ? <View pointerEvents="none" style={styles.position}><Text style={[font('regular'), { fontSize: 12, color: soft }]}>{placeText}</Text></View> : null}
       </View>
@@ -507,7 +519,7 @@ const styles = StyleSheet.create({
   facts: { fontSize: 13 },
   name: { fontSize: 34, lineHeight: 40, letterSpacing: -1, marginTop: 2 },
   stage: { flex: 1, minHeight: 220, marginHorizontal: -16, overflow: 'hidden' },
-  position: { position: 'absolute', right: 20, bottom: 4, zIndex: 3 },
+  position: { position: 'absolute', right: 20, bottom: 4, zIndex: 5 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
   sections: { gap: 16, paddingRight: 16 },
   strip: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, alignItems: 'flex-end' },

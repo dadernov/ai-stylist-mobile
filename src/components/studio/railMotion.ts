@@ -57,15 +57,6 @@ export function snapTarget({ position, velocityX, anchor, origin, min, max }:
   return clamp(direction > 0 ? Math.min(target, limit) : Math.max(target, limit), min, max);
 }
 
-/** The lean while the rail moves, -1…1: the hook leads and the piece trails, and it saturates so a hard flick stays tasteful. */
-export const swingFromVelocity = (velocityX: number) => Math.tanh(velocityX / 1.6);
-
-/** The push a release gives the damped pendulum, in swing units a second. */
-export const swingKick = (velocityX: number) => clamp(velocityX * 4, -6, 6);
-
-/** Pieces hang at slightly different lengths, so a row never swings as one block. Stable per place on the rail. */
-export const swingFactor = (at: number) => 0.85 + mod(at, 3) * 0.15;
-
 /** The place to tick for when the rail comes close to a new centre; null while nothing new has arrived. */
 export function centreTick(position: number, last: number, radius = 0.3) {
   const near = Math.round(position);
@@ -87,11 +78,7 @@ export function stripOffset(index: number, count: number, viewWidth: number, pit
   return Math.max(0, Math.min(wanted, content - viewWidth));
 }
 
-/** Whether a piece hangs from the rail or stands on the shelf: by its wardrobe section, so every item of a section behaves alike. */
-const STANDING_SECTIONS = new Set(['Обувь', 'Сумки', 'Аксессуары']);
-export const restingKind = (section?: string): 'hang' | 'stand' => section && STANDING_SECTIONS.has(section) ? 'stand' : 'hang';
-
-/** The largest box of this width ÷ height within a square, so a cut-out's top meets the hanger and its bottom the shelf. */
+/** The largest box of this width ÷ height within a square, so a cut-out stands on the floor at its full size. */
 export function fitBox(aspect: number | undefined, side: number) {
   const ratio = aspect && aspect > 0 && Number.isFinite(aspect) ? aspect : 1;
   return ratio >= 1 ? { width: side, height: side / ratio } : { width: side * ratio, height: side };
@@ -109,3 +96,48 @@ export const echoCounts = ({ dragging, now, staleUntil }: { dragging: boolean; n
 
 /** Where the focus goes when its piece has left the list: the piece that took its place, or the new last one. */
 export const neighbourIndex = (lastIndex: number, count: number) => Math.max(0, Math.min(lastIndex, count - 1));
+
+/** Where GarmentImage draws a photo with its own ground, as shares of its box; the reflection starts from this picture's foot. */
+export const PRINT_FRAME = { width: 0.84, height: 0.92 };
+export function printRect(box: { width: number; height: number }) {
+  const width = box.width * PRINT_FRAME.width;
+  const height = box.height * PRINT_FRAME.height;
+  return { x: (box.width - width) / 2, y: (box.height - height) / 2, width, height };
+}
+
+/** The stage's layout: the pieces stand on one floor line, the reflections take what is below it. */
+const REFLECTION_SHARE = 0.3;
+export function showcaseGeometry(stageHeight: number, stageWidth: number, reduced = false) {
+  const side = Math.max(150, Math.min((stageHeight - 8) / (1 + REFLECTION_SHARE), stageWidth - 90));
+  const reflection = Math.max(0, Math.min(side * REFLECTION_SHARE, stageHeight - side - 4));
+  const top = Math.max(4, (stageHeight - side - reflection) / 2);
+  // Flat neighbours need the room that turning and shrinking gives the others.
+  return { side, reflection, top, floorY: top + side, stageWidth, pitch: stageWidth * (reduced ? 0.75 : 0.5) };
+}
+
+/** Double image layers only where they are seen: the centre and the piece on either side. */
+export const showsReflection = (at: number, center: number) => Math.abs(at - center) <= 1;
+
+const SIDE_ANGLE = 40;
+const SIDE_SCALE = 0.72;
+const SIDE_RISE = 10;
+const SIDE_OPACITY = 0.55;
+
+/**
+ * How one place moves with the position: each is an interpolation's ranges, so all of it runs on the native side.
+ * To the right of the centre a piece turns its inner edge away, to the left the same mirrored; farther off it is gone.
+ * With reduced motion it only slides and fades.
+ */
+export function depthKeyframes(at: number, pitch: number, reduced: boolean) {
+  const near = [at - 1, at, at + 1];
+  const translateX = { inputRange: [at - 1, at + 1], outputRange: [pitch, -pitch] };
+  const focus = { inputRange: near, outputRange: [0, 1, 0] };
+  if (reduced) return { translateX, focus, opacity: { inputRange: near, outputRange: [0.3, 1, 0.3] } };
+  return {
+    translateX, focus,
+    opacity: { inputRange: [at - 2, ...near, at + 2], outputRange: [0, SIDE_OPACITY, 1, SIDE_OPACITY, 0] },
+    scale: { inputRange: near, outputRange: [SIDE_SCALE, 1, SIDE_SCALE] },
+    rise: { inputRange: near, outputRange: [-SIDE_RISE, 0, -SIDE_RISE] },
+    rotateY: { inputRange: near, outputRange: [`${-SIDE_ANGLE}deg`, '0deg', `${SIDE_ANGLE}deg`] }
+  };
+}
