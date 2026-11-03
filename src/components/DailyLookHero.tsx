@@ -127,7 +127,11 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
     const byItemId = new Map(items.map(item => [item.id, item]));
     return Math.max(0, ...candidates.map(candidate => gridCount(candidate.itemIds.flatMap(id => byItemId.get(id) ?? []))));
   }, [candidates, items]);
-  const stageHeight = gridStageHeight(Math.max(fullest, selection ? gridCount(selection) : 0));
+  // A skip takes looks out of the candidates: the size reached today stays until tomorrow.
+  const selected = selection ? gridCount(selection) : 0;
+  const dayStage = useRef({ day, count: 0 });
+  dayStage.current = { day, count: Math.max(dayStage.current.day === day ? dayStage.current.count : 0, fullest, selected) };
+  const stageHeight = gridStageHeight(dayStage.current.count);
   const placed = selection && width ? gridLook(selection, width, stageHeight) : [];
   const byId = new Map(selection?.map(item => [item.id, item]));
 
@@ -147,7 +151,8 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   // Still reading or waiting for the weather: the place is kept, nothing jumps later.
   if (record === undefined || (!settled && !current)) return <View style={styles.wrap}>{header}
     <Glass radius={28}><Text style={[font('regular'), styles.muted, styles.note]}>{t('Смотрю, что у тебя есть…')}</Text></Glass></View>;
-  if (!look || !info) {
+  // Nothing of the look left to show (its pieces are gone): no empty card.
+  if (!look || !info || !selected) {
     // Too few things: the state below already explains it. All skipped: a word here, the ideas below still work.
     if (!record?.skipped.length || record.day !== day) return null;
     return <View style={styles.wrap}>{header}

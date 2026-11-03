@@ -1,6 +1,6 @@
 import { forwardRef } from 'react';
 import { FlatList, FlatListProps, Keyboard, Platform, ScrollView, ScrollViewProps } from 'react-native';
-import { useSheetScroller } from '../studio/SheetHandle';
+import { useSheetScroller, useSheetScrollLock } from '../studio/SheetHandle';
 
 export const FormScrollView = forwardRef<ScrollView, ScrollViewProps>(function FormScrollView({ onScrollBeginDrag, ...rest }, ref) {
   const props = useSheetScroller(rest, Boolean(rest.horizontal));
@@ -8,6 +8,12 @@ export const FormScrollView = forwardRef<ScrollView, ScrollViewProps>(function F
     keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
     showsVerticalScrollIndicator={false} {...props} onScrollBeginDrag={event => { Keyboard.dismiss(); onScrollBeginDrag?.(event); }} />;
 });
+
+/** A horizontal strip that may sit in a sheet: it stands still while the sheet follows the finger. */
+export function SheetStrip({ scrollEnabled, ...rest }: ScrollViewProps) {
+  const locked = useSheetScrollLock();
+  return <ScrollView horizontal {...rest} scrollEnabled={!locked && scrollEnabled !== false} />;
+}
 
 /** A FlatList that hands the pull at its top to the sheet it is in. */
 export function SheetFlatList<T>(props: FlatListProps<T>) {

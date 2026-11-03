@@ -19,7 +19,7 @@ import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { TryOnOptions } from './TryOnOptions';
 import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
-import { FormScrollView } from './ui/FormScrollView';
+import { FormScrollView, SheetStrip } from './ui/FormScrollView';
 import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
@@ -280,7 +280,7 @@ export function AiTryOnPreview({
   const historyBlock = history.length ? (
         <View style={styles.historyWrap}>
           <Text style={styles.sheetTitle}>{t('История генераций')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
+          <SheetStrip showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
             {history.slice(0, 8).map((item) => (
               <AppPressable
                 key={item.id}
@@ -317,7 +317,7 @@ export function AiTryOnPreview({
                 {item.qualityMode === 'fast' ? <Text style={styles.historyText}>{t('черновик')}</Text> : null}
               </AppPressable>
             ))}
-          </ScrollView>
+          </SheetStrip>
         </View>
       ) : null;
   const buttonContent = (ink: string) => (

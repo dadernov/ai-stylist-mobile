@@ -10,13 +10,18 @@ export const dragOffset = (dy: number, canDismiss: boolean) => {
   return canDismiss ? down : 40 * (1 - Math.exp(-down / 120));
 };
 
-/** Whether a release closes the sheet: past the threshold (unless flicked back up) or a fast downward flick, and only when allowed. */
-export const releaseCloses = ({ dy, vy, height, threshold, velocity, canDismiss }:
-  { dy: number; vy: number; height: number; threshold: number; velocity: number; canDismiss: boolean }) =>
-  canDismiss && ((dy > height * threshold && vy > -velocity / 2) || (vy > velocity && dy > 0));
+/** How far the sheet must have travelled for a flick to close it when the pull came out of a scrolling list: that speed was the scroll's. */
+export const HANDOFF_FLICK_TRAVEL = 40;
+
+/** Whether a release closes the sheet: past the threshold (unless flicked back up) or a fast downward flick that moved it past `flickTravel`, and only when allowed. */
+export const releaseCloses = ({ dy, vy, height, threshold, velocity, canDismiss, flickTravel = 0 }:
+  { dy: number; vy: number; height: number; threshold: number; velocity: number; canDismiss: boolean; flickTravel?: number }) =>
+  canDismiss && ((dy > height * threshold && vy > -velocity / 2) || (vy > velocity && dy > flickTravel));
 
 /** Finger travel before a drag belongs to the sheet: small, so the grab feels immediate. */
 export const DRAG_SLOP = 6;
+/** The same on the sheet's body, where the buttons are: a shaky tap stays a tap. */
+export const BODY_DRAG_SLOP = 10;
 /** Sideways travel that hands the whole touch to a pager or strip. */
 export const HORIZONTAL_SLOP = 10;
 
@@ -32,14 +37,14 @@ export const startTrack = (x: number, y: number, touches = 1): DragTrack =>
  * reaches its top mid-gesture hands over with a fresh pull instead of counting the travel spent on scrolling.
  * A sideways touch stays sideways and a pinch stays a pinch until the fingers lift.
  */
-export const stepTrack = (track: DragTrack, { x, y, touches, free }: { x: number; y: number; touches: number; free: boolean }): { track: DragTrack; claim: boolean } => {
+export const stepTrack = (track: DragTrack, { x, y, touches, free, slop = DRAG_SLOP }: { x: number; y: number; touches: number; free: boolean; slop?: number }): { track: DragTrack; claim: boolean } => {
   const multi = track.multi || touches > 1;
   if (!free) return { track: { ...track, anchorX: x, anchorY: y, multi }, claim: false };
   const dx = x - track.anchorX;
   const dy = y - track.anchorY;
   const horizontal = track.horizontal || (Math.abs(dx) > HORIZONTAL_SLOP && Math.abs(dx) > Math.abs(dy));
   const next = { ...track, multi, horizontal, anchorY: dy < 0 ? y : track.anchorY };
-  return { track: next, claim: !horizontal && !multi && dy > DRAG_SLOP && dy > Math.abs(dx) * 1.2 };
+  return { track: next, claim: !horizontal && !multi && dy > slop && dy > Math.abs(dx) * 1.2 };
 };
 
 /** Whether a touch may move the sheet at this moment. */

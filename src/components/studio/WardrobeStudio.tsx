@@ -12,7 +12,7 @@ import { AppPressable } from '../AppPressable';
 import { Glass, Pill } from './Glass';
 import { useStudioTint } from './StudioBackdrop';
 import { FloorShadow, GarmentImage } from './Garment';
-import { centreTick, fitBox, mod, railBounds, railWindow, restingKind, rubberBand, shortestDelta, snapTarget, stripOffset, swingFactor, swingFromVelocity, swingKick, THUMB_PITCH, WINDOW_RADIUS } from './railMotion';
+import { centreTick, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestPlace, neighbourIndex, railBounds, railWindow, restingKind, rubberBand, shortestDelta, snapTarget, stripOffset, swingFactor, swingFromVelocity, swingKick, THUMB_PITCH, WINDOW_RADIUS } from './railMotion';
 import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from './studio';
 import { StudioSheet } from './StudioSheet';
 import { useAspects } from './useAspects';
@@ -113,6 +113,8 @@ type Props = {
   onStyleWith?: (item: WardrobeItem) => void;
   onHelp?: () => void;
   addDisabled?: boolean;
+  /** Something covers the rail (the piece's card): it stops breathing meanwhile. */
+  paused?: boolean;
 };
 
 /**
@@ -123,7 +125,7 @@ type Props = {
  * The rail's position is one number in pieces on the native side. `rail.center` is the whole place nearest to
  * it, moved on only when another piece becomes nearest; that and nothing else re-renders this screen in motion.
  */
-export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyleWith, onHelp, addDisabled }: Props) {
+export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyleWith, onHelp, addDisabled, paused }: Props) {
   const t = useT();
   const { isDark } = useTheme();
   const { width } = useWindowDimensions();
@@ -138,7 +140,11 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   const list = useMemo(() => section === 'Все' ? items : items.filter(item => item.section === section), [items, section]);
   const count = list.length;
   const center = rail.center;
-  const index = Math.max(0, list.findIndex(item => item.id === rail.id));
+  // The focused piece gone from the same list: its neighbour steps in, the rail doesn't run back to the first.
+  const place = useRef({ section, index: 0 });
+  const focused = list.findIndex(item => item.id === rail.id);
+  const index = focused >= 0 ? focused : place.current.section === section ? neighbourIndex(place.current.index, count) : 0;
+  place.current = { section, index };
   const item = list[index];
   const focusId = item?.id ?? null;
   useEffect(() => { if (focusId !== rail.id) setRail(current => ({ ...current, id: focusId })); }, [focusId, rail.id]);
@@ -172,7 +178,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   // React has rendered, already counts from it.
   const live = useRef({
     list, index, center, reduced, pitch: geometry.pitch, onOpen,
-    now: 0, target: 0, swing: 0, swingFree: false, lastTick: 0, lastTickAt: 0, run: 0,
+    now: 0, staleUntil: 0, target: 0, swing: 0, swingFree: false, lastTick: 0, lastTickAt: 0, run: 0,
     drag: null as null | { base: number; grab: number; dx: number; origin: number }
   }).current;
   live.list = list;
@@ -185,24 +191,29 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   const bounds = () => railBounds(live.center, live.index, live.list.length);
 
   // Whichever piece is nearest becomes the focus, and a piece arriving at the centre ticks.
+  const arrive = (value: number) => {
+    live.now = value;
+    if (!live.list.length) return;
+    const { min, max } = bounds();
+    const nearest = nearestPlace(value, min, max);
+    if (nearest !== live.center) {
+      const nextIndex = mod(live.index + nearest - live.center, live.list.length);
+      live.index = nextIndex;
+      live.center = nearest;
+      setRail({ id: live.list[nextIndex].id, center: nearest });
+    }
+    const tick = centreTick(Math.min(max, Math.max(min, value)), live.lastTick);
+    if (tick !== null) {
+      live.lastTick = tick;
+      const time = Date.now();
+      if (time - live.lastTickAt >= TICK_GAP_MS) { live.lastTickAt = time; selectionHaptic(); }
+    }
+  };
+  // The native side reports a frame or more late: under a finger or right after a jump that would flip the focus back.
+  const discardEchoes = () => { live.staleUntil = Date.now() + ECHO_DISCARD_MS; };
   useEffect(() => {
     const id = position.addListener(({ value }) => {
-      live.now = value;
-      if (!live.list.length) return;
-      const { min, max } = bounds();
-      const nearest = Math.min(max, Math.max(min, Math.round(value)));
-      if (nearest !== live.center) {
-        const nextIndex = mod(live.index + nearest - live.center, live.list.length);
-        live.index = nextIndex;
-        live.center = nearest;
-        setRail({ id: live.list[nextIndex].id, center: nearest });
-      }
-      const tick = centreTick(Math.min(max, Math.max(min, value)), live.lastTick);
-      if (tick !== null) {
-        live.lastTick = tick;
-        const time = Date.now();
-        if (time - live.lastTickAt >= TICK_GAP_MS) { live.lastTickAt = time; selectionHaptic(); }
-      }
+      if (echoCounts({ dragging: live.drag !== null, now: Date.now(), staleUntil: live.staleUntil })) arrive(value);
     });
     return () => position.removeListener(id);
   }, []);
@@ -243,6 +254,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     // Too far to fly past every piece: start two places short of it, the last stretch is the slide people see.
     const landing = mod(live.index + target - live.center, live.list.length);
     const start = mod(landing - 2 * direction, live.list.length);
+    discardEchoes();
     position.stopAnimation();
     live.index = start;
     live.center = from;
@@ -266,6 +278,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   // A new list (section, added or removed piece) or a piece chosen from the grid: the rail stops where it is
   // and the focused piece is simply there, nothing flies across it.
   const settle = () => {
+    discardEchoes();
     position.stopAnimation();
     position.setValue(live.center);
     live.now = live.target = live.lastTick = live.center;
@@ -280,6 +293,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     live.drag = null;
     clearTimeout(pauseTimer.current);
     if (!drag) return;
+    discardEchoes();
     const { min, max } = bounds();
     const target = snapTarget({ position: Math.min(max, Math.max(min, live.now)), velocityX, anchor: live.target, origin: drag.origin, min, max });
     runTo(target, Math.max(-14, Math.min(14, -velocityX * 1000 / live.pitch)));
@@ -301,7 +315,9 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
         drag.base = value;
         drag.origin = value;
         const { min, max } = bounds();
-        position.setValue(rubberBand(value - (drag.dx - drag.grab) / live.pitch, min, max));
+        const next = rubberBand(value - (drag.dx - drag.grab) / live.pitch, min, max);
+        position.setValue(next);
+        arrive(next);
       });
       catchSwing();
     },
@@ -310,7 +326,9 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
       if (!drag) return;
       drag.dx = g.dx;
       const { min, max } = bounds();
-      position.setValue(rubberBand(drag.base - (g.dx - drag.grab) / live.pitch, min, max));
+      const next = rubberBand(drag.base - (g.dx - drag.grab) / live.pitch, min, max);
+      position.setValue(next);
+      arrive(next);
       if (live.reduced) return;
       if (live.swingFree) { catchSwing(); return; }
       live.swing += (swingFromVelocity(g.vx) - live.swing) * 0.35;
@@ -326,13 +344,14 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   // At rest they breathe a little around the hook; it adds to the swing rather than competing with it.
   useEffect(() => {
     if (reduced) { sway.setValue(0); swing.stopAnimation(); swing.setValue(0); return; }
+    if (allOpen || paused) return;
     const loop = Animated.loop(Animated.sequence([
       Animated.timing(sway, { toValue: IDLE_SWAY, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE }),
       Animated.timing(sway, { toValue: -IDLE_SWAY, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: NATIVE })
     ]));
     loop.start();
     return () => loop.stop();
-  }, [reduced]);
+  }, [reduced, allOpen, paused]);
 
   // The name changes with the piece, softened rather than cross-faded: fast flicks must not leave it blank.
   useEffect(() => {
@@ -466,6 +485,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
         </View>
         <SheetFlatList data={found} numColumns={3} keyExtractor={entry => entry.id} columnWrapperStyle={{ gap: 10 }}
           contentContainerStyle={{ gap: 10, paddingBottom: 8 }} showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           renderItem={({ item: entry }) => (
             <AppPressable accessibilityRole="button" accessibilityLabel={entry.name} style={{ flex: 1 / 3 }}
               onPress={() => { setSection('Все'); settle(); setRail(current => ({ ...current, id: entry.id })); setAllOpen(false); }}>

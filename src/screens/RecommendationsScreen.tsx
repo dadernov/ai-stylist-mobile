@@ -3,7 +3,7 @@ import { Animated, Easing, Keyboard, Linking, PanResponder, ScrollView, StyleShe
 import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Heart, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
-import { FormScrollView } from '../components/ui/FormScrollView';
+import { FormScrollView, SheetStrip } from '../components/ui/FormScrollView';
 import { useFavoriteColors } from '../components/useFavoriteColors';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { AppPressable } from '../components/AppPressable';
@@ -375,7 +375,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     {/* The look in detail: its pieces (each can be swapped), how well it fits, the advice, putting it aside */}
     {look && about ? <StudioSheet visible={detailsOpen} title={about.title} onClose={() => { setDetailsOpen(false); setReplaceId(null); }}>
       {/* The pieces; tapping one offers what could replace it (the anchor piece stays) */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20, flexGrow: 0 }} contentContainerStyle={styles.pieces}>
+      <SheetStrip showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20, flexGrow: 0 }} contentContainerStyle={styles.pieces}>
         {about.selection.map(item => {
           const swappable = item.id !== anchor?.id;
           const on = replaceId === item.id;
@@ -388,7 +388,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
             <Text style={[font('medium'), styles.pieceName]} numberOfLines={2}>{item.name}</Text>
           </AppPressable>;
         })}
-      </ScrollView>
+      </SheetStrip>
       {selectedForSwap ? <Glass radius={22}><View style={{ gap: 8, padding: 14 }}>
         <Text style={[font('semibold'), styles.sheetLabel]}>{t('Вместо «{name}»', { name: selectedForSwap.name })}</Text>
         {alternatives.length ? <OptionPicker options={alternatives.map(item => item.id)} labels={Object.fromEntries(alternatives.map(item => [item.id, item.name]))} value="" label={t('Выбрать замену')} onChange={id => replace(selectedForSwap.id, id)} />

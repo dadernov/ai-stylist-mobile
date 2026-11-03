@@ -1,5 +1,6 @@
 import { ArrowUpRight, Heart, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
 import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SheetStrip } from '../components/ui/FormScrollView';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppDialog } from '../components/AppDialog';
@@ -190,7 +191,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
             ) : null}
 
             {openItems.length ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.pieces}>
+              <SheetStrip showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.pieces}>
                 {openItems.map(item => (
                   <View key={item.id} style={styles.piece}>
                     <View style={styles.pieceStage}>
@@ -199,7 +200,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
                     <Text style={[font('regular'), styles.pieceName]} numberOfLines={1}>{item.name}</Text>
                   </View>
                 ))}
-              </ScrollView>
+              </SheetStrip>
             ) : null}
 
             {beautyAdvice && (open.makeup || open.hair) ? (

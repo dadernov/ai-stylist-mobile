@@ -96,3 +96,16 @@ export function fitBox(aspect: number | undefined, side: number) {
   const ratio = aspect && aspect > 0 && Number.isFinite(aspect) ? aspect : 1;
   return ratio >= 1 ? { width: side, height: side / ratio } : { width: side * ratio, height: side };
 }
+
+/** The place nearest to a position, within the rail's ends. */
+export const nearestPlace = (position: number, min: number, max: number) => clamp(Math.round(position), min, max);
+
+/** How long the native side's reports of the rail's previous life can still arrive after JS has put it elsewhere. */
+export const ECHO_DISCARD_MS = 80;
+
+/** Whether a position reported by the native side counts: under a finger JS knows better, and just after a jump it is out of date. */
+export const echoCounts = ({ dragging, now, staleUntil }: { dragging: boolean; now: number; staleUntil: number }) =>
+  !dragging && now >= staleUntil;
+
+/** Where the focus goes when its piece has left the list: the piece that took its place, or the new last one. */
+export const neighbourIndex = (lastIndex: number, count: number) => Math.max(0, Math.min(lastIndex, count - 1));

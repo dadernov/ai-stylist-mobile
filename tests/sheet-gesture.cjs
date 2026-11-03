@@ -75,4 +75,16 @@ assert.equal(scrollAtTop(12), false);
 assert.equal(isZoomed(1), false);
 assert.equal(isZoomed(undefined), false);
 assert.equal(isZoomed(1.5), true);
+// A flick out of a scrolling list carries the scroll's speed: it closes only after real sheet travel.
+const { HANDOFF_FLICK_TRAVEL, DRAG_SLOP, BODY_DRAG_SLOP } = require('../src/components/studio/sheetGesture.ts');
+assert.equal(HANDOFF_FLICK_TRAVEL, 40);
+assert.equal(releaseCloses({ ...base, dy: 12, vy: 3, canDismiss: true, flickTravel: 40 }), false, 'a fast scroll to the top does not close');
+assert.equal(releaseCloses({ ...base, dy: 41, vy: 3, canDismiss: true, flickTravel: 40 }), true, 'a real flick after the handoff does');
+assert.equal(releaseCloses({ ...base, dy: 200, vy: 0, canDismiss: true, flickTravel: 40 }), true, 'distance closes as ever');
+// The body waits longer than the handle before it takes a touch.
+assert.ok(BODY_DRAG_SLOP > DRAG_SLOP);
+assert.equal(stepTrack(startTrack(100, 100), { x: 100, y: 108, touches: 1, free: true }).claim, true, 'handle: 8 px is a pull');
+assert.equal(stepTrack(startTrack(100, 100), { x: 100, y: 108, touches: 1, free: true, slop: BODY_DRAG_SLOP }).claim, false, 'body: 8 px is a shaky tap');
+assert.equal(stepTrack(startTrack(100, 100), { x: 100, y: 111, touches: 1, free: true, slop: BODY_DRAG_SLOP }).claim, true, 'body: past the slop it is a pull');
+
 console.log('sheet-gesture: ok');

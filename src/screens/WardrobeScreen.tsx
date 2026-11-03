@@ -746,7 +746,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} />
       {items.length ? (
         // The wardrobe as a studio: one piece at a time in the key light (components/studio/WardrobeStudio).
-        <WardrobeStudio items={items} sections={sectionOptions} onOpen={item => setDetailId(item.id)} onAdd={openPhotoSources}
+        <WardrobeStudio items={items} sections={sectionOptions} onOpen={item => setDetailId(item.id)} onAdd={openPhotoSources} paused={Boolean(detailId)}
           addDisabled={isPicking || photoSourceOpen} onTryOn={onTryOn} onStyleWith={onStyleWith}
           onHelp={showHelp ? () => { Keyboard.dismiss(); setHelpOpen(true); } : undefined} />
       ) : (

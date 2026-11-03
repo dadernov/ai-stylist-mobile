@@ -89,4 +89,14 @@ assert.deepEqual(m.fitBox(0.5, 200), { width: 100, height: 200 });
 assert.deepEqual(m.fitBox(2, 200), { width: 200, height: 100 });
 assert.deepEqual(m.fitBox(undefined, 200), { width: 200, height: 200 });
 assert.deepEqual(m.fitBox(0, 200), { width: 200, height: 200 });
+// Native echoes count only off the finger and after the discard window.
+assert.equal(m.echoCounts({ dragging: true, now: 100, staleUntil: 0 }), false);
+assert.equal(m.echoCounts({ dragging: false, now: 100, staleUntil: 150 }), false);
+assert.equal(m.echoCounts({ dragging: false, now: 150, staleUntil: 150 }), true);
+assert.equal(m.nearestPlace(2.5, 0, 2), 2);
+assert.equal(m.nearestPlace(-3.2, 0, 2), 0);
+// The focused piece removed: the next one steps in, the last one's neighbour is the new last, an empty list stays at 0.
+assert.equal(m.neighbourIndex(2, 5), 2);
+assert.equal(m.neighbourIndex(4, 4), 3);
+assert.equal(m.neighbourIndex(0, 0), 0);
 console.log('wardrobe-rail: ok');

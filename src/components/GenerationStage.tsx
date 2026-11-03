@@ -132,7 +132,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
           </Animated.View>
           <Animated.View onLayout={drag.onLayout} {...drag.panHandlers} style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
-            <View style={styles.grab} accessible accessibilityRole="button"
+            <View {...drag.grabHandlers} style={styles.grab} accessible accessibilityRole="button"
               accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')} onAccessibilityTap={close}>
               <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
             </View>

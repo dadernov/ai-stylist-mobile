@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Animated, GestureResponderEvent, GestureResponderHandlers, LayoutChangeEvent, PanResponder, Platform, ScrollViewProps, StyleSheet, TextInput, View, ViewProps, ViewStyle } from 'react-native';
 import { useT } from '../../constants/i18n';
-import { addSample, dragFree, dragOffset, grabOffset, isTap, releaseCloses, releaseVelocity, scrollAtTop, springVelocity, startTrack, stepTrack, VelocitySample } from './sheetGesture';
+import { addSample, BODY_DRAG_SLOP, DRAG_SLOP, dragFree, dragOffset, grabOffset, HANDOFF_FLICK_TRAVEL, isTap, releaseCloses, releaseVelocity, scrollAtTop, springVelocity, startTrack, stepTrack, VelocitySample } from './sheetGesture';
 import { useReducedMotion } from './studio';
 
 type SheetDragOptions = {
@@ -91,6 +91,8 @@ export function useSheetScroller<P extends ScrollerProps>(props: P, horizontal =
   const [top, setTop] = useState(true);
   const locked = useSheetScrollLock();
   useEffect(() => active?.addScroller(), [active]);
+  // A strip in a sheet has no pull to hand over; it only stands still while the sheet follows the finger.
+  if (hub && horizontal) return { ...props, scrollEnabled: !locked && props.scrollEnabled !== false };
   if (!active) return props;
   return {
     ...props,
@@ -130,9 +132,21 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
   const latest = useRef({ onClose, reduced, canDismiss, onDismissBlocked, threshold, velocity, visible, dismissDistance, body });
   latest.current = { onClose, reduced, canDismiss, onDismissBlocked, threshold, velocity, visible, dismissDistance, body };
   const closing = useRef(false);
-  useLayoutEffect(() => { if (visible === true) { closing.current = false; translateY.setValue(0); } }, [visible, translateY]);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // The offset last heard of, for a grab during an animation: the exact one arrives from the native side a frame late.
+  const known = useRef(0);
+  useEffect(() => {
+    const id = translateY.addListener(({ value: at }) => { known.current = at; });
+    return () => translateY.removeListener(id);
+  }, [translateY]);
+  // On the native side from the start, like the rail, so the first drag frame is already drawn there. Only a value of
+  // our own: one handed in is its owner's to animate, and a zero-length run would cut its entrance short.
+  useEffect(() => {
+    if (NATIVE && !value) Animated.timing(own, { toValue: 0, duration: 0, useNativeDriver: true }).start();
+  }, []);
 
-  const { panHandlers, grabHandlers, hub, dismiss } = useMemo(() => {
+  const { panHandlers, grabHandlers, hub, dismiss, reset } = useMemo(() => {
     let scrollers = 0, blocks = 0, locked = false;
     const listeners = new Set<() => void>();
     const setLocked = (next: boolean) => {
@@ -144,7 +158,11 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
     let track = startTrack(0, 0), touchId: string | undefined;
     let atTop: (() => boolean) | null = null, inert = false, grabbed = false, focused = false;
     // The drag in progress.
-    let active = false, grabY = 0, base = 0, raw = 0, samples: VelocitySample[] = [];
+    let active = false, grabY = 0, lastY = 0, base = 0, raw = 0, drags = 0, samples: VelocitySample[] = [];
+    // Whether this touch scrolled a list before the sheet took it over.
+    let scrolled = false, handoff = false;
+    // The dismiss in flight: a callback of an older one has no say.
+    let flights = 0;
 
     const hub: SheetGestureHub = {
       addScroller: () => { scrollers += 1; return () => { scrollers -= 1; }; },
@@ -162,24 +180,40 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
     const dismiss = (pxPerMs = 0) => {
       if (closing.current) return;
       closing.current = true;
+      // Closed by the button or the system under a finger: the finger no longer moves the sheet, or it would stop the flight.
+      active = false;
+      setLocked(false);
+      const flight = ++flights;
       const finish = () => {
         closing.current = false;
         latest.current.onClose();
         // A close path that kept the sheet open (it asked first) must not leave it off the screen.
-        if (latest.current.visible === true) setTimeout(() => { if (latest.current.visible === true && !closing.current) back(); }, 400);
+        if (latest.current.visible === true) setTimeout(() => { if (latest.current.visible === true && !closing.current && !active) back(); }, 400);
       };
       if (latest.current.reduced) { finish(); return; }
       const toValue = latest.current.dismissDistance ?? height.current + 40;
-      Animated.spring(translateY, { ...SETTLE, toValue, velocity: Math.max(0, springVelocity(pxPerMs)) }).start(finish);
+      Animated.spring(translateY, { ...SETTLE, toValue, velocity: Math.max(0, springVelocity(pxPerMs)) }).start(({ finished }) => {
+        if (flight !== flights) return;
+        if (finished) { finish(); return; }
+        // Stopped on the way: onClose hasn't run, so the sheet returns rather than staying half-open. Gone or hidden, it has nowhere to return to.
+        closing.current = false;
+        if (mounted.current && latest.current.visible !== false && !active) back();
+      });
     };
     const begin = (y: number) => {
       active = true;
-      grabY = y;
-      raw = 0;
+      handoff = scrolled;
+      grabY = lastY = y;
       samples = [];
-      // Caught while still settling: the sheet carries on from where it is.
-      base = 0;
-      translateY.stopAnimation(at => { base = at; });
+      // Caught while still settling: the sheet carries on from where it is, and the native side confirms the exact place.
+      base = raw = known.current;
+      const drag = ++drags;
+      translateY.stopAnimation(at => {
+        if (!active || drag !== drags) return;
+        base = at;
+        raw = grabOffset(lastY, grabY, base);
+        translateY.setValue(dragOffset(raw, latest.current.canDismiss));
+      });
       setLocked(true);
     };
     const finishDrag = (released: boolean) => {
@@ -189,7 +223,7 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       if (!released) { back(); return; }
       const { canDismiss: allowed, threshold: share, velocity: flick, onDismissBlocked: blocked } = latest.current;
       const vy = releaseVelocity(samples, Date.now());
-      const gesture = { dy: raw, vy, height: height.current, threshold: share, velocity: flick };
+      const gesture = { dy: raw, vy, height: height.current, threshold: share, velocity: flick, flickTravel: handoff ? HANDOFF_FLICK_TRAVEL : 0 };
       if (releaseCloses({ ...gesture, canDismiss: allowed })) { dismiss(vy); return; }
       back(vy);
       if (!allowed && releaseCloses({ ...gesture, canDismiss: true })) blocked?.();
@@ -199,7 +233,7 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       if (touches.length > 1) { track = { ...track, multi: true }; return false; }
       track = startTrack(pageX, pageY);
       touchId = identifier;
-      atTop = null; inert = false; grabbed = false;
+      atTop = null; inert = false; grabbed = false; scrolled = false;
       const input = TextInput.State.currentlyFocusedInput?.();
       focused = Boolean(input) && input === (event.target as unknown);
       return false;
@@ -209,18 +243,21 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       // A second finger: a pinch, or a stray touch during a drag, which goes on following the first.
       if (identifier !== touchId) { if (touches.length > 1) track = { ...track, multi: true }; return active; }
       if (active) {
+        lastY = pageY;
         raw = grabOffset(pageY, grabY, base);
         samples = addSample(samples, { t: Date.now(), y: pageY });
         translateY.setValue(dragOffset(raw, latest.current.canDismiss));
         return true;
       }
       if (closing.current) return false;
+      const scrollerAtTop = atTop ? atTop() : true;
+      if (!scrollerAtTop) scrolled = true;
       const free = dragFree({
         blocked: blocks > 0, inert: inert || focused,
         body: latest.current.body || scrollers > 0, grabbed,
-        scrollerAtTop: atTop ? atTop() : true
+        scrollerAtTop
       });
-      const step = stepTrack(track, { x: pageX, y: pageY, touches: touches.length, free });
+      const step = stepTrack(track, { x: pageX, y: pageY, touches: touches.length, free, slop: grabbed ? DRAG_SLOP : BODY_DRAG_SLOP });
       track = step.track;
       if (step.claim) begin(pageY);
       return step.claim;
@@ -233,8 +270,18 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       onPanResponderRelease: () => finishDrag(true),
       onPanResponderTerminate: () => finishDrag(false)
     });
+    /** The sheet was shown or hidden: whatever drag was on is over, and that finger doesn't start another. */
+    const reset = (shown: boolean) => {
+      active = false;
+      grabbed = false;
+      scrolled = false;
+      touchId = undefined;
+      samples = [];
+      setLocked(false);
+      if (shown) { flights += 1; closing.current = false; translateY.setValue(0); }
+    };
     return {
-      hub, dismiss,
+      hub, dismiss, reset,
       grabHandlers: { onTouchStart: () => { grabbed = true; } },
       panHandlers: {
         ...responder.panHandlers,
@@ -245,6 +292,8 @@ export function useSheetDrag({ onClose, threshold = 0.25, velocity = 0.8, visibl
       }
     };
   }, [translateY]);
+
+  useLayoutEffect(() => { reset(visible === true); }, [visible, reset]);
 
   const onLayout = (event: LayoutChangeEvent) => {
     const next = event.nativeEvent.layout.height;

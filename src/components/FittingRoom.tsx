@@ -2,6 +2,7 @@ import { usePhotoPicker } from './usePhotoPicker';
 import { OverlayOutlet } from './OverlayHost';
 import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { SheetStrip } from './ui/FormScrollView';
 import { ArrowUpRight, Bookmark, BookmarkCheck, Check, Download, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
@@ -124,11 +125,11 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           {search.length > 0 && <AppPressable accessibilityLabel={t('Очистить поиск')} onPress={() => setSearch('')} style={{ padding: 8 }}><X size={16} color={colors.muted} /></AppPressable>}
         </View>
       </Glass>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+      <SheetStrip showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
         {['Все', ...Array.from(new Set(items.map(item => item.section)))].map(value => (
           <Chip key={value} label={t(value)} active={section === value} onPress={() => setSection(value)} />
         ))}
-      </ScrollView>
+      </SheetStrip>
       {selection.length > 0 && (
         <View style={styles.selected}>
           {selection.map(item => (
@@ -318,7 +319,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
           <Text style={styles.recentAll}>{t('Все')}</Text>
         </AppPressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+      <SheetStrip showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
         {recent.map(job => {
           const on = job.id === current?.id;
           return <AppPressable key={job.id} accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
@@ -332,7 +333,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
               </Glass>}
           </AppPressable>;
         })}
-      </ScrollView>
+      </SheetStrip>
     </> : null}
     <Modal visible={viewer && Boolean(result)} presentationStyle="fullScreen" animationType="slide" onRequestClose={() => setViewer(false)}>
       <SafeAreaProvider style={{ flex: 1, backgroundColor: c.background }}>
