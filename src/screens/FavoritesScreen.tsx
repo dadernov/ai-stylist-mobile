@@ -18,6 +18,7 @@ import { GarmentImage } from '../components/studio/Garment';
 import { layoutLook } from '../components/studio/lookLayout';
 import { useAspects } from '../components/studio/useAspects';
 import { StudioSheet } from '../components/studio/StudioSheet';
+import { SheetGestureBlock } from '../components/studio/SheetHandle';
 import { font, INK_FAINT, studioTint } from '../components/studio/studio';
 
 type FavoritesScreenProps = {
@@ -235,6 +236,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
           </>
         ) : null}
         {/* The try-on full screen opens from inside the sheet: on iOS a window opened beside an open sheet never shows. */}
+        <SheetGestureBlock active={Boolean(previewUri)} />
         <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
           <View style={styles.previewBackdrop}>
             {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}

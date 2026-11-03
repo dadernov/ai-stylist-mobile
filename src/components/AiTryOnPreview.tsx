@@ -26,6 +26,7 @@ import { TryOnHistoryItem } from '../types/looks';
 import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { ZoomableImage } from './ui/ZoomableImage';
+import { useSheetGestureBlock } from './studio/SheetHandle';
 
 type AiTryOnPreviewProps = {
   modelUri?: string;
@@ -114,6 +115,7 @@ export function AiTryOnPreview({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(warningMessage || null);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
+  useSheetGestureBlock(isPreviewOpen);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [resultImageLoading, setResultImageLoading] = useState(false);
   const [resultImageError, setResultImageError] = useState<string | null>(null);

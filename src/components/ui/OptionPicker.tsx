@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { FlatList, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SheetFlatList } from './FormScrollView';
 import { Check, ChevronDown, Search } from 'lucide-react-native';
 import { AppPressable } from '../AppPressable';
 import { useTheme } from '../../constants/ThemeContext';
@@ -30,7 +31,7 @@ export function OptionPicker({ options, value, onChange, label = 'Выбрать
         <TextInput accessibilityLabel={t('Поиск вариантов')} placeholder={t('Поиск')} placeholderTextColor={c.muted} value={search} onChangeText={setSearch}
           returnKeyType="done" onSubmitEditing={Keyboard.dismiss} style={[font('regular'), styles.searchInput, { color: c.text }]} />
       </View>}
-      <FlatList data={options.filter(option => display(option).toLocaleLowerCase().includes(search.toLocaleLowerCase()))} keyExtractor={item => item}
+      <SheetFlatList data={options.filter(option => display(option).toLocaleLowerCase().includes(search.toLocaleLowerCase()))} keyExtractor={item => item}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onScrollBeginDrag={Keyboard.dismiss} automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false} style={styles.list}
         ListEmptyComponent={<Text style={[font('regular'), styles.empty, { color: c.muted }]}>{t('Ничего не найдено')}</Text>}

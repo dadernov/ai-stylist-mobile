@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, LayoutChangeEvent, Modal, PanResponder, NativeScrollEvent, NativeSyntheticEvent, Platform, ScrollView,
+import { forwardRef, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticEvent, ScrollView, ScrollViewProps,
   StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -14,6 +14,8 @@ import { GarmentOptions } from '../domain/garmentOptions';
 import { lookComments } from '../domain/lookComments';
 import { selectionHaptic, successHaptic } from '../services/haptics';
 import { ZoomableImage } from './ui/ZoomableImage';
+import { FormScrollView } from './ui/FormScrollView';
+import { SheetGestureContext, useSheetDrag, useSheetScrollLock } from './studio/SheetHandle';
 import { Pill } from './studio/Glass';
 import { backdropDim, font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
@@ -103,16 +105,10 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
     setPage(scrollTo.page);
   }, [scrollTo?.at]);
 
-  // A second close while the window slides away (double tap, tap + drag) never calls onClose twice.
-  const closing = useRef(false);
-  const close = () => {
-    if (closing.current) return;
-    closing.current = true;
-    Animated.timing(slide, { toValue: height, duration: reduced ? 0 : 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(({ finished }) => {
-      if (finished) onClose();
-      closing.current = false;
-    });
-  };
+  // The whole window drags, like any sheet: pulled down far or fast enough it folds (busy) or closes, the same as the button;
+  // onClose decides which. A second close while it slides away (double tap, tap + drag) never calls onClose twice.
+  const drag = useSheetDrag({ onClose, value: slide, dismissDistance: height, threshold: Math.min(0.5, 120 / height), velocity: 0.9 });
+  const close = () => drag.dismiss();
   const measure = (event: LayoutChangeEvent) => {
     const { width, height: tall } = event.nativeEvent.layout;
     if (width !== size.width || tall !== size.height) setSize({ width, height: tall });
@@ -123,18 +119,6 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
     if (next !== page && next >= 0 && next < pages.length) setPage(next);
   };
   const busy = Boolean(current?.busy);
-  // The grab handle works: pulled down far or fast enough the window folds (busy) or closes, the same as the button.
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  const drag = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-    onPanResponderMove: (_, g) => slide.setValue(Math.max(0, g.dy)),
-    onPanResponderRelease: (_, g) => {
-      if (g.dy > 120 || g.vy > 0.9) closeRef.current();
-      else Animated.spring(slide, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }).start();
-    },
-    onPanResponderTerminate: () => Animated.spring(slide, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }).start(),
-  })).current;
 
   return (
     // The window animates itself: the modal comes and goes at once, so the sheet under it can
@@ -147,13 +131,14 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
             <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
           </Animated.View>
-          <Animated.View style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
-            <View {...drag.panHandlers} style={styles.grab} accessible accessibilityRole="button"
+          <Animated.View onLayout={drag.onLayout} {...drag.panHandlers} style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
+            <View style={styles.grab} accessible accessibilityRole="button"
               accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')} onAccessibilityTap={close}>
               <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
             </View>
+            <SheetGestureContext.Provider value={drag.hub}>
             <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
-              <View style={styles.header} {...drag.panHandlers}>
+              <View style={styles.header}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.title, { color: ink }]}>{t('Примерка')}</Text>
                   <Text style={[styles.subtitle, { color: inkSoft(isDark) }]} numberOfLines={1}>{setup ? setup.title : current?.title}</Text>
@@ -171,29 +156,30 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
 
               {setup ? <>
                 {/* First how each garment is worn; the try-on starts from here and plays in this same window. */}
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.setup}>
+                <FormScrollView style={{ flex: 1 }} contentContainerStyle={styles.setup} showsVerticalScrollIndicator>
                   <Text style={[styles.setupTitle, { color: ink }]}>{t('Как надеть')}</Text>
                   <TryOnOptions items={setup.items} options={setup.options} onChange={setup.onOptions} disabled={setup.starting} />
                   {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
-                </ScrollView>
+                </FormScrollView>
                 <View style={styles.actions}>
                   <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} onPress={setup.onGenerate} />
                 </View>
               </> : (
                 <View style={{ flex: 1 }} onLayout={measure}>
                   {size.width ? (
-                    <ScrollView ref={pager} horizontal pagingEnabled showsHorizontalScrollIndicator={false} bounces={pages.length > 1}
+                    <Pager ref={pager} pagingEnabled showsHorizontalScrollIndicator={false} bounces={pages.length > 1}
                       onScroll={onScroll} scrollEventThrottle={32} contentOffset={{ x: page * size.width, y: 0 }}>
                       {pages.map((item, index) => (
                         <View key={item.key} style={{ width: size.width, height: size.height }}>
                           <PageView page={item} width={size.width} active={index === page} onDone={close} />
                         </View>
                       ))}
-                    </ScrollView>
+                    </Pager>
                   ) : null}
                 </View>
               )}
             </SafeAreaView>
+            </SheetGestureContext.Provider>
           </Animated.View>
           {banner}
         </View>
@@ -201,6 +187,12 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
     </Modal>
   );
 }
+
+/** The pages side by side; it stands still while the window follows a downward drag. */
+const Pager = forwardRef<ScrollView, ScrollViewProps>(function Pager(props, ref) {
+  const locked = useSheetScrollLock();
+  return <ScrollView ref={ref} horizontal scrollEnabled={!locked} {...props} />;
+});
 
 /** One try-on: the look developing out of a soft blur, then the look, its status and actions. */
 function PageView({ page, width, active, onDone }: { page: StagePage; width: number; active: boolean; onDone: () => void }) {
