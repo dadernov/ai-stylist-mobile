@@ -71,11 +71,59 @@ export function shortestDelta(from: number, to: number, count: number) {
   return forward > count / 2 ? forward - count : forward;
 }
 
-/** The strip's scroll offset that brings a thumbnail to the middle, within what the strip can scroll. */
-export function stripOffset(index: number, count: number, viewWidth: number, pitch = THUMB_PITCH, padding = 16) {
-  const content = count * pitch + padding * 2;
-  const wanted = padding + index * pitch + 30 - viewWidth / 2;
-  return Math.max(0, Math.min(wanted, content - viewWidth));
+/**
+ * The looping strip. Its list is one long run of copies of the section, so a flick never meets an end; only the mounted
+ * cells cost anything. A "copy" is a place on that run, and it shows the piece `mod(copy, count)`.
+ * The run is long enough that no flick reaches an end: the offset is put back to the middle only at rest.
+ */
+const STRIP_RUN = 20000;
+const STRIP_PADDING = 16;
+/** A strip that fits on the screen stands still: nothing to go round. */
+export const stripLoops = (count: number, viewWidth: number, pitch = THUMB_PITCH) => count > 0 && count * pitch + STRIP_PADDING * 2 > viewWidth;
+export const stripRun = (count: number) => count > 0 ? Math.floor(STRIP_RUN / count) * count : 0;
+export const stripMiddle = (index: number, count: number) => Math.floor(stripRun(count) / 2 / Math.max(1, count)) * count + index;
+/** The copy of a piece closest to where the strip is. */
+export function nearestCopy(from: number, index: number, count: number) {
+  const forward = mod(index - from, count);
+  return from + (forward > count / 2 ? forward - count : forward);
+}
+/** The scroll offset that centres a copy, and back: cells are `pitch` wide with the thumbnail in their middle. */
+export const copyOffset = (copy: number, viewWidth: number, pitch = THUMB_PITCH) => copy * pitch + pitch / 2 - viewWidth / 2;
+export const offsetToCopy = (offset: number, viewWidth: number, pitch = THUMB_PITCH) => (offset + viewWidth / 2 - pitch / 2) / pitch;
+/** Where a strip at rest should be: the same piece near the middle if it has wandered far; otherwise where it is. */
+export function recentred(copy: number, count: number) {
+  const middle = stripMiddle(mod(copy, count), count);
+  return Math.abs(copy - middle) > stripRun(count) / 4 ? middle : copy;
+}
+
+/** Faster than this (pieces a second) the strip is spinning, and the stage drops whatever costs image work. */
+export const SPIN_SPEED = 10;
+/** The fastest the stage slides; a strip going faster has the stage skip pieces instead of decoding each. */
+export const STAGE_MAX_SPEED = 9;
+export const STAGE_SKIP_GAP_MS = 120;
+const STAGE_SKIP_AT = 1.5;
+export const STRIP_TICK_GAP_MS = 70;
+
+/** The whole number of places between the rail and the strip such that each shows the same piece, as close as can be to where the rail is. */
+export function stripShift(stripPlace: number, railNow: number, center: number, index: number, count: number) {
+  const base = center - index;
+  return base + count * Math.round((railNow - stripPlace - base) / count);
+}
+/** One step of the stage after the strip: on the strip itself up to its top speed, behind it above that. */
+export function stageFollow(shown: number, target: number, dtMs: number, maxSpeed = STAGE_MAX_SPEED) {
+  const reach = maxSpeed * Math.min(dtMs, 50) / 1000;
+  const gap = target - shown;
+  return Math.abs(gap) <= reach ? target : shown + Math.sign(gap) * reach;
+}
+/** Pieces the stage jumps over now, not often: its place stays, what stands there moves on to what the strip shows. */
+export function stageSkip(shown: number, target: number, sinceLastMs: number) {
+  const gap = target - shown;
+  return Math.abs(gap) < STAGE_SKIP_AT || sinceLastMs < STAGE_SKIP_GAP_MS ? 0 : Math.trunc(gap);
+}
+/** A tick for a new piece at the middle of the strip: at most one per gap, the ones in between are simply not played. */
+export function stripTick(place: number, lastPlace: number, now: number, lastAt: number, gapMs = STRIP_TICK_GAP_MS) {
+  const near = Math.round(place);
+  return near !== lastPlace && now - lastAt >= gapMs ? near : null;
 }
 
 /** The largest box of this width ÷ height within a square, so a cut-out stands on the floor at its full size. */
@@ -131,7 +179,10 @@ export function windowIndices(index: number, count: number) {
 const SIDE_ANGLE = 40;
 const SIDE_SCALE = 0.72;
 const SIDE_RISE = 10;
-const SIDE_OPACITY = 0.55;
+const SIDE_OPACITY = 0.62;
+/** A piece holds its true colour around the centre: nearly whole until it is well on its way out. */
+const NEAR_CENTRE = 0.4;
+const NEAR_OPACITY = 0.95;
 /** Two lights half on each cover only 3/4 of the stage: this high, the one going and the one coming still make nearly the whole. */
 const MIDWAY_LIGHT = 0.8;
 
@@ -148,7 +199,7 @@ export function depthKeyframes(at: number, pitch: number, reduced: boolean) {
   if (reduced) return { translateX, focus, light, opacity: { inputRange: near, outputRange: [0.3, 1, 0.3] } };
   return {
     translateX, focus, light,
-    opacity: { inputRange: [at - 2, ...near, at + 2], outputRange: [0, SIDE_OPACITY, 1, SIDE_OPACITY, 0] },
+    opacity: { inputRange: [at - 2, at - 1, at - NEAR_CENTRE, at, at + NEAR_CENTRE, at + 1, at + 2], outputRange: [0, SIDE_OPACITY, NEAR_OPACITY, 1, NEAR_OPACITY, SIDE_OPACITY, 0] },
     scale: { inputRange: near, outputRange: [SIDE_SCALE, 1, SIDE_SCALE] },
     rise: { inputRange: near, outputRange: [-SIDE_RISE, 0, -SIDE_RISE] },
     rotateY: { inputRange: near, outputRange: [`${-SIDE_ANGLE}deg`, '0deg', `${SIDE_ANGLE}deg`] }

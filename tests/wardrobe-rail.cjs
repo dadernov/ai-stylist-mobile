@@ -65,11 +65,72 @@ assert.equal(m.shortestDelta(9, 0, 10), 1);
 assert.equal(m.shortestDelta(0, 3, 10), 3);
 assert.equal(m.shortestDelta(1, 0, 2), -1);
 
-// The strip stays within its content and centres what it can.
-assert.equal(m.stripOffset(0, 20, 390), 0);
-assert.equal(m.stripOffset(10, 20, 390), 16 + 700 + 30 - 195);
-assert.equal(m.stripOffset(19, 20, 390), 20 * 70 + 32 - 390);
-assert.equal(m.stripOffset(1, 2, 390), 0, 'a short strip does not scroll');
+// The strip: loops only when it does not fit; each copy shows its piece; going round has no end to meet.
+assert.equal(m.stripLoops(5, 390), false, 'five fit on a phone');
+assert.equal(m.stripLoops(6, 390), true);
+assert.equal(m.stripLoops(0, 390), false);
+assert.equal(m.stripRun(24) % 24, 0);
+assert.ok(m.stripRun(7) > 19000);
+for (const count of [6, 7, 24, 500]) for (const index of [0, 3, count - 1]) {
+  const mid = m.stripMiddle(index, count);
+  assert.equal(m.mod(mid, count), index);
+  assert.ok(Math.abs(mid - m.stripRun(count) / 2) <= count, 'starts in the middle of the run');
+}
+// Offset and copy are inverses; the middle of the view is the middle of the copy, as iOS snaps to with snapToAlignment center.
+assert.equal(m.offsetToCopy(m.copyOffset(123, 390), 390), 123);
+assert.equal(m.copyOffset(10, 390) + 390 / 2, 10 * 70 + 35);
+{
+  const interval = 70, frame = 390;
+  const alignment = frame * 0.5 + interval * 0.5; // RCTEnhancedScrollView.mm
+  const snapped = Math.round((m.copyOffset(50, frame) + 12 + alignment) / interval) * interval - alignment;
+  assert.equal(m.offsetToCopy(snapped, frame) % 1, 0, 'a native snap point is a whole copy');
+}
+// The nearest copy goes the short way, across the join too.
+assert.equal(m.nearestCopy(240, 1, 24), 241);
+assert.equal(m.nearestCopy(240, 23, 24), 239, 'back across the join');
+assert.equal(m.nearestCopy(263, 0, 24), 264, 'forward across the join');
+assert.equal(m.nearestCopy(240, 0, 24), 240);
+// At rest: left alone near the middle, moved silently to the same piece when far.
+{
+  const count = 24, mid = m.stripMiddle(5, count);
+  assert.equal(m.recentred(mid + count, count), mid + count);
+  const far = mid + count * Math.ceil(m.stripRun(count) / 3 / count);
+  const back = m.recentred(far, count);
+  assert.equal(back, mid);
+  assert.equal(m.mod(back, count), m.mod(far, count), 'the same piece, so the jump cannot be seen');
+}
+// The shift between strip and rail keeps the piece the same on both, and stays by the rail.
+for (const [strip, now, center, index, count] of [[245, 7, 7, 5, 24], [240.3, -3.2, -3, 11, 24], [1000, 500, 500, 2, 7]]) {
+  const shift = m.stripShift(strip, now, center, index, count);
+  assert.ok(Number.isInteger(shift));
+  assert.ok(Math.abs(strip + shift - now) <= count / 2);
+  assert.equal(m.mod(index + Math.round(strip + shift) - center, count), m.mod(Math.round(strip), count));
+}
+// The stage is on the strip up to its speed and behind it above; a skip closes the gap, not too often.
+assert.equal(m.stageFollow(5, 5.1, 16), 5.1);
+assert.ok(Math.abs(m.stageFollow(5, 9, 16) - (5 + m.STAGE_MAX_SPEED * 0.016)) < 1e-9);
+assert.ok(m.stageFollow(5, 1, 16) < 5);
+assert.ok(m.stageFollow(5, 9, 5000) < 6, 'a stalled frame is no leap');
+assert.equal(m.stageSkip(5, 5.5, 1000), 0);
+assert.equal(m.stageSkip(5, 9.4, 50), 0, 'throttled');
+assert.equal(m.stageSkip(5, 9.4, 200), 4);
+assert.equal(m.stageSkip(5, 1, 200), -4);
+{ // A long spin: renders stay bounded, and the stage ends beside what the strip shows.
+  let strip = 240, shown = 0, shift = -240, lastSkip = -1e9, commits = 0, t = 0, speed = 60;
+  while (speed > 0.05) {
+    t += 16; strip += speed * 0.016; speed *= 0.985;
+    const target = strip + shift;
+    shown = m.stageFollow(shown, target, 16);
+    const k = m.stageSkip(shown, target, t - lastSkip);
+    if (k) { shift -= k; lastSkip = t; commits++; }
+  }
+  assert.ok(commits / (t / 1000) <= 1000 / m.STAGE_SKIP_GAP_MS + 1);
+  assert.ok(Math.abs(strip + shift - shown) < 2);
+}
+// Ticks: for a new piece only, throttled.
+assert.equal(m.stripTick(5.2, 5, 1000, 0), null);
+assert.equal(m.stripTick(5.6, 5, 1000, 0), 6);
+assert.equal(m.stripTick(5.6, 5, 1000, 990), null);
 
 // A box fits the side by its longer edge; an unmeasured picture is a square.
 assert.deepEqual(m.fitBox(0.5, 200), { width: 100, height: 200 });
@@ -97,8 +158,11 @@ assert.equal(parseFloat(depth.rotateY.outputRange[0]), -angle);
 assert.equal(depth.scale.outputRange[1], 1);
 assert.equal(depth.scale.outputRange[0], depth.scale.outputRange[2]);
 assert.ok(depth.scale.outputRange[0] < 1);
-assert.deepEqual([depth.opacity.outputRange[0], depth.opacity.outputRange[4]], [0, 0], 'two places off is gone');
-assert.equal(depth.opacity.outputRange[2], 1);
+assert.deepEqual([depth.opacity.outputRange[0], depth.opacity.outputRange.at(-1)], [0, 0], 'two places off is gone');
+assert.equal(depth.opacity.outputRange[3], 1);
+assert.deepEqual(depth.opacity.outputRange, [...depth.opacity.outputRange].reverse(), 'symmetric');
+assert.ok(depth.opacity.outputRange[2] >= 0.9, 'a piece near the centre keeps its true colour');
+assert.ok(depth.opacity.inputRange.every((v, n, all) => n === 0 || v > all[n - 1]));
 assert.deepEqual(depth.translateX, { inputRange: [4, 6], outputRange: [200, -200] }, 'the piece keeps to the finger: one pitch per place');
 assert.deepEqual(m.depthKeyframes(9, 200, false).scale.outputRange, depth.scale.outputRange);
 // Reduced motion only slides and fades.
