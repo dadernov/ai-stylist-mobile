@@ -11,7 +11,8 @@ import { selectionHaptic } from '../../services/haptics';
 import { AppPressable } from '../AppPressable';
 import { Glass, Pill } from './Glass';
 import { FloorShadow, GarmentImage, PRINT_RADIUS } from './Garment';
-import { centreTick, depthKeyframes, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestPlace, neighbourIndex, printRect, railBounds, railWindow, rubberBand, shortestDelta, showcaseGeometry, showsReflection, snapTarget, stripOffset, THUMB_PITCH, WINDOW_RADIUS } from './railMotion';
+import { centreTick, depthKeyframes, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestPlace, neighbourIndex, printRect, railBounds, railWindow, rubberBand, shortestDelta, showcaseGeometry, showsReflection, snapTarget, stripOffset, THUMB_PITCH, WINDOW_RADIUS, windowIndices } from './railMotion';
+import { prepareReflectionCopy, useReflectionCopy } from './reflectionCopy';
 import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from './studio';
 import { StudioSheet } from './StudioSheet';
 import { useAspects } from './useAspects';
@@ -22,6 +23,10 @@ const PERSPECTIVE = 900;
 const LIFT = 0.03;
 const FLOAT_PX = 2;
 const TICK_GAP_MS = 40;
+const REFLECTION_FADE_MS = 220;
+/** A cut-out's shape comes in a moment; one that can't be measured stands in a square box after this long. */
+const SHAPE_WAIT_MS = 800;
+const PIECE_FADE_MS = 140;
 
 type Geometry = ReturnType<typeof showcaseGeometry>;
 
@@ -29,7 +34,8 @@ type Geometry = ReturnType<typeof showcaseGeometry>;
  * The piece mirrored on the floor. A real alpha mask over the backdrop rather than a gradient in the stage's
  * colour: the backdrop is a radial light, no single colour would match it. The same rounded corners as the print.
  */
-const Reflection = memo(function Reflection({ id, uri, print, box, height, opacity }: { id: string; uri: string; print: boolean; box: { width: number; height: number }; height: number; opacity: number }) {
+const Reflection = memo(function Reflection({ id, uri, print, width, boxHeight, height, opacity }: { id: string; uri: string; print: boolean; width: number; boxHeight: number; height: number; opacity: number }) {
+  const box = { width, height: boxHeight };
   const picture = print ? printRect(box) : { x: 0, y: 0, ...box };
   const foot = picture.y + picture.height;
   return (
@@ -52,9 +58,43 @@ const Reflection = memo(function Reflection({ id, uri, print, box, height, opaci
   );
 });
 
+/**
+ * What stands under a piece: its reflection, from a small copy of the picture, fading in once that exists. Nothing
+ * before that; the contact shadow if there can be no copy. Numbers and stable values only, so the depth changing leaves it alone.
+ */
+const SlotFloor = memo(function SlotFloor({ id, uri, print, side, width, boxHeight, reflection, opacity, down, reduced }: { id: string; uri?: string; print: boolean; side: number; width: number; boxHeight: number; reflection: number; opacity: number; down: Animated.AnimatedMultiplication<number> | null; reduced: boolean }) {
+  const copy = useReflectionCopy(uri);
+  const fade = useRef(new Animated.Value(copy ? 1 : 0)).current;
+  const faded = useRef(Boolean(copy));
+  useEffect(() => {
+    if (!copy || faded.current) return;
+    faded.current = true;
+    if (reduced) fade.setValue(1);
+    else Animated.timing(fade, { toValue: 1, duration: REFLECTION_FADE_MS, useNativeDriver: NATIVE }).start();
+  }, [copy, reduced]);
+  if (copy === undefined) return null;
+  if (copy === null) return <View pointerEvents="none" style={{ position: 'absolute', top: side - 17, left: 0, right: 0, alignItems: 'center' }}><FloorShadow width={width * 0.8} opacity={0.22} /></View>;
+  return (
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', top: side, left: (side - width) / 2, width, height: reflection, opacity: fade, transform: down ? [{ translateY: down }] : [] }}>
+      <Reflection id={id} uri={copy} print={print} width={width} boxHeight={boxHeight} height={reflection} opacity={opacity} />
+    </Animated.View>
+  );
+});
+
+/** The piece itself, left alone by the depth too. */
+const SlotPiece = memo(function SlotPiece({ at, item, width, height, left, top, up, onPress }: { at: number; item?: WardrobeItem; width: number; height: number; left: number; top: number; up: Animated.AnimatedMultiplication<number> | null; onPress: (at: number) => void }) {
+  return (
+    <Animated.View pointerEvents="box-none" style={{ position: 'absolute', left, top, width, height, transform: up ? [{ translateY: up }] : [] }}>
+      <AppPressable accessible={false} onPress={() => onPress(at)} style={{ width, height }}>
+        <GarmentImage item={item} print style={{ width, height }} />
+      </AppPressable>
+    </Animated.View>
+  );
+});
+
 /** The light behind one piece, in the middle of the stage however the piece moves: it is at full only while that piece is. */
 const Glow = memo(function Glow({ at, color, position, geometry, opacity }: { at: number; position: Animated.Value; color: string; geometry: Geometry; opacity: number }) {
-  const shown = useMemo(() => position.interpolate({ ...depthKeyframes(at, 0, false).focus, extrapolate: 'clamp' }), [position, at]);
+  const shown = useMemo(() => position.interpolate({ ...depthKeyframes(at, 0, false).light, extrapolate: 'clamp' }), [position, at]);
   const id = `showcase-glow-${at}`;
   // Centred on the piece and dying out at the stage's top: the stage clips, and a cut light would show as a line.
   const height = 2 * geometry.top + geometry.side;
@@ -98,7 +138,21 @@ const ShowcaseSlot = memo(function ShowcaseSlot({ at, item, geometry, position, 
   const aspects = useAspects(useMemo(() => item ? [item] : undefined, [item]));
   const uri = item?.imageUri;
   const print = Boolean(uri && !isCutout(uri));
-  const box = print ? { width: side, height: side } : fitBox(item ? aspects[item.id] : undefined, side);
+  const aspect = item ? aspects[item.id] : undefined;
+  const box = print ? { width: side, height: side } : fitBox(aspect, side);
+  // A cut-out of a shape not known yet waits out of sight rather than standing square and then jumping.
+  const shapePending = Boolean(uri && !print && aspect === undefined);
+  const shown = useRef(new Animated.Value(shapePending ? 0 : 1)).current;
+  useEffect(() => {
+    const appear = () => {
+      if (reduced) shown.setValue(1);
+      else Animated.timing(shown, { toValue: 1, duration: PIECE_FADE_MS, useNativeDriver: NATIVE }).start();
+    };
+    if (!shapePending) { appear(); return; }
+    shown.setValue(0);
+    const timer = setTimeout(appear, SHAPE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [shapePending, uri, reduced]);
   // A print's picture stops short of its box: it stands on the floor by the picture.
   const sink = print ? box.height - (printRect(box).y + printRect(box).height) : 0;
   const height = side + reflection;
@@ -128,15 +182,11 @@ const ShowcaseSlot = memo(function ShowcaseSlot({ at, item, geometry, position, 
   return (
     <Animated.View pointerEvents="box-none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={{ position: 'absolute', top, left: (stageWidth - side) / 2, width: side, height, zIndex: depth, opacity: motion.opacity, transform }}>
-      {reflected && reflection > 0 ? (uri
-        ? <Animated.View pointerEvents="none" style={{ position: 'absolute', top: side, left: (side - box.width) / 2, width: box.width, height: reflection, transform: deep ? [{ translateY: deep.down }] : [] }}>
-            <Reflection id={`showcase-${at}`} uri={uri} print={print} box={box} height={reflection} opacity={reflectionOpacity} />
-          </Animated.View>
-        : <View pointerEvents="none" style={{ position: 'absolute', top: side - 17, left: 0, right: 0, alignItems: 'center' }}><FloorShadow width={box.width * 0.8} opacity={0.22} /></View>) : null}
-      <Animated.View pointerEvents="box-none" style={{ position: 'absolute', left: (side - box.width) / 2, top: side - box.height + sink, width: box.width, height: box.height, transform: deep ? [{ translateY: deep.up }] : [] }}>
-        <AppPressable accessible={false} onPress={() => onPress(at)} style={{ width: box.width, height: box.height }}>
-          <GarmentImage item={item} print style={{ width: box.width, height: box.height }} />
-        </AppPressable>
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { opacity: shown }]}>
+        {reflected && reflection > 0
+          ? <SlotFloor key={uri ?? ''} id={`showcase-${at}`} uri={uri} print={print} side={side} width={box.width} boxHeight={box.height} reflection={reflection} opacity={reflectionOpacity} down={deep ? deep.down : null} reduced={reduced} />
+          : null}
+        <SlotPiece at={at} item={item} width={box.width} height={box.height} left={(side - box.width) / 2} top={side - box.height + sink} up={deep ? deep.up : null} onPress={onPress} />
       </Animated.View>
     </Animated.View>
   );
@@ -389,6 +439,14 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     for (const step of [-WINDOW_RADIUS - 1, WINDOW_RADIUS + 1]) {
       const uri = list[mod(index + step, count)]?.imageUri;
       if (uri && /^https?:/i.test(uri)) Image.prefetch(uri).catch(() => {});
+    }
+  }, [index, count, list]);
+
+  // Reflections' small copies, ahead of the pieces sliding in: the focused piece's is taken first.
+  useEffect(() => {
+    for (const at of windowIndices(index, count)) {
+      const uri = list[at]?.imageUri;
+      if (uri) prepareReflectionCopy(uri);
     }
   }, [index, count, list]);
 

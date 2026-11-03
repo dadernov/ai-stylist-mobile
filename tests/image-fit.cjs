@@ -5,7 +5,7 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: false }
 }).outputText, filename);
-const { aspectOf, FALLBACK_ASPECT, fitRect, frameAspect, heldHeight } = require('../src/components/studio/imageFit.ts');
+const { aspectOf, FALLBACK_ASPECT, fitRect, frameAspect, heldAspect, heldHeight, MEASURE_TIMEOUT_MS, measureAspect, pictureFit, rememberAspect } = require('../src/components/studio/imageFit.ts');
 
 assert.deepEqual(fitRect(3 / 4, 300, 600), { x: 0, y: 100, width: 300, height: 400 }, 'a narrow box: full width, centred vertically');
 assert.deepEqual(fitRect(3 / 4, 600, 400), { x: 150, y: 0, width: 300, height: 400 }, 'a wide box: full height, centred sideways');
@@ -36,15 +36,106 @@ assert.equal(frameAspect(true, undefined, 0.75, true), 0.75, 'its result being m
 assert.equal(frameAspect(true, undefined, 0.75, false), undefined, 'a reopened look waits for its own shape');
 assert.equal(frameAspect(true, null, 0.75, false), 0.75, 'a result that cannot be measured falls back to the source');
 
+// A try-on is cropped by nothing unless its own shape is known.
+assert.equal(pictureFit(0.75), 'cover');
+assert.equal(pictureFit(null), 'contain', 'measuring failed');
+assert.equal(pictureFit(undefined), 'contain', 'still measuring, in a frame held from another picture');
+
+// While the next picture is measured the frame keeps the last shape.
+assert.equal(heldAspect(0.75, undefined), 0.75);
+assert.equal(heldAspect(undefined, undefined), undefined);
+assert.equal(heldAspect(0.75, 1), 1);
+assert.equal(heldAspect(0.75, null), null, 'an answer, even a failed one, is taken');
+
+// Measuring always answers in time.
+{
+  const clock = () => {
+    let now = 0; const timers = new Set();
+    const after = (ms, run) => { const timer = { at: now + ms, run }; timers.add(timer); return () => timers.delete(timer); };
+    const pass = ms => {
+      const end = now + ms;
+      for (;;) {
+        const next = [...timers].filter(t => t.at <= end).sort((a, b) => a.at - b.at)[0];
+        if (!next) break;
+        timers.delete(next); now = next.at; next.run();
+      }
+      now = end;
+    };
+    return { after, pass, timers };
+  };
+  const run = (uri, getSize) => {
+    const c = clock(), reports = [];
+    const cancel = measureAspect(uri, getSize, aspect => reports.push(aspect), c.after);
+    return { ...c, reports, cancel };
+  };
+  assert.ok(MEASURE_TIMEOUT_MS >= 2000 && MEASURE_TIMEOUT_MS <= 4000);
+
+  let t = run('file:///a.jpg', (_, ok) => ok(300, 400));
+  assert.deepEqual(t.reports, [0.75], 'measured');
+  assert.equal(t.timers.size, 0, 'and no timer left behind');
+
+  let calls = 0;
+  t = run('file:///a.jpg', (_, __, fail) => { calls++; fail(); });
+  assert.deepEqual([t.reports, calls], [[null], 1], 'a local file is not tried twice');
+
+  calls = 0;
+  t = run('https://x/a.jpg', (_, __, fail) => { calls++; fail(); });
+  assert.deepEqual(t.reports, [], 'http: not given up on yet');
+  t.pass(1000);
+  assert.deepEqual([t.reports, calls], [[null], 2], 'one retry, then null');
+  t.pass(10000);
+  assert.deepEqual([t.reports, calls], [[null], 2], 'once');
+
+  calls = 0;
+  t = run('https://x/a.jpg', (_, ok, fail) => { if (calls++) ok(100, 100); else fail(); });
+  t.pass(1000);
+  assert.deepEqual(t.reports, [1], 'the retry succeeds');
+
+  // getSize that never calls back: the case that kept a result hidden.
+  let late;
+  t = run('https://x/a.jpg', (_, ok) => { late = ok; });
+  t.pass(MEASURE_TIMEOUT_MS - 1);
+  assert.deepEqual(t.reports, [], 'in time');
+  t.pass(1);
+  assert.deepEqual(t.reports, [null], 'silence ends in null at the timeout');
+  late(200, 100);
+  assert.deepEqual(t.reports, [null, 2], 'a size arriving late still corrects the frame');
+
+  t = run('file:///a.jpg', () => {});
+  t.cancel();
+  t.pass(10000);
+  assert.deepEqual(t.reports, [], 'unmounted: silence');
+  t = run('file:///a.jpg', (_, ok) => { late = ok; });
+  t.cancel(); late(1, 1);
+  assert.deepEqual(t.reports, []);
+  t = run('file:///a.jpg', (_, ok) => ok(0, 10));
+  assert.deepEqual(t.reports, [null], 'a senseless size');
+  assert.equal(t.timers.size, 0);
+}
+
+// The memory of shapes: bounded, no pictures in it.
+{
+  const known = new Map();
+  rememberAspect(known, 'data:image/png;base64,AAAA', 1);
+  assert.equal(known.size, 0, 'a data: URI is not kept');
+  rememberAspect(known, 'a', 1, 2); rememberAspect(known, 'b', 1, 2); rememberAspect(known, 'a', 2, 2); rememberAspect(known, 'c', 1, 2);
+  assert.deepEqual([...known.keys()], ['a', 'c'], 'the oldest goes first');
+}
+
 assert.equal(heldHeight(0, 500), 500);
-assert.equal(heldHeight(400, 500), 400, 'the buttons taking less room do not grow the picture');
+assert.equal(heldHeight(400, 500), 400, 'while held, more room does not grow the picture');
 assert.equal(heldHeight(500, 400), 400);
 
 // No viewer letterboxes a try-on in a frame of its own again.
 const read = file => fs.readFileSync(`${__dirname}/../src/components/${file}`, 'utf8');
 const stage = read('GenerationStage.tsx');
 assert.match(stage, /<FittedFrame/);
-assert.match(stage, /<ZoomableImage[^>]*resizeMode="cover"/, 'the zoomed picture fills the rect it is clipped by');
+assert.match(stage, /<ZoomableImage[^>]*resizeMode=\{fit\}/, 'the zoomed picture fills its rect, or is shown whole if its shape is unknown');
+assert.match(stage, /holdHeight=\{!done \|\| settling\}/, 'the frame stands still until the look is done, then grows');
+assert.match(read('onboarding/FirstLook.tsx'), /resizeMode=\{fit\}/);
+assert.match(read('AiTryOnPreview.tsx'), /framedFit/);
+assert.match(read('ui/FittedFrame.tsx'), /resizeMode=\{pictureFit\(aspect\)\}/);
+assert.equal((read('AiTryOnPreview.tsx').match(/<FittedFrame/g) || []).length, 1, 'one frame across the stages, kept mounted');
 const developing = read('studio/DevelopingImage.tsx');
 assert.ok(!/resizeMode="contain"/.test(developing), 'before and blurred after fill the shared rect');
 assert.ok(!/resizeMode="contain"/.test(read('onboarding/FirstLook.tsx').split('<DevelopingImage')[1].split('</DevelopingImage>')[0]));

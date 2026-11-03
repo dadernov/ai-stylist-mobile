@@ -231,14 +231,14 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
   const frameWidth = Math.min(width, 480);
   // The frame is the picture's own rect: in the source photo's shape from the start, the result's once it is known.
-  const { aspect, settling } = useFrameAspect(sourceUri || photoUri, resultUri, busy);
+  const { aspect, settling, fit } = useFrameAspect(sourceUri || photoUri, resultUri, busy);
 
   return (
     <View style={{ flex: 1 }}>
-      <FittedFrame aspect={aspect} radius={30} holdHeight style={[styles.frame, { width: frameWidth }]} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
+      <FittedFrame aspect={aspect} radius={30} holdHeight={!done || settling} style={[styles.frame, { width: frameWidth }]} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
         <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy || settling} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
           onRevealStart={successHaptic}>
-          {resultUri ? <ZoomableImage uri={resultUri} resizeMode="cover" accessibilityLabel={t('Результат')} /> : null}
+          {resultUri ? <ZoomableImage uri={resultUri} resizeMode={fit} accessibilityLabel={t('Результат')} /> : null}
         </DevelopingImage>
         {done && sourceUri ? (
           <Pill size="sm" title={t(showBefore ? 'После' : 'До')} accessibilityLabel={t(showBefore ? 'Показать результат' : 'Показать исходное фото')}

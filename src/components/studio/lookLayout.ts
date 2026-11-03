@@ -40,9 +40,10 @@ export const gridStageHeight = (count: number) => (count >= 4 ? GRID_TALL_STAGE 
 /**
  * Lays a look out as a strict grid: identical cells on shared rows and columns, zero rotation, even gutters, in the
  * order worn, with the last incomplete row centred. The box of each piece is its cell, to be contain-fitted. It takes
- * no aspects on purpose: a picture's size arriving late cannot move anything.
+ * no aspects on purpose: a picture's size arriving late cannot move anything. `sideInset` keeps every cell that far
+ * from the sides, for controls standing there.
  */
-export function gridLook(items: WardrobeItem[], width: number, height: number): PlacedPiece[] {
+export function gridLook(items: WardrobeItem[], width: number, height: number, { sideInset = 0 }: { sideInset?: number } = {}): PlacedPiece[] {
   const shown = gridShown(items);
   if (!shown.length || width <= 0 || height <= 0) return [];
   const ordered = shown.map((item, order) => ({ item, order, r: rank(item) })).sort((a, b) => a.r - b.r || a.order - b.order);
@@ -51,7 +52,7 @@ export function gridLook(items: WardrobeItem[], width: number, height: number): 
   let best: { cols: number; rows: number; w: number; h: number } | undefined;
   for (const cols of gridColumns(n)) {
     const rows = Math.ceil(n / cols);
-    const roomW = (width - 2 * GRID_PAD - GRID_GUTTER * (cols - 1)) / cols;
+    const roomW = (width - 2 * Math.max(GRID_PAD, sideInset) - GRID_GUTTER * (cols - 1)) / cols;
     const roomH = (height - 2 * GRID_PAD - GRID_GUTTER * (rows - 1)) / rows;
     const w = Math.floor(Math.min(roomW, width * GRID_MAX_SHARE, roomH * GRID_MAX_WIDE));
     const h = Math.floor(Math.min(roomH, w * GRID_MAX_TALL));

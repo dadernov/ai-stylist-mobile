@@ -111,8 +111,34 @@ assert.ok(plain.opacity && plain.translateX);
 const ramp = (range, x) => x <= range.inputRange[0] || x >= range.inputRange[2] ? 0 : 1 - Math.abs(x - range.inputRange[1]);
 for (const x of [5, 5.2, 5.5, 5.9]) assert.ok(Math.abs(ramp(m.depthKeyframes(5, 1, false).focus, x) + ramp(m.depthKeyframes(6, 1, false).focus, x) - 1) < 1e-9);
 
-// Reflections only around the centre.
-assert.deepEqual([3, 4, 5, 6, 7].filter(at => m.showsReflection(at, 5)), [4, 5, 6]);
+// The light going and the light coming, drawn over each other, cover nearly the whole of it at every point of a swipe.
+const lit = (at, x) => {
+  const { inputRange: i, outputRange: o } = m.depthKeyframes(at, 1, false).light;
+  if (x <= i[0] || x >= i[4]) return 0;
+  const k = i.findIndex((v, n) => x >= v && x <= i[n + 1]);
+  return o[k] + (o[k + 1] - o[k]) * (x - i[k]) / (i[k + 1] - i[k]);
+};
+assert.equal(lit(5, 5), 1, 'all of it at rest');
+assert.equal(lit(6, 5), 0, 'no neighbour\'s light at rest');
+for (let x = 5; x <= 6; x += 0.05) {
+  const together = 1 - (1 - lit(5, x)) * (1 - lit(6, x));
+  assert.ok(together >= 0.93, `the light dips to ${together} at ${x}`);
+  assert.ok(lit(5, x) + lit(6, x) >= 1 - 1e-9, `the two sum below the whole at ${x}`);
+}
+assert.ok(Math.abs(lit(5, 5.3) - lit(6, 5.7)) < 1e-9, 'symmetric');
+assert.deepEqual(m.depthKeyframes(5, 1, true).light, m.depthKeyframes(5, 1, false).light);
+
+// Reflections stay mounted two places out, so a swipe never meets one appearing.
+assert.deepEqual([2, 3, 4, 5, 6, 7, 8].filter(at => m.showsReflection(at, 5)), [3, 4, 5, 6, 7]);
+// Their copies are made for the whole mounted window, the focused piece's taken last off the list, i.e. first.
+assert.deepEqual(m.windowIndices(5, 20), [8, 2, 7, 3, 6, 4, 5]);
+assert.equal(m.windowIndices(0, 20).at(-1), 0);
+assert.ok(m.windowIndices(0, 20).includes(17), 'around the end of a looping list');
+assert.deepEqual(m.windowIndices(0, 0), []);
+assert.deepEqual(m.windowIndices(0, 1), [0]);
+assert.deepEqual(m.windowIndices(1, 2).sort(), [0, 1], 'a rail with ends goes no further than them');
+assert.equal(m.windowIndices(1, 4).length, 4, 'a short looping list: each once');
+assert.equal(m.windowIndices(1, 4).at(-1), 1);
 
 // The stage holds the piece and its reflection at any height, and the floor is where the piece ends.
 for (const height of [220, 320, 420, 700]) {

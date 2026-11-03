@@ -115,13 +115,25 @@ export function showcaseGeometry(stageHeight: number, stageWidth: number, reduce
   return { side, reflection, top, floorY: top + side, stageWidth, pitch: stageWidth * (reduced ? 0.75 : 0.5) };
 }
 
-/** Double image layers only where they are seen: the centre and the piece on either side. */
-export const showsReflection = (at: number, center: number) => Math.abs(at - center) <= 1;
+/** Double image layers wherever a swipe can reach before the centre moves on: two places out, so none appears mid-swipe. */
+export const REFLECTION_RADIUS = 2;
+export const showsReflection = (at: number, center: number) => Math.abs(at - center) <= REFLECTION_RADIUS;
+
+/** The list indices of the mounted window, the farthest first and the focused piece last. */
+export function windowIndices(index: number, count: number) {
+  const seen = new Set<number>();
+  for (let step = WINDOW_RADIUS; step >= 0; step--) for (const place of [index + step, index - step]) {
+    if (count && (railLoops(count) || (place >= 0 && place < count))) { const at = mod(place, count); seen.delete(at); seen.add(at); }
+  }
+  return [...seen];
+}
 
 const SIDE_ANGLE = 40;
 const SIDE_SCALE = 0.72;
 const SIDE_RISE = 10;
 const SIDE_OPACITY = 0.55;
+/** Two lights half on each cover only 3/4 of the stage: this high, the one going and the one coming still make nearly the whole. */
+const MIDWAY_LIGHT = 0.8;
 
 /**
  * How one place moves with the position: each is an interpolation's ranges, so all of it runs on the native side.
@@ -132,9 +144,10 @@ export function depthKeyframes(at: number, pitch: number, reduced: boolean) {
   const near = [at - 1, at, at + 1];
   const translateX = { inputRange: [at - 1, at + 1], outputRange: [pitch, -pitch] };
   const focus = { inputRange: near, outputRange: [0, 1, 0] };
-  if (reduced) return { translateX, focus, opacity: { inputRange: near, outputRange: [0.3, 1, 0.3] } };
+  const light = { inputRange: [at - 1, at - 0.5, at, at + 0.5, at + 1], outputRange: [0, MIDWAY_LIGHT, 1, MIDWAY_LIGHT, 0] };
+  if (reduced) return { translateX, focus, light, opacity: { inputRange: near, outputRange: [0.3, 1, 0.3] } };
   return {
-    translateX, focus,
+    translateX, focus, light,
     opacity: { inputRange: [at - 2, ...near, at + 2], outputRange: [0, SIDE_OPACITY, 1, SIDE_OPACITY, 0] },
     scale: { inputRange: near, outputRange: [SIDE_SCALE, 1, SIDE_SCALE] },
     rise: { inputRange: near, outputRange: [-SIDE_RISE, 0, -SIDE_RISE] },

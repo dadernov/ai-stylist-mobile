@@ -9,7 +9,7 @@ import { OptionPicker } from '../components/ui/OptionPicker';
 import { AppPressable } from '../components/AppPressable';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
 import { GarmentImage } from '../components/studio/Garment';
-import { gridLook, gridStageHeight } from '../components/studio/lookLayout';
+import { gridCount, gridLook, gridStageHeight } from '../components/studio/lookLayout';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { useStudioTint } from '../components/studio/StudioBackdrop';
 import { font, glassFill, hairline, INK, INK_ON_DARK, inkSoft, studioTint, useReducedMotion } from '../components/studio/studio';
@@ -238,7 +238,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [stageWidth, setStageWidth] = useState(0);
   // One height for every look, however few its pieces and whatever the filters: leafing, thinking and refiltering never move the page.
   const stageHeight = gridStageHeight(4);
-  const placed = about && stageWidth ? gridLook(about.selection, stageWidth, stageHeight) : [];
+  const placed = about && stageWidth ? gridLook(about.selection, stageWidth, stageHeight, many ? { sideInset: ARROWS_INSET } : undefined) : [];
   const byId = new Map(about?.selection.map(item => [item.id, item]));
   const why = about ? (look?.source === 'stylist' && look.why ? look.why : about.tips[0]) || '' : '';
   const WeatherIcon = precipitation === 'rain' ? CloudRain : precipitation === 'snow' ? CloudSnow : CloudSun;
@@ -288,6 +288,10 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
           {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
             <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(18, piece.w * 0.16)} style={{ width: piece.w, height: piece.h }} />
           </View>)}
+          {/* Nothing the grid draws (only tights in the look): the usual empty picture, not an empty stage. */}
+          {!gridCount(about.selection) ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+            <GarmentImage style={{ width: 120, height: 120 }} />
+          </View> : null}
         </Animated.View>
         {many && index > 0 ? <Pill size="sm" icon={ChevronLeft} style={[styles.arrow, { left: 16 }]} accessibilityLabel={t('Предыдущий образ')} onPress={() => go(-1)} /> : null}
         {many && index < visible.length - 1 ? <Pill size="sm" icon={ChevronRight} style={[styles.arrow, { right: 16 }]} accessibilityLabel={t('Следующий образ')} onPress={() => go(1)} /> : null}
@@ -405,6 +409,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     </StudioSheet> : null}
   </FormScrollView>;
 }
+
+// The arrows stand 16 from the stage's sides and are 38 wide. The same for every look, whatever its pieces: nothing jumps on leafing.
+const ARROWS_INSET = 58;
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   content: { paddingBottom: 24, width: '100%', maxWidth: 720, alignSelf: 'center' },

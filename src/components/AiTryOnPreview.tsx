@@ -27,6 +27,7 @@ import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame, FittedImage } from './ui/FittedFrame';
+import { pictureFit } from './studio/imageFit';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { useSheetGestureBlock } from './studio/SheetHandle';
 
@@ -115,7 +116,6 @@ export function AiTryOnPreview({
   const [isLoading, setLoading] = useState(false);
   const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
   // Result and source share the result's rect: the switch between them moves nothing.
-  const resultAspect = useImageAspect(resultUri);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(warningMessage || null);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
@@ -162,7 +162,9 @@ export function AiTryOnPreview({
   const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
   const busyLabel = tryOnStatusLabel(progress, t, stageLabel);
   const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
-  const intermediateAspect = useImageAspect(intermediateUri);
+  // One frame for every stage (the intermediate frame, then the result): it keeps its shape while the next one is measured.
+  const framedAspect = useImageAspect(intermediateUri || resultUri);
+  const framedFit = pictureFit(framedAspect);
   const intermediateHint = !progress || ['outfit', 'queue', 'upload'].includes(progress.stage || '') ? null
     : progress.stage === 'layers' ? t('Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.')
     : progress.pending.length || (progress.stage && progress.stage !== 'composite')
@@ -402,20 +404,17 @@ export function AiTryOnPreview({
           <Text style={[styles.compareTitle, showOriginal === original && styles.compareTitleActive]}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
         </AppPressable>)}
       </View></Glass>}
-      {intermediateUri ? (
-        <FittedFrame aspect={intermediateAspect} radius={28} style={styles.image}>
-          <Image source={{ uri: intermediateUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel={t('Промежуточный результат')} />
+      {intermediateUri || resultUri ? (
+        <FittedFrame aspect={framedAspect} radius={28} style={styles.image}>
+        {intermediateUri ? <>
+          <Image source={{ uri: intermediateUri }} style={StyleSheet.absoluteFill} resizeMode={framedFit} accessibilityLabel={t('Промежуточный результат')} />
           <Glass style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></Glass>
-        </FittedFrame>
-      ) : null}
-      {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
-      {resultUri && !intermediateUri ? (
-        <FittedFrame aspect={resultAspect} radius={28} style={styles.image}>
+        </> : resultUri ? (
         <AppPressable style={StyleSheet.absoluteFill} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            resizeMode={showOriginal && modelUri ? 'cover' : framedFit}
             onLoadStart={() => {
               // Локальные файлы примерки уже на диске — рисуются мгновенно.
               // Полупрозрачный оверлей загрузки снимается только по onLoadEnd,
@@ -447,8 +446,10 @@ export function AiTryOnPreview({
             </View>
           ) : null}
         </AppPressable>
+        ) : null}
         </FittedFrame>
       ) : null}
+      {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
       {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={28} style={styles.image} accessibilityLabel={t('Фото для примерки')} />}
       {resultUri && !isBusy ? (<View style={styles.resultActions}>
         <AppPressable haptics style={{ flex: 1, borderRadius: 999 }} onPress={saveToGallery} disabled={saveState === 'saving'}

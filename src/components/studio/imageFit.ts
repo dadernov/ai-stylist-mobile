@@ -1,4 +1,4 @@
-/** A picture whose size is not known (it failed to measure) is taken for a usual portrait photo. */
+/** A picture whose size is not known (it failed to measure) gets a frame of a usual portrait photo, and is shown whole in it: see `pictureFit`. */
 export const FALLBACK_ASPECT = 3 / 4;
 
 export type FitRect = { x: number; y: number; width: number; height: number };
@@ -34,5 +34,54 @@ export function frameAspect(hasResult: boolean, result: MeasuredAspect, source: 
   return developed ? source : undefined;
 }
 
-/** The box a picture is fitted to may only shrink: the page around it changing (status, then buttons) cannot make the picture jump. */
+/**
+ * How a picture sits in its frame. Only a picture of a measured shape fills it, its own rect, with nothing to crop;
+ * while the shape is unknown the frame may be any other, so the whole picture is shown.
+ */
+export const pictureFit = (aspect: MeasuredAspect): 'cover' | 'contain' => (aspect ? 'cover' : 'contain');
+
+/** The frame's shape while the next picture is measured: the last one known, rather than no frame at all. */
+export const heldAspect = (last: MeasuredAspect, next: MeasuredAspect): MeasuredAspect => (next === undefined ? last : next);
+
+export const MEASURE_TIMEOUT_MS = 3000;
+const MEASURE_RETRY_MS = 400;
+const ASPECT_CACHE_LIMIT = 200;
+
+/** Remembers a measured shape, the oldest going first. A data: URI is not kept: it is a whole picture as a string, and cheap to measure again. */
+export function rememberAspect(known: Map<string, number>, uri: string, aspect: number, limit = ASPECT_CACHE_LIMIT) {
+  if (/^data:/i.test(uri)) return;
+  known.delete(uri);
+  known.set(uri, aspect);
+  if (known.size > limit) known.delete(known.keys().next().value as string);
+}
+
+type GetSize = (uri: string, ok: (width: number, height: number) => void, fail: () => void) => void;
+type After = (ms: number, run: () => void) => () => void;
+const realAfter: After = (ms, run) => { const timer = setTimeout(run, ms); return () => clearTimeout(timer); };
+
+/**
+ * Measures a picture, and always answers in time: `null` on failure or after the timeout, so nothing waits on it for
+ * long. An http picture gets one more try. A size that still arrives after `null` is reported too. Returns a cancel.
+ */
+export function measureAspect(uri: string, getSize: GetSize, report: (aspect: number | null) => void, after: After = realAfter, timeoutMs = MEASURE_TIMEOUT_MS) {
+  let over = false, gaveUp = false, retried = false;
+  let cancelRetry = () => {};
+  const giveUp = () => { if (!over && !gaveUp) { gaveUp = true; report(null); } };
+  const cancelTimeout = after(timeoutMs, giveUp);
+  const stop = () => { over = true; cancelTimeout(); cancelRetry(); };
+  const attempt = () => getSize(uri, (width, height) => {
+    if (over) return;
+    const aspect = aspectOf(width, height);
+    if (aspect) { stop(); report(aspect); } else { giveUp(); stop(); }
+  }, () => {
+    if (over) return;
+    if (retried || !/^https?:/i.test(uri)) { giveUp(); stop(); return; }
+    retried = true;
+    cancelRetry = after(MEASURE_RETRY_MS, attempt);
+  });
+  attempt();
+  return stop;
+}
+
+/** The box a picture is fitted to may only shrink while it is held: the page around it changing (status, comments) cannot make the picture jump. */
 export const heldHeight = (previous: number, next: number) => (previous > 0 ? Math.min(previous, next) : next);

@@ -260,7 +260,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   const job = jobs.find(candidate => candidate.id === jobId);
   const view = declined ? 'declined' : magicView(job, Boolean(startError));
   const resultUri = job?.result?.imageUri || null;
-  const { aspect, settling } = useFrameAspect(modelUri, resultUri, view !== 'ready');
+  const { aspect, settling, fit } = useFrameAspect(modelUri, resultUri, view !== 'ready');
   useEffect(() => {
     if (view !== 'ready') { setRevealed(false); return; }
     // DevelopingImage sharpens over about 1.3 s; with reduced motion it simply crossfades.
@@ -293,7 +293,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
     <View style={styles.frame} accessible accessibilityLabel={ready ? t('Готовая примерка') : t('Примерка готовится')}>
       <FittedFrame aspect={aspect} radius={28} style={StyleSheet.absoluteFill}>
         <DevelopingImage photoUri={modelUri} resultUri={resultUri} developing={!ready || settling} isDark={isDark}>
-          {resultUri ? <Image source={{ uri: resultUri }} resizeMode="cover" style={StyleSheet.absoluteFill} /> : null}
+          {resultUri ? <Image source={{ uri: resultUri }} resizeMode={fit} style={StyleSheet.absoluteFill} /> : null}
         </DevelopingImage>
       </FittedFrame>
     </View>

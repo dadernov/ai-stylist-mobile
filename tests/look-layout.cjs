@@ -63,6 +63,18 @@ const dress = item('dress', 'Платье', 'Верх');
   assert.ok(gridStageHeight(4) > gridStageHeight(3));
   assert.equal(gridStageHeight(8), gridStageHeight(4));
 
+  // Arrows at the sides: no cell under them, for any number of pieces, on any phone; still centred and equal.
+  for (const W of [320, 358, 390, 430, 720]) for (let n = 1; n <= 8; n++) {
+    const layout = gridLook(wide.slice(0, n), W, 290, { sideInset: 58 });
+    assert.equal(layout.length, n, `inset grid of ${n} on ${W}`);
+    layout.forEach(p => assert.ok(p.x >= 58 && p.x + p.w <= W - 58, `${n} on ${W}: ${p.id} at ${p.x}+${p.w} is under an arrow`));
+    assert.ok(layout.every(p => p.w === layout[0].w && p.h === layout[0].h));
+    for (const row of rowsOf(layout)) assert.ok(Math.abs(row[0].x - (W - row[row.length - 1].x - row[0].w)) <= 1, `${n} on ${W}: off centre`);
+  }
+  assert.deepEqual(gridLook(wide.slice(0, 5), 390, 290, {}), gridLook(wide.slice(0, 5), 390, 290), 'no inset: as before');
+  assert.deepEqual(gridLook(wide.slice(0, 5), 390, 290, { sideInset: 5 }), gridLook(wide.slice(0, 5), 390, 290), 'an inset inside the padding changes nothing');
+  assert.deepEqual(gridLook([], 390, 290, { sideInset: 58 }), [], 'nothing to draw: the screen shows the placeholder');
+
   // The hero uses the grid and tilts nothing.
   const heroSource = fs.readFileSync(`${__dirname}/../src/components/DailyLookHero.tsx`, 'utf8');
   assert.match(heroSource, /gridLook\(selection, width, stageHeight\)/);
