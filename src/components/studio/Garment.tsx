@@ -19,16 +19,19 @@ export function FloorShadow({ width, opacity = 0.32 }: { width: number; opacity?
   );
 }
 
-/** A garment on the stage: a cut-out floats bare, a photo with its own ground becomes a rounded print (`print`). */
+/**
+ * A garment on the stage: a cut-out floats bare, a photo with its own ground becomes a rounded print (`print`).
+ * Decoded at the size it is laid out at, not the file's: iOS does that by itself, Android asks for it here.
+ */
 export function GarmentImage({ item, style, blur, print, printRadius = 28, onLoadEnd }: { item?: WardrobeItem; style: StyleProp<ImageStyle>; blur?: number; print?: boolean; printRadius?: number; onLoadEnd?: () => void }) {
   if (!item?.imageUri) return <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}><Shirt size={48} strokeWidth={1} color={INK_FAINT} /></View>;
   if (print && !isCutout(item.imageUri)) {
     return (
       <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Image source={{ uri: item.imageUri }} resizeMode="cover" blurRadius={blur} onLoadEnd={onLoadEnd}
+        <Image source={{ uri: item.imageUri }} resizeMode="cover" resizeMethod="resize" fadeDuration={0} blurRadius={blur} onLoadEnd={onLoadEnd}
           style={{ width: '84%', height: '92%', borderRadius: printRadius }} />
       </View>
     );
   }
-  return <Image source={{ uri: item.imageUri }} style={style} resizeMode="contain" blurRadius={blur} onLoadEnd={onLoadEnd} />;
+  return <Image source={{ uri: item.imageUri }} style={style} resizeMode="contain" resizeMethod="resize" fadeDuration={0} blurRadius={blur} onLoadEnd={onLoadEnd} />;
 }
