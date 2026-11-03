@@ -24,6 +24,8 @@ import { PhotoAdvice } from '../PhotoAdvice';
 import { tryOnStatusLabel } from '../tryOnStatus';
 import { StudioBackdrop } from '../studio/StudioBackdrop';
 import { DevelopingImage } from '../studio/DevelopingImage';
+import { useFrameAspect } from '../studio/useImageAspect';
+import { FittedFrame } from '../ui/FittedFrame';
 import { ChoicePill, Glass, Pill } from '../studio/Glass';
 import { font, INK, INK_ON_DARK, inkSoft, isCutout, useReducedMotion } from '../studio/studio';
 import { canTryOn, firstLookDecision, FirstLookStep, magicView, nextStep, QUESTIONS, QuestionId } from './firstLookLogic';
@@ -258,6 +260,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   const job = jobs.find(candidate => candidate.id === jobId);
   const view = declined ? 'declined' : magicView(job, Boolean(startError));
   const resultUri = job?.result?.imageUri || null;
+  const { aspect, settling } = useFrameAspect(modelUri, resultUri, view !== 'ready');
   useEffect(() => {
     if (view !== 'ready') { setRevealed(false); return; }
     // DevelopingImage sharpens over about 1.3 s; with reduced motion it simply crossfades.
@@ -288,9 +291,11 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   return <>
     <Heading title={ready ? t('Вот и ты!') : t('Примеряем на тебя')} text={ready ? t('Твоя первая примерка готова. Дальше будет только интереснее.') : t('Это займёт около минуты. А пока расскажи немного о себе.')} />
     <View style={styles.frame} accessible accessibilityLabel={ready ? t('Готовая примерка') : t('Примерка готовится')}>
-      <DevelopingImage photoUri={modelUri} resultUri={resultUri} developing={!ready} isDark={isDark}>
-        {resultUri ? <Image source={{ uri: resultUri }} resizeMode="contain" style={StyleSheet.absoluteFill} /> : null}
-      </DevelopingImage>
+      <FittedFrame aspect={aspect} radius={28} style={StyleSheet.absoluteFill}>
+        <DevelopingImage photoUri={modelUri} resultUri={resultUri} developing={!ready || settling} isDark={isDark}>
+          {resultUri ? <Image source={{ uri: resultUri }} resizeMode="cover" style={StyleSheet.absoluteFill} /> : null}
+        </DevelopingImage>
+      </FittedFrame>
     </View>
     {!ready ? <Text accessibilityLiveRegion="polite" style={[font('regular'), styles.status, { color: inkSoft(isDark) }]}>{tryOnStatusLabel(job?.progress, t)}</Text> : null}
     {!ready ? <Glass radius={24}><View style={styles.card}>
@@ -321,7 +326,7 @@ const styles = StyleSheet.create({
   actions: { gap: 10 },
   preview: { width: '60%', aspectRatio: 3 / 4, alignSelf: 'center', borderRadius: 24 },
   garment: { width: 140, height: 140, alignSelf: 'center', borderRadius: 20 },
-  frame: { width: '100%', aspectRatio: 3 / 4, borderRadius: 28, overflow: 'hidden' },
+  frame: { width: '100%', aspectRatio: 3 / 4 },
   status: { fontSize: 13, textAlign: 'center' },
   card: { gap: 12, padding: 16 },
   question: { fontSize: 16, lineHeight: 22 },

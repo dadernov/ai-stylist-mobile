@@ -13,6 +13,7 @@ import { localeFor, useLanguage, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { FormScrollView } from './ui/FormScrollView';
 import { OptionPicker } from './ui/OptionPicker';
+import { FittedImage } from './ui/FittedFrame';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { Pill } from './studio/Glass';
 import { StudioBackdrop } from './studio/StudioBackdrop';
@@ -82,8 +83,8 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
       </View>}
       renderItem={({ item: job }) => <AppPressable accessibilityRole="button"
         accessibilityLabel={t('Открыть генерацию: {name}', { name: job.name })} onPress={() => setSelectedId(job.id)} style={styles.card}>
-        <View style={styles.photo}>
-          {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
+        <View style={[styles.photo, job.result && styles.bare]}>
+          {job.result ? <FittedImage uri={job.result.imageUri} radius={24} style={StyleSheet.absoluteFill} />
             : job.status === 'pending' ? <ActivityIndicator size="large" color={c.text} /> : <Clock3 size={32} color={c.muted} strokeWidth={1.3} />}
         </View>
         <Text numberOfLines={2} style={styles.name}>{job.name}</Text>
@@ -102,8 +103,8 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
           <Pill title={t('К деталям')} onPress={() => setExpanded(false)} style={{ margin: 16 }} />
         </> : <FormScrollView contentContainerStyle={styles.detail}>
           <AppPressable disabled={!selected.result} accessibilityRole="button" accessibilityLabel={t('Увеличить результат')}
-            style={styles.result} onPress={() => setExpanded(true)}>
-            {selected.result ? <Image source={{ uri: selected.result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
+            style={[styles.result, selected.result && styles.bare]} onPress={() => setExpanded(true)}>
+            {selected.result ? <FittedImage uri={selected.result.imageUri} radius={30} style={StyleSheet.absoluteFill} />
               : <View style={styles.empty}>{selected.status === 'pending' && <ActivityIndicator color={c.text} />}<Text style={styles.heading}>{status(selected)}</Text></View>}
           </AppPressable>
           {selected.error && <Text accessibilityRole="alert" style={styles.error}>{t(selected.error)}</Text>}
@@ -159,6 +160,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   modal: { flex: 1 }, toolbar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12, width: '100%', maxWidth: 700, alignSelf: 'center' },
   detailTitle: { ...font('semibold'), color: c.text, fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
   detail: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 32, gap: 14, width: '100%', maxWidth: 700, alignSelf: 'center' },
+  bare: { backgroundColor: 'transparent' },
   result: { width: '100%', aspectRatio: 3 / 4, backgroundColor: c.surface, borderRadius: 30, overflow: 'hidden', justifyContent: 'center' },
   garment: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   garmentPhoto: { width: 52, height: 64, backgroundColor: c.stage, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }

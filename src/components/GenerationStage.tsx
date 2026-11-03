@@ -13,6 +13,8 @@ import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { lookComments } from '../domain/lookComments';
 import { selectionHaptic, successHaptic } from '../services/haptics';
+import { FittedFrame } from './ui/FittedFrame';
+import { useFrameAspect } from './studio/useImageAspect';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { FormScrollView } from './ui/FormScrollView';
 import { SheetGestureContext, useSheetDrag, useSheetScrollLock } from './studio/SheetHandle';
@@ -228,19 +230,21 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
 
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
   const frameWidth = Math.min(width, 480);
+  // The frame is the picture's own rect: in the source photo's shape from the start, the result's once it is known.
+  const { aspect, settling } = useFrameAspect(sourceUri || photoUri, resultUri, busy);
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={[styles.frame, { width: frameWidth, backgroundColor: glassFill(isDark) }]}>
-        <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
+      <FittedFrame aspect={aspect} radius={30} holdHeight style={[styles.frame, { width: frameWidth }]} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
+        <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy || settling} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
           onRevealStart={successHaptic}>
-          {resultUri ? <ZoomableImage uri={resultUri} accessibilityLabel={t('Результат')} /> : null}
+          {resultUri ? <ZoomableImage uri={resultUri} resizeMode="cover" accessibilityLabel={t('Результат')} /> : null}
         </DevelopingImage>
         {done && sourceUri ? (
           <Pill size="sm" title={t(showBefore ? 'После' : 'До')} accessibilityLabel={t(showBefore ? 'Показать результат' : 'Показать исходное фото')}
             accessibilityState={{ selected: showBefore }} onPress={() => setShowBefore(value => !value)} style={styles.compare} />
         ) : null}
-      </View>
+      </FittedFrame>
 
       <View style={styles.status}>
         {busy ? (
@@ -331,7 +335,7 @@ const styles = StyleSheet.create({
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: -4, marginBottom: 10 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
-  frame: { flex: 1, minHeight: 200, alignSelf: 'center', borderRadius: 30, overflow: 'hidden' },
+  frame: { flex: 1, minHeight: 200, alignSelf: 'center' },
   status: { paddingTop: 14, gap: 10, minHeight: 20 },
   statusText: { ...font('medium'), fontSize: 15, lineHeight: 20, textAlign: 'center' },
   note: { ...font('regular'), fontSize: 13, lineHeight: 18 },

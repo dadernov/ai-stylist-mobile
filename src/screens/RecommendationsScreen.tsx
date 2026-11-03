@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Keyboard, Linking, PanResponder, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Keyboard, Linking, PanResponder, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Heart, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -8,9 +8,8 @@ import { useFavoriteColors } from '../components/useFavoriteColors';
 import { OptionPicker } from '../components/ui/OptionPicker';
 import { AppPressable } from '../components/AppPressable';
 import { ChoicePill, Glass, Pill } from '../components/studio/Glass';
-import { FloorShadow, GarmentImage } from '../components/studio/Garment';
-import { layoutLook } from '../components/studio/lookLayout';
-import { useAspects } from '../components/studio/useAspects';
+import { GarmentImage } from '../components/studio/Garment';
+import { gridLook, gridStageHeight } from '../components/studio/lookLayout';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { useStudioTint } from '../components/studio/StudioBackdrop';
 import { font, glassFill, hairline, INK, INK_ON_DARK, inkSoft, studioTint, useReducedMotion } from '../components/studio/studio';
@@ -75,7 +74,6 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
   const { colors: c, isDark } = useTheme();
-  const { height: windowHeight } = useWindowDimensions();
   const reduced = useReducedMotion();
   const [event, setEvent] = useState(initialEvent && EVENTS.includes(initialEvent) ? initialEvent : 'Прогулка');
   const [style, setStyle] = useState(initialStyle && STYLES.includes(initialStyle) ? initialStyle : 'Кэжуал');
@@ -225,25 +223,22 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     onPanResponderRelease: (_, g) => { if (Math.abs(g.dx) > 40) goRef.current(g.dx < 0 ? 1 : -1); }
   })).current;
 
-  // The pieces float a little, out of step with each other; still when motion is reduced. While the
-  // stylist thinks, the empty stage breathes instead.
-  const floatA = useRef(new Animated.Value(0)).current;
-  const floatB = useRef(new Animated.Value(0)).current;
+  // While the stylist thinks, the empty stage breathes; still when motion is reduced.
+  const breath = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (reduced) return;
-    const wave = (value: Animated.Value, duration: number) => Animated.loop(Animated.sequence([
-      Animated.timing(value, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(value, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(breath, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(breath, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
     ]));
-    const loops = [wave(floatA, 2600), wave(floatB, 3100)];
-    loops.forEach(loop => loop.start());
-    return () => loops.forEach(loop => loop.stop());
+    loop.start();
+    return () => loop.stop();
   }, [reduced]);
 
   const [stageWidth, setStageWidth] = useState(0);
-  const stageHeight = Math.round(Math.min(420, Math.max(280, windowHeight * 0.47)));
-  const aspects = useAspects(about?.selection);
-  const placed = about && stageWidth ? layoutLook(about.selection, stageWidth, stageHeight, aspects) : [];
+  // One height for every look, however few its pieces and whatever the filters: leafing, thinking and refiltering never move the page.
+  const stageHeight = gridStageHeight(4);
+  const placed = about && stageWidth ? gridLook(about.selection, stageWidth, stageHeight) : [];
   const byId = new Map(about?.selection.map(item => [item.id, item]));
   const why = about ? (look?.source === 'stylist' && look.why ? look.why : about.tips[0]) || '' : '';
   const WeatherIcon = precipitation === 'rain' ? CloudRain : precipitation === 'snow' ? CloudSnow : CloudSun;
@@ -273,9 +268,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
       <Pill icon={X} size="icon" accessibilityLabel={t('Без привязки к вещи')} onPress={() => { setAnchorId('any'); fresh(); }} />
     </View> : null}
 
-    {/* The look, composed on the stage: each piece where it is worn */}
+    {/* The look on the stage: the same grid as the look of the day */}
     {thinking ? <View style={[styles.stage, { height: stageHeight }]}>
-      <Animated.View style={{ opacity: reduced ? 0.5 : floatA.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.7] }) }}>
+      <Animated.View style={{ opacity: reduced ? 0.5 : breath.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.7] }) }}>
         <Shirt size={64} strokeWidth={1} color={c.muted} />
       </Animated.View>
       <Text style={[font('regular'), styles.muted, { marginTop: 14 }]}>{t('Стилист подбирает образы…')}</Text>
@@ -290,17 +285,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade, transform: [
           { translateX: slide.interpolate({ inputRange: [-1, 1], outputRange: [-70, 70] }) },
           { scale: slide.interpolate({ inputRange: [-1, 0, 1], outputRange: [0.92, 1, 0.92] }) }] }]}>
-          {/* Shadows first, so a piece lying over another covers its neighbour's shadow */}
-          {placed.map(piece => <View key={`shadow-${piece.id}`} pointerEvents="none" style={{ position: 'absolute', left: piece.x + piece.w * 0.15, top: piece.y + piece.h - 14 }}>
-            <FloorShadow width={piece.w * 0.7} opacity={0.18} />
+          {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
+            <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(18, piece.w * 0.16)} style={{ width: piece.w, height: piece.h }} />
           </View>)}
-          {placed.map((piece, n) => {
-            const float = n % 2 ? floatB : floatA;
-            return <Animated.View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h,
-              transform: [{ translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, n % 2 ? -7 : -9] }) }, { rotate: piece.rotate }] }}>
-              <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(24, piece.w * 0.16)} style={{ width: piece.w, height: piece.h }} />
-            </Animated.View>;
-          })}
         </Animated.View>
         {many && index > 0 ? <Pill size="sm" icon={ChevronLeft} style={[styles.arrow, { left: 16 }]} accessibilityLabel={t('Предыдущий образ')} onPress={() => go(-1)} /> : null}
         {many && index < visible.length - 1 ? <Pill size="sm" icon={ChevronRight} style={[styles.arrow, { right: 16 }]} accessibilityLabel={t('Следующий образ')} onPress={() => go(1)} /> : null}

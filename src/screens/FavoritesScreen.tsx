@@ -16,8 +16,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
 import { Glass, Pill } from '../components/studio/Glass';
 import { GarmentImage } from '../components/studio/Garment';
-import { layoutLook } from '../components/studio/lookLayout';
-import { useAspects } from '../components/studio/useAspects';
+import { gridLook } from '../components/studio/lookLayout';
+import { FittedImage } from '../components/ui/FittedFrame';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { SheetGestureBlock } from '../components/studio/SheetHandle';
 import { font, INK_FAINT, studioTint } from '../components/studio/studio';
@@ -65,8 +65,7 @@ const FavoriteCard = memo(function FavoriteCard({ look, height, width, index, it
   const styles = useThemedStyles(makeStyles);
   const lookItems = useMemo(() => look.itemIds.map(id => itemsById[id]).filter(Boolean) as WardrobeItem[], [look.itemIds, itemsById]);
   const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
-  const aspects = useAspects(lookItems);
-  const placed = useMemo(() => (tryOnUri || !width ? [] : layoutLook(lookItems, width, height - CAPTION_ROOM, aspects)), [tryOnUri, lookItems, width, height, aspects]);
+  const placed = useMemo(() => (tryOnUri || !width ? [] : gridLook(lookItems, width, height - CAPTION_ROOM)), [tryOnUri, lookItems, width, height]);
   const byId = new Map(lookItems.map(item => [item.id, item]));
   const tint = studioTint(lookItems.find(item => item.id === placed[0]?.id));
   const title = lookTitle(look, t);
@@ -79,7 +78,7 @@ const FavoriteCard = memo(function FavoriteCard({ look, height, width, index, it
           <>
             <LinearGradient colors={isDark ? ['#2A2D32', '#1C1F23'] : ['#FFFFFF', tint || '#E4E4E1']} style={StyleSheet.absoluteFill} />
             {placed.length ? placed.map(piece => (
-              <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h, transform: [{ rotate: piece.rotate }] }}>
+              <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
                 <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(16, piece.w * 0.14)} style={{ width: piece.w, height: piece.h }} />
               </View>
             )) : <View style={[styles.emptyPieces, { bottom: CAPTION_ROOM }]}><Shirt size={40} strokeWidth={1} color={INK_FAINT} /></View>}
@@ -183,8 +182,8 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
             <Text style={[font('regular'), styles.meta]}>{meta.join(', ')}</Text>
 
             {openTryOn ? (
-              <AppPressable accessibilityRole="button" accessibilityLabel={t('Примерка')} style={styles.picture} onPress={() => setPreviewUri(openTryOn)}>
-                <Image source={{ uri: openTryOn }} style={styles.pictureImage} resizeMode="contain" />
+              <AppPressable accessibilityRole="button" accessibilityLabel={t('Примерка')} onPress={() => setPreviewUri(openTryOn)}>
+                <FittedImage uri={openTryOn} radius={24} style={styles.pictureImage} />
               </AppPressable>
             ) : !onTryOn ? (
               <Text style={[font('regular'), styles.meta]}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
@@ -272,7 +271,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   captionTitle: { fontSize: 13, lineHeight: 17, color: c.text },
   captionEvent: { fontSize: 11, lineHeight: 15 },
   meta: { fontSize: 13, lineHeight: 19, color: c.muted },
-  picture: { borderRadius: 24, overflow: 'hidden', backgroundColor: c.surface },
   pictureImage: { width: '100%', height: 360 },
   bleed: { marginHorizontal: -20 },
   pieces: { gap: 12, paddingHorizontal: 20 },

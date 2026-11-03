@@ -25,6 +25,8 @@ export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { TryOnHistoryItem } from '../types/looks';
 import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
+import { useImageAspect } from './studio/useImageAspect';
+import { FittedFrame, FittedImage } from './ui/FittedFrame';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { useSheetGestureBlock } from './studio/SheetHandle';
 
@@ -112,6 +114,8 @@ export function AiTryOnPreview({
   const [showOriginal, setShowOriginal] = useState(false);
   const [isLoading, setLoading] = useState(false);
   const [resultUri, setResultUri] = useState<string | null>(reanchorTryOnUri(controlledResultUri));
+  // Result and source share the result's rect: the switch between them moves nothing.
+  const resultAspect = useImageAspect(resultUri);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(warningMessage || null);
   const [isPreviewOpen, setPreviewOpen] = useState(false);
@@ -158,6 +162,7 @@ export function AiTryOnPreview({
   const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
   const busyLabel = tryOnStatusLabel(progress, t, stageLabel);
   const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
+  const intermediateAspect = useImageAspect(intermediateUri);
   const intermediateHint = !progress || ['outfit', 'queue', 'upload'].includes(progress.stage || '') ? null
     : progress.stage === 'layers' ? t('Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.')
     : progress.pending.length || (progress.stage && progress.stage !== 'composite')
@@ -398,18 +403,19 @@ export function AiTryOnPreview({
         </AppPressable>)}
       </View></Glass>}
       {intermediateUri ? (
-        <View style={styles.imageWrap} accessibilityLabel={t('Промежуточный результат')}>
-          <Image source={{ uri: intermediateUri }} style={styles.image} resizeMode="contain" />
+        <FittedFrame aspect={intermediateAspect} radius={28} style={styles.image}>
+          <Image source={{ uri: intermediateUri }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel={t('Промежуточный результат')} />
           <Glass style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></Glass>
-        </View>
+        </FittedFrame>
       ) : null}
       {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
       {resultUri && !intermediateUri ? (
-        <AppPressable style={styles.imageWrap} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
+        <FittedFrame aspect={resultAspect} radius={28} style={styles.image}>
+        <AppPressable style={StyleSheet.absoluteFill} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
-            style={styles.image}
-            resizeMode="contain"
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
             onLoadStart={() => {
               // Локальные файлы примерки уже на диске — рисуются мгновенно.
               // Полупрозрачный оверлей загрузки снимается только по onLoadEnd,
@@ -441,8 +447,9 @@ export function AiTryOnPreview({
             </View>
           ) : null}
         </AppPressable>
+        </FittedFrame>
       ) : null}
-      {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <Image source={{ uri: modelUri }} style={styles.image} resizeMode="contain" accessibilityLabel={t('Фото для примерки')} />}
+      {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={28} style={styles.image} accessibilityLabel={t('Фото для примерки')} />}
       {resultUri && !isBusy ? (<View style={styles.resultActions}>
         <AppPressable haptics style={{ flex: 1, borderRadius: 999 }} onPress={saveToGallery} disabled={saveState === 'saving'}
           accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
@@ -481,8 +488,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrap: { gap: 14, marginTop: 6, marginBottom: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // The look on the person: a rounded print, like the fitting room's frame.
-  image: { width: '100%', height: 420, borderRadius: 28, backgroundColor: c.surface },
-  imageWrap: { borderRadius: 28, overflow: 'hidden', position: 'relative' },
+  image: { width: '100%', height: 420 },
   imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.72)', justifyContent: 'center', alignItems: 'center', padding: 18 },
   imageErrorText: { ...font('semibold'), color: INK, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   // The main action: the studio's black pill.

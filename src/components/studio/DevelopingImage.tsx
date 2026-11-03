@@ -133,7 +133,7 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
       {resultUri ? (
         <>
           {/* First the look arrives as a soft blur … */}
-          {!revealed ? <Animated.Image source={{ uri: resultUri }} blurRadius={22} resizeMode="contain" style={[StyleSheet.absoluteFill, { opacity: haze }]} /> : null}
+          {!revealed ? <Animated.Image source={{ uri: resultUri }} blurRadius={22} resizeMode="cover" style={[StyleSheet.absoluteFill, { opacity: haze }]} /> : null}
           {/* … then sharpens from the top down. */}
           {revealed || reduced ? (
             <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduced && !revealed ? haze : 1 }]}>{children}</Animated.View>
@@ -157,8 +157,9 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
       {revealed && beforeUri && wide ? (
         <>
           <Animated.View pointerEvents="none" style={[styles.before, { width: wipe.interpolate({ inputRange: [0, 1], outputRange: [0, wide] }) }]}>
-            <View style={{ width: wide, height: tall, backgroundColor: isDark ? '#1C1E23' : '#F2F1EE' }}>
-              <Image source={{ uri: beforeUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
+            {/* The look's own rect, filled: if the shapes differ the photo is cropped, never framed, so the wipe lines up. */}
+            <View style={{ width: wide, height: tall }}>
+              <Image source={{ uri: beforeUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
             </View>
           </Animated.View>
           <Animated.View pointerEvents="none" style={[styles.wipeEdge, { left: wipe.interpolate({ inputRange: [0, 1], outputRange: [0, wide] }),

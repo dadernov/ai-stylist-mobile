@@ -11,12 +11,12 @@ import { isZoomed } from '../studio/sheetGesture';
  * the photo doesn't pan or bounce at all: a drag on it belongs to the sheet or pager
  * around it. Pinching works regardless, it isn't the ScrollView's pan.
  */
-export function ZoomableImage({ uri, style, accessibilityLabel }: { uri: string; style?: StyleProp<ViewStyle>; accessibilityLabel?: string }) {
+export function ZoomableImage({ uri, style, accessibilityLabel, resizeMode = 'contain' }: { uri: string; style?: StyleProp<ViewStyle>; accessibilityLabel?: string; resizeMode?: 'contain' | 'cover' }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [zoomed, setZoomed] = useState(false);
   const hub = useContext(SheetGestureContext);
   if (Platform.OS !== 'ios') {
-    return <Image source={{ uri }} style={[styles.fill, style as object]} resizeMode="contain" accessibilityLabel={accessibilityLabel} />;
+    return <Image source={{ uri }} style={[styles.fill, style as object]} resizeMode={resizeMode} accessibilityLabel={accessibilityLabel} />;
   }
   return (
     <View style={[styles.fill, style]} onLayout={event => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
@@ -26,7 +26,7 @@ export function ZoomableImage({ uri, style, accessibilityLabel }: { uri: string;
           scrollEnabled={zoomed} bounces={zoomed} alwaysBounceVertical={false} alwaysBounceHorizontal={false} scrollEventThrottle={16}
           onScroll={event => { const next = isZoomed(event.nativeEvent.zoomScale); if (next !== zoomed) setZoomed(next); }}
           onTouchStart={() => { if (zoomed) hub?.touchInert(); }}>
-          <Image source={{ uri }} style={size} resizeMode="contain" accessibilityLabel={accessibilityLabel} />
+          <Image source={{ uri }} style={size} resizeMode={resizeMode} accessibilityLabel={accessibilityLabel} />
         </ScrollView>
       ) : null}
     </View>
