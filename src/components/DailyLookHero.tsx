@@ -14,15 +14,13 @@ import { GeneratedLook } from '../types/looks';
 import { Gender } from '../types/profile';
 import { Glass, Pill } from './studio/Glass';
 import { GarmentImage } from './studio/Garment';
-import { layoutLook } from './studio/lookLayout';
+import { gridCount, gridLook, gridStageHeight } from './studio/lookLayout';
 import { font, useReducedMotion } from './studio/studio';
-import { useAspects } from './studio/useAspects';
 import { useFavoriteColors } from './useFavoriteColors';
 
 // The everyday base of the hero: the choices on the screen below do not change the look of the day.
 const HERO_STYLE = 'Кэжуал';
 const HERO_EVENT = 'Прогулка';
-const STAGE_HEIGHT = 190;
 const SWIPE = 90;
 // Location can wait on an unanswered permission prompt; the look of the day does not wait for ever.
 const WEATHER_PATIENCE = 8000;
@@ -124,8 +122,13 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   })).current;
 
   const [width, setWidth] = useState(0);
-  const aspects = useAspects(selection);
-  const placed = selection && width ? layoutLook(selection, width, STAGE_HEIGHT, aspects) : [];
+  // Sized for the fullest look a skip can reach, so the page below does not jump when the next look comes in.
+  const fullest = useMemo(() => {
+    const byItemId = new Map(items.map(item => [item.id, item]));
+    return Math.max(0, ...candidates.map(candidate => gridCount(candidate.itemIds.flatMap(id => byItemId.get(id) ?? []))));
+  }, [candidates, items]);
+  const stageHeight = gridStageHeight(Math.max(fullest, selection ? gridCount(selection) : 0));
+  const placed = selection && width ? gridLook(selection, width, stageHeight) : [];
   const byId = new Map(selection?.map(item => [item.id, item]));
 
   const part = dayPart(now.getHours());
@@ -155,8 +158,8 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
     {header}
     <Animated.View {...pan.panHandlers} style={{ transform: [{ translateX: swipe }, { rotate: swipe.interpolate({ inputRange: [-300, 300], outputRange: ['-5deg', '5deg'], extrapolate: 'clamp' }) }] }}>
       <Glass radius={28}>
-        <View style={{ height: STAGE_HEIGHT }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
-          {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h, transform: [{ rotate: piece.rotate }] }}>
+        <View style={{ height: stageHeight }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
+          {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
             <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(18, piece.w * 0.16)} style={{ width: piece.w, height: piece.h }} />
           </View>)}
           <Animated.View pointerEvents="none" style={[styles.badge, { left: 12, opacity: swipe.interpolate({ inputRange: [20, SWIPE], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>
