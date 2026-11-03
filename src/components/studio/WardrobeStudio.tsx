@@ -11,9 +11,9 @@ import { selectionHaptic } from '../../services/haptics';
 import { AppPressable } from '../AppPressable';
 import { Glass, Pill } from './Glass';
 import { FloorShadow, GarmentImage, PRINT_RADIUS } from './Garment';
-import { centreTick, copyOffset, depthKeyframes, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestCopy, nearestPlace, neighbourIndex, offsetToCopy, printRect, railBounds, railWindow, recentred, rubberBand, shortestDelta, showcaseGeometry, showsReflection, snapTarget, SPIN_SPEED, stageFollow, stageSkip, stripLoops, stripMiddle, stripRun, stripShift, stripTick, THUMB_PITCH, WINDOW_RADIUS, windowIndices } from './railMotion';
+import { centreTick, copyOffset, depthKeyframes, ECHO_DISCARD_MS, echoCounts, fitBox, mod, nearestCopy, nearestPlace, neighbourIndex, offsetToCopy, printRect, railBounds, railWindow, recentred, rubberBand, shortestDelta, showcaseGeometry, showsReflection, snapTarget, nextSpinPhase, SpinPhase, stageFollow, stageSkip, stripLoops, stripMiddle, stripReturn, stripRun, stripShift, stripTick, STRIP_GLIDE_BACK, THUMB_PITCH, WINDOW_RADIUS, windowIndices } from './railMotion';
 import { prepareReflectionCopy, useReflectionCopy } from './reflectionCopy';
-import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from './studio';
+import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion, useScreenReader } from './studio';
 import { StudioSheet } from './StudioSheet';
 import { useAspects } from './useAspects';
 
@@ -31,10 +31,12 @@ const PIECE_FADE_MS = 140;
 const STRIP_DECELERATION = 0.9985;
 /** No scroll event for this long and no finger: the strip has stopped, however it came to. */
 const STRIP_IDLE_MS = 140;
+/** In native momentum its end is what counts, a slow tail reports rarely; this much silence only guards against an end that never comes. */
+const STRIP_MOMENTUM_SILENCE_MS = 1500;
 const AUTO_SCROLL_MS = 500;
 
 type Geometry = ReturnType<typeof showcaseGeometry>;
-type StripSpin = { shift: number; slip: number; lastPlace: number; lastAt: number; lastSkip: number; speed: number; tickPlace: number; dragging: boolean; aligning: boolean };
+type StripSpin = { shift: number; slip: number; lastPlace: number; lastAt: number; lastSkip: number; speed: number; tickPlace: number; dragging: boolean; aligning: boolean; momentum: boolean; phase: SpinPhase };
 
 const AnimatedNumberList = Animated.FlatList as unknown as typeof FlatList<number>;
 
@@ -265,12 +267,16 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   const { isDark } = useTheme();
   const { width } = useWindowDimensions();
   const reduced = useReducedMotion();
+  const screenReader = useScreenReader();
   const [section, setSection] = useState('Все');
   const [rail, setRail] = useState<{ id: string | null; center: number }>({ id: items[0]?.id ?? null, center: 0 });
   const [allOpen, setAllOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [stageHeight, setStageHeight] = useState(0);
-  const [spinning, setSpinning] = useState(false);
+  // 'fast' strips the stage to the piece and its neighbours; 'tail' has them back but leaves reflections and the row's state for the rest.
+  const [spinPhase, setSpinPhase] = useState<SpinPhase>('calm');
+  const spinning = spinPhase === 'fast';
+  const atRest = spinPhase === 'calm';
   const spunOnce = useRef(false);
   if (spinning) spunOnce.current = true;
 
@@ -307,7 +313,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     drag: null as null | { base: number; grab: number; dx: number; origin: number },
     /** The strip under a finger or in its momentum: it drives the rail, until it rests. */
     spin: null as null | StripSpin,
-    width, loops: false, stripCopy: 0, stripX: 0, autoUntil: 0, stripTimer: null as null | ReturnType<typeof setTimeout>, tickAt: 0
+    width, loops: false, stripCopy: 0, stripX: 0, stripHeld: false, autoUntil: 0, stripTimer: null as null | ReturnType<typeof setTimeout>, tickAt: 0
   }).current;
   live.list = list;
   live.index = index;
@@ -415,6 +421,8 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     discardEchoes();
     position.stopAnimation();
     position.setValue(live.center);
+    // The strip may be anywhere by now: whatever follows it counts from where it really is.
+    if (live.loops) live.stripCopy = Math.round(offsetToCopy(live.stripX, live.width));
     live.now = live.target = live.lastTick = live.center;
   };
   const listKey = useMemo(() => list.map(entry => entry.id).join('|'), [list]);
@@ -424,34 +432,43 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   const endSpin = () => {
     clearStripTimer();
     live.spin = null;
-    setSpinning(false);
+    setSpinPhase('calm');
   };
   const scrollStrip = (copy: number, animated: boolean) => {
     live.stripCopy = copy;
     live.autoUntil = Date.now() + AUTO_SCROLL_MS;
     stripRef.current?.scrollToOffset({ offset: copyOffset(copy, live.width), animated });
   };
-  /** The strip gives way to something else moving the rail: it goes to whatever the stage has at its centre. */
+  /** The strip goes to whatever the stage has at its centre: the near copy, gliding only if that is a short way. */
+  const alignStrip = () => {
+    if (!live.loops || !live.list.length) return;
+    const { copy, animated, aligned } = stripReturn(offsetToCopy(live.stripX, live.width), mod(live.index + live.target - live.center, live.list.length), live.list.length);
+    live.stripCopy = copy;
+    if (!aligned) scrollStrip(copy, animated && !live.reduced);
+  };
+  /** The strip gives way to something else moving the rail. */
   function dropStrip() {
     if (!live.spin) return;
     endSpin();
     live.target = Math.round(live.now);
-    scrollStrip(nearestCopy(Math.round(offsetToCopy(live.stripX, live.width)), live.index, live.list.length), !live.reduced);
+    alignStrip();
   }
   const beginStrip = () => {
+    live.stripHeld = true;
     if (!live.loops || !live.list.length) return;
     clearStripTimer();
-    if (live.spin) { live.spin.dragging = true; live.spin.aligning = false; return; }
+    if (live.spin) { live.spin.dragging = true; live.spin.aligning = false; live.spin.momentum = false; return; }
     if (live.drag) return;
     position.stopAnimation();
     const place = offsetToCopy(live.stripX, live.width);
     const shift = stripShift(place, live.now, live.center, live.index, live.list.length);
-    live.spin = { shift, slip: live.now - (place + shift), lastPlace: place, lastAt: Date.now(), lastSkip: 0, speed: 0, tickPlace: Math.round(place), dragging: true, aligning: false };
+    live.spin = { shift, slip: live.now - (place + shift), lastPlace: place, lastAt: Date.now(), lastSkip: 0, speed: 0, tickPlace: Math.round(place), dragging: true, aligning: false, momentum: false, phase: 'calm' };
   };
   const finishStrip = () => {
     const spin = live.spin;
-    if (!spin) return;
+    if (!spin || spin.dragging) return;
     clearStripTimer();
+    spin.momentum = false;
     const place = Math.round(offsetToCopy(live.stripX, live.width));
     const aligned = Math.abs(copyOffset(place, live.width) - live.stripX) < 0.5;
     // The native snap has it there already; where there is none (the web, a stop under a finger) it is done here.
@@ -482,8 +499,26 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   };
   function watchStrip() {
     clearStripTimer();
-    live.stripTimer = setTimeout(() => { live.stripTimer = null; if (live.spin && !live.spin.dragging) finishStrip(); }, STRIP_IDLE_MS);
+    live.stripTimer = setTimeout(() => {
+      live.stripTimer = null;
+      if (live.spin) finishStrip();
+      else if (!live.stripHeld) alignStrip();
+    }, live.spin?.momentum ? STRIP_MOMENTUM_SILENCE_MS : STRIP_IDLE_MS);
   }
+  const onStripDragEnd = () => {
+    live.stripHeld = false;
+    if (live.spin) live.spin.dragging = false;
+    watchStrip();
+  };
+  const onStripMomentumBegin = () => {
+    if (live.spin) { live.spin.momentum = true; watchStrip(); }
+    else clearStripTimer();
+  };
+  // A scroll that ended with no spin (a piece chosen from the grid mid-glide, a finger here while another held the stage) answers to the stage.
+  const onStripMomentumEnd = () => {
+    if (live.spin) finishStrip();
+    else if (!live.stripHeld) alignStrip();
+  };
   const onStripOffset = (x: number) => {
     live.stripX = x;
     if (!live.loops) return;
@@ -511,7 +546,10 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     spin.lastAt = now;
     position.setValue(shown);
     arrive(shown);
-    if (!live.reduced && spin.speed > SPIN_SPEED) setSpinning(true);
+    if (!live.reduced) {
+      const phase = nextSpinPhase(spin.phase, spin.speed);
+      if (phase !== spin.phase) { spin.phase = phase; setSpinPhase(phase); }
+    }
     if (!spin.dragging) watchStrip();
   };
   const stripEvents = useRef({ onStripOffset }).current;
@@ -594,7 +632,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
     return copy;
   }, [listKey, loops, width]);
   const stripData = useMemo(() => Array.from({ length: loops ? stripRun(count) : count }, (_, at) => at), [loops, count]);
-  useLayoutEffect(() => { if (loops) scrollX.setValue(copyOffset(stripStart, width)); }, [stripStart, loops, width]);
+  useLayoutEffect(() => { if (loops) scrollX.setValue(copyOffset(stripStart, width)); }, [stripStart, listKey, loops, width]);
   // The web takes no starting offset from a prop.
   useEffect(() => {
     if (loops && Platform.OS === 'web') { live.autoUntil = Date.now() + AUTO_SCROLL_MS; stripRef.current?.scrollToOffset({ offset: copyOffset(stripStart, width), animated: false }); }
@@ -604,7 +642,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   useEffect(() => {
     if (!loops || live.spin) return;
     const copy = nearestCopy(live.stripCopy, index, count);
-    if (copy !== live.stripCopy) scrollStrip(copy, !reduced);
+    if (copy !== live.stripCopy) scrollStrip(copy, !reduced && Math.abs(copy - live.stripCopy) <= STRIP_GLIDE_BACK);
   }, [index, count, loops, reduced]);
 
   // Pieces beyond the mounted window, fetched ahead when they come from the network (the mounted ones decode by themselves).
@@ -618,12 +656,12 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
 
   // Reflections' small copies, ahead of the pieces sliding in: the focused piece's is taken first.
   useEffect(() => {
-    if (spinning) return;
+    if (!atRest) return;
     for (const at of windowIndices(index, count)) {
       const uri = list[at]?.imageUri;
       if (uri) prepareReflectionCopy(uri);
     }
-  }, [index, count, list, spinning]);
+  }, [index, count, list, atRest]);
 
   // Web: the arrows move the rail, unless someone is typing or a sheet is over it.
   useEffect(() => {
@@ -649,7 +687,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
   }, [center, index, count, list, spinning]);
   // Who is announced as chosen; nothing about the look depends on it in a looping strip, and a spin doesn't re-render the row for it.
   const selectedRef = useRef(focusId);
-  if (!spinning) selectedRef.current = focusId;
+  if (atRest) selectedRef.current = focusId;
   const selectedId = selectedRef.current;
   const renderThumb = useCallback(({ item: at }: { item: number }) => {
     const entry = list[mod(at, count)];
@@ -708,7 +746,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
         </View> : null}
         {stageHeight ? slots.map(({ at, entry }) => (
           <ShowcaseSlot key={`${at}:${reduced}`} at={at} item={entry} geometry={geometry} position={position} lift={lift} floatY={floatY}
-            depth={3 - Math.abs(at - center)} reflected={!spinning && showsReflection(at, center)} reduced={reduced} reflectionOpacity={isDark ? 0.34 : 0.42} fadeIn={spunOnce.current} onPress={pressSlot} />
+            depth={3 - Math.abs(at - center)} reflected={atRest && showsReflection(at, center)} reduced={reduced} reflectionOpacity={isDark ? 0.34 : 0.42} fadeIn={spunOnce.current} onPress={pressSlot} />
         )) : null}
         {count > 1 ? <View pointerEvents="none" style={styles.position}><Text style={[font('regular'), { fontSize: 12, color: soft }]}>{placeText}</Text></View> : null}
       </View>
@@ -730,14 +768,16 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
         ))}
       </ScrollView>
       {loops ? (
+        // VoiceOver can't get out of an endless row and its focus drags the row off the stage: the stage is adjustable and «Все вещи» lists everything.
+        <View collapsable={false} style={styles.stripList} accessibilityElementsHidden={screenReader} importantForAccessibility={screenReader ? 'no-hide-descendants' : 'auto'}>
         <AnimatedNumberList key={`loop:${width}:${listKey}`} ref={stripRef} horizontal data={stripData} keyExtractor={thumbKey} renderItem={renderThumb} extraData={renderThumb} getItemLayout={thumbLayout}
-          showsHorizontalScrollIndicator={false} style={styles.stripList} contentContainerStyle={styles.stripLoop} bounces={false}
+          showsHorizontalScrollIndicator={false} style={styles.stripInner} contentContainerStyle={styles.stripLoop} bounces={false}
           initialScrollIndex={Math.max(0, stripStart - Math.ceil(stripCells / 2))} contentOffset={{ x: copyOffset(stripStart, width), y: 0 }}
           initialNumToRender={stripCells} maxToRenderPerBatch={stripCells} updateCellsBatchingPeriod={16} windowSize={5}
           snapToInterval={THUMB_PITCH} snapToAlignment="center" disableIntervalMomentum={reduced} decelerationRate={reduced ? 'fast' : STRIP_DECELERATION}
           scrollEventThrottle={16} onScroll={onStripScroll} onScrollBeginDrag={beginStrip}
-          onScrollEndDrag={() => { if (live.spin) { live.spin.dragging = false; watchStrip(); } }}
-          onMomentumScrollEnd={finishStrip} />
+          onScrollEndDrag={onStripDragEnd} onMomentumScrollBegin={onStripMomentumBegin} onMomentumScrollEnd={onStripMomentumEnd} />
+        </View>
       ) : (
         <FlatList key="still" horizontal scrollEnabled={false} data={stripData} keyExtractor={thumbKey} renderItem={renderThumb} extraData={renderThumb} getItemLayout={thumbLayout}
           showsHorizontalScrollIndicator={false} style={styles.stripList} contentContainerStyle={styles.stripStill} />
@@ -780,6 +820,7 @@ const styles = StyleSheet.create({
   sections: { gap: 16, paddingRight: 16 },
   strip: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, alignItems: 'flex-end' },
   stripList: { flexGrow: 0, marginTop: 10, marginHorizontal: -16 },
+  stripInner: { flexGrow: 0 },
   stripLoop: { paddingTop: 10, paddingBottom: 4, alignItems: 'flex-end' },
   stripStill: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, alignItems: 'flex-end' },
   // The thumbnail in the middle of its cell: the native snap centres the cell.

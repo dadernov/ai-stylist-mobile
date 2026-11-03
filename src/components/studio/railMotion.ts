@@ -90,6 +90,14 @@ export function nearestCopy(from: number, index: number, count: number) {
 /** The scroll offset that centres a copy, and back: cells are `pitch` wide with the thumbnail in their middle. */
 export const copyOffset = (copy: number, viewWidth: number, pitch = THUMB_PITCH) => copy * pitch + pitch / 2 - viewWidth / 2;
 export const offsetToCopy = (offset: number, viewWidth: number, pitch = THUMB_PITCH) => (offset + viewWidth / 2 - pitch / 2) / pitch;
+/** Further than this many pieces a strip going back to the stage jumps there: a long run of the row back would only look like a mistake. */
+export const STRIP_GLIDE_BACK = 4;
+/** Where a strip left off its piece goes: the nearest copy of it; `aligned` if it is there already (under a pixel). */
+export function stripReturn(place: number, index: number, count: number) {
+  const copy = nearestCopy(Math.round(place), index, count);
+  const away = Math.abs(copy - place);
+  return { copy, animated: away <= STRIP_GLIDE_BACK, aligned: away * THUMB_PITCH < 1 };
+}
 /** Where a strip at rest should be: the same piece near the middle if it has wandered far; otherwise where it is. */
 export function recentred(copy: number, count: number) {
   const middle = stripMiddle(mod(copy, count), count);
@@ -98,6 +106,14 @@ export function recentred(copy: number, count: number) {
 
 /** Faster than this (pieces a second) the strip is spinning, and the stage drops whatever costs image work. */
 export const SPIN_SPEED = 10;
+/** Slower than this a spin's tail has the stage's neighbours back, well before it ends; the gap keeps a speed around one line from flickering. */
+export const SPIN_CALM_SPEED = 4.5;
+export type SpinPhase = 'calm' | 'fast' | 'tail';
+/** A spin's phase, from none to fast to its tail; it goes back to calm only by ending, not here. */
+export function nextSpinPhase(phase: SpinPhase, speed: number): SpinPhase {
+  if (speed > SPIN_SPEED) return 'fast';
+  return phase === 'fast' && speed < SPIN_CALM_SPEED ? 'tail' : phase;
+}
 /** The fastest the stage slides; a strip going faster has the stage skip pieces instead of decoding each. */
 export const STAGE_MAX_SPEED = 9;
 export const STAGE_SKIP_GAP_MS = 120;

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { AccessibilityInfo, TextStyle } from 'react-native';
+import { AccessibilityInfo, Platform, TextStyle } from 'react-native';
 import { WardrobeItem } from '../../data/mock';
 import { darkColors } from '../../constants/theme';
 
@@ -73,4 +73,29 @@ const getReducedMotion = () => reducedMotion;
 /** Whether the person asked the system to cut motion down: floating and automatic effects stay still then. */
 export function useReducedMotion() {
   return useSyncExternalStore(subscribeReducedMotion, getReducedMotion, getReducedMotion);
+}
+
+let screenReaderOn = false;
+const screenReaderListeners = new Set<() => void>();
+let screenReaderSubscribed = false;
+const setScreenReader = (value: boolean) => {
+  if (value === screenReaderOn) return;
+  screenReaderOn = value;
+  screenReaderListeners.forEach(listener => listener());
+};
+function subscribeScreenReader(listener: () => void) {
+  screenReaderListeners.add(listener);
+  // The web has no way to tell, whatever react-native-web answers.
+  if (!screenReaderSubscribed && Platform.OS !== 'web') {
+    screenReaderSubscribed = true;
+    AccessibilityInfo.isScreenReaderEnabled?.().then(setScreenReader).catch(() => {});
+    AccessibilityInfo.addEventListener?.('screenReaderChanged', setScreenReader);
+  }
+  return () => { screenReaderListeners.delete(listener); };
+}
+const getScreenReader = () => screenReaderOn;
+
+/** Whether VoiceOver or TalkBack is on: one system subscription however many use it. */
+export function useScreenReader() {
+  return useSyncExternalStore(subscribeScreenReader, getScreenReader, getScreenReader);
 }

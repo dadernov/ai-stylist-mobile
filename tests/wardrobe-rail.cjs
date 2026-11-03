@@ -216,4 +216,26 @@ assert.ok(m.showcaseGeometry(400, 390, true).pitch > m.showcaseGeometry(400, 390
 // A print's picture is centred in its box.
 const printed = m.printRect({ width: 100, height: 100 });
 assert.ok(Math.abs(printed.x - 8) < 1e-9 && Math.abs(printed.y - 4) < 1e-9 && Math.abs(printed.width - 84) < 1e-9 && Math.abs(printed.height - 92) < 1e-9);
+
+// A spin's phases: fast above the top line, its tail only below the lower one, nothing back and forth around either.
+assert.ok(m.SPIN_CALM_SPEED >= 4 && m.SPIN_CALM_SPEED <= 5 && m.SPIN_CALM_SPEED < m.SPIN_SPEED);
+assert.equal(m.nextSpinPhase('calm', m.SPIN_SPEED - 1), 'calm', 'a slow drag is no spin');
+assert.equal(m.nextSpinPhase('calm', 3), 'calm', 'and has no tail');
+assert.equal(m.nextSpinPhase('calm', m.SPIN_SPEED + 1), 'fast');
+assert.equal(m.nextSpinPhase('fast', 7), 'fast', 'between the lines it stays');
+assert.equal(m.nextSpinPhase('fast', m.SPIN_CALM_SPEED - 0.1), 'tail');
+assert.equal(m.nextSpinPhase('tail', 7), 'tail', 'between the lines it stays');
+assert.equal(m.nextSpinPhase('tail', 0), 'tail', 'only the end of the spin makes it calm');
+assert.equal(m.nextSpinPhase('tail', m.SPIN_SPEED + 1), 'fast', 'a new flick on the same spin');
+
+// A strip left off its piece: the near copy, a short glide or a jump, never the long way back.
+assert.deepEqual(m.stripReturn(1002, 2, 20), { copy: 1002, animated: true, aligned: true }, 'there already');
+assert.equal(m.stripReturn(1002.5, 2, 20).aligned, false);
+assert.equal(m.stripReturn(1003, 2, 20).copy, 1002);
+assert.equal(m.stripReturn(1003, 2, 20).animated, true);
+assert.equal(m.stripReturn(1000 + m.STRIP_GLIDE_BACK, 0, 20).animated, true);
+const farBack = m.stripReturn(1000 + m.STRIP_GLIDE_BACK + 1, 0, 20);
+assert.equal(farBack.copy, 1000);
+assert.equal(farBack.animated, false);
+assert.equal(m.stripReturn(1019, 0, 20).copy, 1020, 'around the end of the list, the short way');
 console.log('wardrobe-rail: ok');
