@@ -9,7 +9,7 @@ import { AppPressable } from '../AppPressable';
 import { OverlayOutlet } from '../OverlayHost';
 import { FormScrollView } from '../ui/FormScrollView';
 import { Pill } from './Glass';
-import { SheetHandle, useSheetDrag } from './SheetHandle';
+import { SheetGestureContext, SheetHandle, useSheetDrag, useSheetGestureBlock } from './SheetHandle';
 import { font, INK, INK_ON_DARK, inkSoft, sheetFill } from './studio';
 
 type StudioSheetProps = {
@@ -41,18 +41,23 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
   const bottom = Math.max(insets.bottom, 16) + 16;
   // A content-sized sheet rises with the keyboard; a fixed-height one lets its scroll make room instead.
   const lift = Platform.OS === 'ios' && !height;
-  // The handle and header are the drag zone; the scroll below keeps its own gestures.
-  const drag = useSheetDrag({ onClose, visible, canDismiss: dismissOnBackdrop });
+  // The whole sheet is the drag zone. A body that lays itself out counts once its list reports to the sheet (FormScrollView,
+  // SheetFlatList): over a list that doesn't, a drag can't tell scrolling from closing, and only the handle and header drag.
+  const drag = useSheetDrag({ onClose, visible, canDismiss: dismissOnBackdrop, body: scroll });
+  // Opened from another sheet's content: that one stays put under this one's drags.
+  useSheetGestureBlock(visible);
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={lift ? 'padding' : undefined} style={styles.fill}>
         <AppPressable feedback={false} accessible={dismissOnBackdrop} accessibilityLabel={dismissOnBackdrop ? t('Закрыть') : undefined}
           onPress={dismissOnBackdrop ? onClose : undefined} style={StyleSheet.absoluteFill}>
-          <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: drag.dim }]}>
+            <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          </Animated.View>
         </AppPressable>
-        <Animated.View onLayout={drag.onLayout}
+        <Animated.View onLayout={drag.onLayout} {...drag.panHandlers}
           style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark), transform: [{ translateY: drag.translateY }] }]}>
-          <View {...drag.panHandlers}>
+          <View {...drag.grabHandlers}>
           <SheetHandle onClose={onClose} canDismiss={dismissOnBackdrop} color={isDark ? '#3A3D42' : '#D5D7DA'} style={styles.handle} />
           {title ? (
             <View style={styles.header}>
@@ -64,6 +69,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
             </View>
           ) : null}
           </View>
+          <SheetGestureContext.Provider value={drag.hub}>
           {scroll ? (
             <FormScrollView automaticallyAdjustKeyboardInsets={Platform.OS === 'ios' && !lift}
               contentContainerStyle={[styles.body, { paddingTop: title ? 16 : 12, paddingBottom: bottom }]}>
@@ -72,6 +78,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
           ) : (
             <View style={[styles.body, styles.frame, { paddingTop: title ? 16 : 12, paddingBottom: bottom }]}>{children}</View>
           )}
+          </SheetGestureContext.Provider>
         </Animated.View>
       </KeyboardAvoidingView>
       <OverlayOutlet />
