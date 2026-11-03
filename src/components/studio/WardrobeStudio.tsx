@@ -28,7 +28,7 @@ const REFLECTION_FADE_MS = 220;
 const SHAPE_WAIT_MS = 800;
 const PIECE_FADE_MS = 140;
 /** A little slower than iOS's own 0.998: a hard flick glides on and comes to rest unhurried. */
-const STRIP_DECELERATION = 0.9985;
+const STRIP_DECELERATION = 0.996;
 /** No scroll event for this long and no finger: the strip has stopped, however it came to. */
 const STRIP_IDLE_MS = 140;
 /** In native momentum its end is what counts, a slow tail reports rarely; this much silence only guards against an end that never comes. */
