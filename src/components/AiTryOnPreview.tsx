@@ -27,6 +27,8 @@ import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame, FittedImage } from './ui/FittedFrame';
+import { GenerationView } from './studio/GenerationView';
+import { revealLedger } from './studio/generationFog';
 import { pictureFit } from './studio/imageFit';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { useSheetGestureBlock } from './studio/SheetHandle';
@@ -73,9 +75,6 @@ const shortDateTime = (timestamp: number) =>
 
 const mergeMessages = (...messages: Array<string | null | undefined>) =>
   messages.filter(Boolean).join(' · ') || undefined;
-
-// Server stage names map onto wardrobe sections, so progress can name the garment itself.
-const STAGE_SECTIONS: Record<string, string> = { bottom: 'Низ', shoes: 'Обувь', top: 'Верх', outer: 'Верхняя одежда' };
 
 export function AiTryOnPreview({
   modelUri,
@@ -154,23 +153,15 @@ export function AiTryOnPreview({
   const canGenerate = Boolean(modelUri && context && jobsReady && !readOnly && (topGarment?.imageUri || outerGarment?.imageUri || bottomGarment?.imageUri || shoesGarment?.imageUri || accessory));
   const isBusy = isLoading || Boolean(pendingJob);
   const progress = pendingJob?.progress;
-  const stageLabel = (stage: string) => {
-    const section = STAGE_SECTIONS[stage];
-    const garment = section ? items.find(item => item.section === section && item.imageUri) : undefined;
-    return garment?.name || (section ? t(section) : stage);
-  };
-  const listStages = (stages: string[]) => stages.map(stageLabel).join(', ');
-  const busyLabel = tryOnStatusLabel(progress, t, stageLabel);
-  const intermediateUri = isBusy && progress?.previewUrl ? progress.previewUrl : null;
-  // One frame for every stage (the intermediate frame, then the result): it keeps its shape while the next one is measured.
-  const framedAspect = useImageAspect(intermediateUri || resultUri);
+  const busyLabel = tryOnStatusLabel(progress, t);
+  // One frame for the result; the running look and its reveal are the one generation view.
+  const framedAspect = useImageAspect(resultUri);
   const framedFit = pictureFit(framedAspect);
-  const intermediateHint = !progress || ['outfit', 'queue', 'upload'].includes(progress.stage || '') ? null
-    : progress.stage === 'layers' ? t('Базовый образ готов, надеваем верхние слои. Лицо и фон восстановятся в финальной версии.')
-    : progress.pending.length || (progress.stage && progress.stage !== 'composite')
-      ? t('Уже надето: {done}. Осталось: {pending}. Лицо и фон восстановятся в финальной версии.', {
-        done: listStages(progress.done) || '—', pending: listStages([...(progress.stage && progress.stage !== 'composite' ? [progress.stage] : []), ...progress.pending]) })
-      : t('Все вещи надеты. Восстанавливаем лицо и фон…');
+  // The newest finished look of this card, until its reveal has played here.
+  const finishedJob = matchingJobs.find(job => job.status === 'succeeded' && job.result);
+  const [revealPlayed, setRevealPlayed] = useState<string>();
+  const owedJob = !pendingJob && finishedJob && revealPlayed !== finishedJob.id && revealLedger.owes(finishedJob.id, 'full') ? finishedJob : undefined;
+  const liveJob = pendingJob || owedJob;
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
     !topGarment && !outerGarment && !bottomGarment && !shoesGarment && !accessory ? t('Выбери вещь с фото для примерки.') : null,
@@ -352,7 +343,8 @@ export function AiTryOnPreview({
         {variant === 'sheet' ? <PrimarySurface dark={isDark}>{buttonContent(isDark ? INK : '#FFFFFF')}</PrimarySurface>
           : <Glass>{buttonContent(colors.text)}</Glass>}
       </AppPressable>
-      {pendingJob ? <Text style={styles.hint}>{busyLabel}</Text> : null}
+      {/* The sheet has no frame of its own: the window opens over it, and this line says where the look is meanwhile. */}
+      {pendingJob && variant === 'sheet' ? <Text style={styles.hint}>{busyLabel}</Text> : null}
   </>;
   const warningsBlock = readinessWarnings.length > 0 ? <View style={styles.qualityCard}>
     {readinessWarnings.map((item) => (
@@ -398,18 +390,19 @@ export function AiTryOnPreview({
 
   return (
     <View style={styles.wrap}>
-      {resultUri && modelUri && !intermediateUri && <Glass><View style={styles.comparison} accessibilityRole="tablist">
+      {resultUri && modelUri && !liveJob && <Glass><View style={styles.comparison} accessibilityRole="tablist">
         {[false, true].map(original => <AppPressable key={String(original)} haptics accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
           style={[styles.compareTab, showOriginal === original && styles.compareTabActive]} onPress={() => setShowOriginal(original)}>
           <Text style={[styles.compareTitle, showOriginal === original && styles.compareTitleActive]}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
         </AppPressable>)}
       </View></Glass>}
-      {intermediateUri || resultUri ? (
+      {liveJob ? (
+        <GenerationView jobKey={liveJob.id} busy={Boolean(pendingJob)} label={busyLabel} stage={progress?.stage} items={items} sourceUri={liveJob.sourceUri || modelUri}
+          photoUri={progress?.previewUrl || modelUri || null} resultUri={pendingJob ? null : reanchorTryOnUri(liveJob.result?.imageUri) || null} radius={28} frameStyle={styles.image}
+          active={!dock.windowUp} onRevealEnd={() => setRevealPlayed(liveJob.id)}
+          renderResult={fit => <Image source={{ uri: reanchorTryOnUri(liveJob.result?.imageUri) || undefined }} resizeMode={fit} style={StyleSheet.absoluteFill} />} />
+      ) : resultUri ? (
         <FittedFrame aspect={framedAspect} radius={28} style={styles.image}>
-        {intermediateUri ? <>
-          <Image source={{ uri: intermediateUri }} style={StyleSheet.absoluteFill} resizeMode={framedFit} accessibilityLabel={t('Промежуточный результат')} />
-          <Glass style={styles.intermediateBadge}><Text style={styles.intermediateBadgeText}>{t('Промежуточный результат')}</Text></Glass>
-        </> : resultUri ? (
         <AppPressable style={StyleSheet.absoluteFill} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
@@ -446,12 +439,10 @@ export function AiTryOnPreview({
             </View>
           ) : null}
         </AppPressable>
-        ) : null}
         </FittedFrame>
       ) : null}
-      {intermediateHint && isBusy ? <Text style={styles.hint}>{intermediateHint}</Text> : null}
-      {!resultUri && !intermediateUri && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={28} style={styles.image} accessibilityLabel={t('Фото для примерки')} />}
-      {resultUri && !isBusy ? (<View style={styles.resultActions}>
+      {!resultUri && !liveJob && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={28} style={styles.image} accessibilityLabel={t('Фото для примерки')} />}
+      {resultUri && !isBusy && !owedJob ? (<View style={styles.resultActions}>
         <AppPressable haptics style={{ flex: 1, borderRadius: 999 }} onPress={saveToGallery} disabled={saveState === 'saving'}
           accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
           <Glass><View style={styles.secondaryButton}>

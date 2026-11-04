@@ -656,7 +656,7 @@ export function OutfitBuilderScreen({
       <FormScrollView style={activeTab === 'history' && { display: 'none' }}
         contentContainerStyle={[styles.pageContent, activeTab === 'fitting' && fittingCta ? { paddingBottom: 96 } : null]}>
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
-          <FittingRoom key={repeatSelection?.key || 0} items={items} modelUri={modelUri}
+          <FittingRoom key={repeatSelection?.key || 0} visible={activeTab === 'fitting'} items={items} modelUri={modelUri}
             initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onModelChange={onModelChange} onWardrobe={onWardrobe}
             onOpenHistory={() => { setHistoryItemId(undefined); setActiveTab('history'); }}
             onSelectionCta={setFittingCta}

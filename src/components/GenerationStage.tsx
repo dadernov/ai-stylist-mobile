@@ -1,5 +1,5 @@
-import { forwardRef, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticEvent, ScrollView, ScrollViewProps,
+import { forwardRef, ReactNode, useEffect, useRef, useState } from 'react';
+import { Animated, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticEvent, ScrollView, ScrollViewProps,
   StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -7,19 +7,15 @@ import { ArrowUpRight, Check, ChevronDown, Download, RefreshCw, Share2, X } from
 import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
-import { DevelopingImage } from './studio/DevelopingImage';
+import { GenerationView } from './studio/GenerationView';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GarmentOptions } from '../domain/garmentOptions';
-import { lookComments } from '../domain/lookComments';
-import { selectionHaptic, successHaptic } from '../services/haptics';
-import { FittedFrame } from './ui/FittedFrame';
-import { useFrameAspect } from './studio/useImageAspect';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { FormScrollView } from './ui/FormScrollView';
 import { SheetGestureContext, useSheetDrag, useSheetScrollLock } from './studio/SheetHandle';
 import { Pill } from './studio/Glass';
-import { backdropDim, font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
+import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
 /** Before the try-on: how each garment is worn, and the button that starts it. */
 export type StageSetup = {
@@ -74,8 +70,8 @@ type Props = {
 
 /**
  * The window try-ons happen in: it slides up when the user taps "Try on",
- * lets the look develop out of a soft blur with one calm line of status, and
- * the finished picture sharpens from top to bottom. With several try-ons the window leafs
+ * shows the one generation view (GenerationView): the look develops in a volume
+ * of light with one calm line of status, and comes through it from top to bottom. With several try-ons the window leafs
  * through them, the first one first. Closing it early keeps them running.
  */
 export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange, onClose, setup, banner }: Props) {
@@ -200,29 +196,8 @@ const Pager = forwardRef<ScrollView, ScrollViewProps>(function Pager(props, ref)
 function PageView({ page, width, active, onDone }: { page: StagePage; width: number; active: boolean; onDone: () => void }) {
   const t = useT();
   const { colors: { danger }, isDark } = useTheme();
-  const reduced = useReducedMotion();
-  const ink = isDark ? INK_ON_DARK : INK;
-  const { busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
+  const { key, busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
   const done = Boolean(resultUri) && !busy;
-  // The status line changes calmly: the old words fade out, the new ones in.
-  const [label, setLabel] = useState(busyLabel);
-  const fade = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (busyLabel === label) return;
-    if (reduced) { setLabel(busyLabel); return; }
-    Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
-      setLabel(busyLabel);
-      Animated.timing(fade, { toValue: 1, duration: 320, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
-    });
-  }, [busyLabel]);
-
-  // Each new stage of the try-on on screen is a small tick under the thumb.
-  const lastStage = useRef(stage);
-  useEffect(() => {
-    if (stage === lastStage.current) return;
-    lastStage.current = stage;
-    if (stage && busy && active) selectionHaptic();
-  }, [stage, busy, active]);
 
   // Before/after of the finished look: a new result starts on the result.
   const [showBefore, setShowBefore] = useState(false);
@@ -230,33 +205,23 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
 
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
   const frameWidth = Math.min(width, 480);
-  // The frame is the picture's own rect: in the source photo's shape from the start, the result's once it is known.
-  const { aspect, settling, fit } = useFrameAspect(sourceUri || photoUri, resultUri, busy);
 
   return (
     <View style={{ flex: 1 }}>
-      <FittedFrame aspect={aspect} radius={30} holdHeight={!done || settling} style={[styles.frame, { width: frameWidth }]} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
-        <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy || settling} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
-          onRevealStart={successHaptic}>
-          {resultUri ? <ZoomableImage uri={resultUri} resizeMode={fit} accessibilityLabel={t('Результат')} /> : null}
-        </DevelopingImage>
-        {done && sourceUri ? (
+      <GenerationView jobKey={key} busy={busy} label={busyLabel} stage={stage} items={items} sourceUri={sourceUri} photoUri={photoUri} resultUri={resultUri} active={active}
+        showBefore={showBefore} frameStyle={[styles.frame, { width: frameWidth }]} note={t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}
+        renderResult={fit => <ZoomableImage uri={resultUri!} resizeMode={fit} accessibilityLabel={t('Результат')} />}
+        overlay={done && sourceUri ? (
           <Pill size="sm" title={t(showBefore ? 'После' : 'До')} accessibilityLabel={t(showBefore ? 'Показать результат' : 'Показать исходное фото')}
             accessibilityState={{ selected: showBefore }} onPress={() => setShowBefore(value => !value)} style={styles.compare} />
-        ) : null}
-      </FittedFrame>
+        ) : null} />
 
-      <View style={styles.status}>
-        {busy ? (
-          <>
-            <Animated.Text style={[styles.statusText, { color: ink, opacity: fade }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">{label}</Animated.Text>
-            <StylistWhile items={items} active={active} />
-            <Text maxFontSizeMultiplier={1.3} style={[styles.note, styles.centered, { color: inkSoft(isDark) }]}>{t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}</Text>
-          </>
-        ) : null}
-        {error && !busy ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
-        {warning && done ? <Text style={[styles.note, { color: inkSoft(isDark) }]}>{warning}</Text> : null}
-      </View>
+      {!busy ? (
+        <View style={styles.status}>
+          {error ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
+          {warning && done ? <Text style={[styles.note, { color: inkSoft(isDark) }]}>{warning}</Text> : null}
+        </View>
+      ) : null}
 
       {!busy ? (
         <View style={styles.actions}>
@@ -278,53 +243,8 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
   );
 }
 
-const COMMENT_MS = 8000;
-
-/** While the look is put on: what the stylist thinks of this very look, one remark every few seconds, and its pieces. */
-function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolean }) {
-  const t = useT();
-  const { isDark } = useTheme();
-  const reduced = useReducedMotion();
-  // On a small screen the photo needs the room more than the thumbnails do.
-  const { height } = useWindowDimensions();
-  const comments = useMemo(() => lookComments(items, t), [items.map(item => item.id).join(), t]);
-  const [at, setAt] = useState(0);
-  const fade = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!active || comments.length < 2) return;
-    const timer = setInterval(() => {
-      if (reduced) { setAt(index => index + 1); return; }
-      Animated.timing(fade, { toValue: 0, duration: 240, useNativeDriver: true }).start(({ finished }) => {
-        if (!finished) return;
-        setAt(index => index + 1);
-        Animated.timing(fade, { toValue: 1, duration: 360, useNativeDriver: true }).start();
-      });
-    }, COMMENT_MS);
-    return () => { clearInterval(timer); fade.stopAnimation(); fade.setValue(1); };
-  }, [active, comments.length, reduced, fade]);
-  const pictured = items.filter(item => item.imageUri).slice(0, 6);
-  return (
-    <>
-      <Animated.Text style={[styles.comment, { color: inkSoft(isDark), opacity: fade }]} numberOfLines={3} maxFontSizeMultiplier={1.3}>{comments[at % comments.length]}</Animated.Text>
-      {pictured.length && height >= 700 ? (
-        <View style={styles.thumbs}>
-          {pictured.map(item => (
-            <View key={item.id} style={[styles.thumb, { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]}>
-              <Image source={{ uri: item.imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" accessibilityLabel={item.name} />
-            </View>
-          ))}
-        </View>
-      ) : null}
-    </>
-  );
-}
-
 const styles = StyleSheet.create({
   compare: { position: 'absolute', right: 12, bottom: 12 },
-  centered: { textAlign: 'center' },
-  comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 60, textAlign: 'center' },
-  thumbs: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  thumb: { width: 44, height: 56, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { height: '94%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, overflow: 'hidden' },
   grab: { alignSelf: 'stretch', paddingTop: 10, paddingBottom: 14 },
@@ -337,7 +257,6 @@ const styles = StyleSheet.create({
   dotActive: { width: 16 },
   frame: { flex: 1, minHeight: 200, alignSelf: 'center' },
   status: { paddingTop: 14, gap: 10, minHeight: 20 },
-  statusText: { ...font('medium'), fontSize: 15, lineHeight: 20, textAlign: 'center' },
   note: { ...font('regular'), fontSize: 13, lineHeight: 18 },
   actions: { gap: 10, paddingTop: 12, paddingBottom: 8 },
   setup: { gap: 14, paddingBottom: 16 },

@@ -22,6 +22,10 @@ import { StudioSheet } from './studio/StudioSheet';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
+import { DevelopingImage } from './studio/DevelopingImage';
+import { GenerationStatus } from './studio/GenerationView';
+import { revealLedger } from './studio/generationFog';
+import { successHaptic } from '../services/haptics';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { TryOnJob } from '../services/tryOnJobs';
 import { isLegwear } from '../domain/legwear';
@@ -39,6 +43,8 @@ type Props = {
   initialItemIds?: string[];
   // The screen shows "Try on" as a floating button, always in reach while picking.
   onSelectionCta?: (cta: { count: number; open: () => void } | null) => void;
+  /** The tab holding this room is on screen: hidden, its generation fog pauses and a finished look's reveal waits. */
+  visible?: boolean;
 };
 
 const supportedSections = TRYON_SECTIONS;
@@ -50,7 +56,7 @@ const LAYERS: Record<string, number> = { 'Верх': 4, 'Верхняя одеж
 const UPPER = ['Верх', 'Верхняя одежда'];
 const MAX_UPPER = 4;
 
-export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds, onSelectionCta }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds, onSelectionCta, visible = true }: Props) {
   // Фото для примерки выбирается прямо здесь, без перехода в профиль.
   const { pickPhoto, cropModal } = usePhotoPicker();
   const pickModel = async () => {
@@ -105,7 +111,7 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
 
   return (
     <View style={styles.content}>
-      <FittingStage items={items} modelUri={modelUri} onSave={onSave} onOpenHistory={onOpenHistory} quiet={selection.length > 0}
+      <FittingStage visible={visible && !previewOpen} items={items} modelUri={modelUri} onSave={onSave} onOpenHistory={onOpenHistory} quiet={selection.length > 0}
         onPickModel={() => { void pickModel(); }}
         // «Переодеть»: the look's pieces go back into the picker and the try-on sheet opens on them.
         onRedo={ids => {
@@ -180,7 +186,8 @@ const KNOB = 78;
  * The fitting room's picture: the person's own photo, or the try-on chosen in «Недавние примерки»
  * (the durable try-on journal), with a glass switch that fades between the two.
  */
-function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onRedo, quiet }: {
+function FittingStage({ visible, items, modelUri, onSave, onOpenHistory, onPickModel, onRedo, quiet }: {
+  visible: boolean;
   items: WardrobeItem[]; modelUri?: string; onSave: (look: SavedLook) => void; onOpenHistory: () => void;
   onPickModel: () => void; onRedo: (ids: string[]) => void;
   /** Garments are being picked: the floating «К примерке» is then the main action, not «Сохранить». */
@@ -224,6 +231,9 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
   const galleryState = gallery && gallery.uri === result?.imageUri ? gallery : undefined;
   const pieces = (current?.itemIds || []).map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
   const ink = isDark ? '#FFFFFF' : INK;
+  // A look that finished owes its reveal here until it has played, seen live or on coming back.
+  const [revealPlayed, setRevealPlayed] = useState<string>();
+  const fieldOwed = Boolean(current && result && revealPlayed !== current.id && revealLedger.owes(current.id, 'full'));
 
   const saveLook = (job: TryOnJob) => {
     const done = job.result!;
@@ -263,7 +273,13 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
             <Image source={{ uri: result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
           </AppPressable>
         </Animated.View> : null}
-        {busy ? <BusyVeil label={tryOnStatusLabel(current?.progress, t)} reduced={reduced} /> : null}
+        {/* The one generation picture, while it runs and until its reveal has played; then the frame's own layers, identical under it. */}
+        {current && (busy || fieldOwed) ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <DevelopingImage revealKey={current.id} photoUri={current.progress?.previewUrl || modelUri || null} resultUri={result?.imageUri || null} developing={busy} isDark={isDark}
+            active={visible && !dock.windowUp} items={pieces} onRevealStart={successHaptic} onRevealEnd={() => setRevealPlayed(current.id)}>
+            {result ? <Image source={{ uri: result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} /> : null}
+          </DevelopingImage>
+        </View> : null}
         <View style={styles.frameTop} pointerEvents="box-none">
           {result && modelUri ? <Glass style={styles.switch}>
             <View accessibilityRole="tablist" style={styles.switchInner}>
@@ -303,6 +319,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
         </Glass> : null}
       </View>
     </View>
+    {busy && current ? <GenerationStatus label={tryOnStatusLabel(current.progress, t)} stage={current.progress?.stage} items={pieces} active={visible && !dock.windowUp} /> : null}
     {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
       : current ? <View style={styles.actions}>
         {result ? <Pill style={{ flex: 1 }} variant={quiet ? 'glass' : 'primary'} icon={galleryState?.state === 'saved' ? Check : Download}
@@ -349,35 +366,6 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
       </SafeAreaProvider>
       <OverlayOutlet />
     </Modal>
-  </View>;
-}
-
-/** A try-on being made: the picture under a light veil, a beam of light passing over it. */
-function BusyVeil({ label, reduced }: { label: string; reduced: boolean }) {
-  const { isDark } = useTheme();
-  const [height, setHeight] = useState(0);
-  const beam = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (reduced || !height) return;
-    beam.setValue(0);
-    const loop = Animated.loop(Animated.timing(beam, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
-    loop.start();
-    return () => loop.stop();
-  }, [reduced, height, beam]);
-  return <View pointerEvents="none" onLayout={event => setHeight(event.nativeEvent.layout.height)}
-    style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(18,20,23,0.45)' : 'rgba(255,255,255,0.35)', overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 96 }]}>
-    {!reduced && height ? <Animated.View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: height * 0.6,
-      transform: [{ translateY: beam.interpolate({ inputRange: [0, 1], outputRange: [-height * 0.6, height] }) }] }}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.0)' }} />
-      <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.45)' }} />
-      <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.0)' }} />
-    </Animated.View> : null}
-    <Glass>
-      <View style={{ height: 40, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : INK} />
-        <Text style={[font('semibold'), { fontSize: 13, color: isDark ? '#FFFFFF' : INK }]} numberOfLines={1}>{label}</Text>
-      </View>
-    </Glass>
   </View>;
 }
 

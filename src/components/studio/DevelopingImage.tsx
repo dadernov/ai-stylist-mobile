@@ -1,18 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useReducedMotion } from './studio';
+import { FogBoundary, GenerationFog } from './GenerationFog';
+import { fogPalette, fogSeed, RevealSurface, revealLedger } from './generationFog';
+import { loadFog } from './skiaModule';
 
 type Props = {
   /** The photo being dressed: shown deeply blurred while the look "develops". */
   photoUri: string | null;
-  /** The finished look; when it arrives it resolves from blur to sharp, top to bottom. */
+  /** The finished look; when it arrives it comes through the fog, top to bottom. */
   resultUri: string | null;
   developing: boolean;
   isDark: boolean;
   /** The sharp result once revealed (e.g. a zoomable image). */
   children?: React.ReactNode;
-  /** The page is the one on screen: a look that finished on another page waits to be revealed until it is leafed to. */
+  /** The view is the one on screen: the fog pauses otherwise, and a look that finished meanwhile waits to be revealed until it is seen. */
   active?: boolean;
   /** The photo the look was made from, for the before/after wipe; without it there is no comparison. */
   beforeUri?: string | null;
@@ -20,6 +23,14 @@ type Props = {
   showBefore?: boolean;
   /** The sharp reveal of a look that just finished begins (not a look reopened later). */
   onRevealStart?: () => void;
+  /** The look stands revealed, played or already seen. */
+  onRevealEnd?: () => void;
+  /** The try-on's id: the same fog in every window, and its reveal played once per surface wherever it finished. */
+  revealKey?: string;
+  /** 'mini': the small window, the same fog and reveal without the glint and the peek. */
+  surface?: RevealSurface;
+  /** The look's garments, tinting the fog. */
+  items?: { color?: string; tags?: string[] }[];
 };
 
 const REVEAL_MS = 1200;
@@ -28,20 +39,28 @@ const GLINT_MS = 700;
 // The automatic peek at the source photo: there, a look, and back, about 1.5 s in all.
 const WIPE_MS = 520;
 const WIPE_HOLD_MS = 460;
+// A remote look is fetched before the fog closes over the photo; a slow network does not hold the reveal for long.
+const PREFETCH_LIMIT_MS = 4000;
 
 /**
- * A picture that develops like a photograph, after ChatGPT's image generation:
- * a soft blurred field of the photo with slowly drifting light while it works,
- * then the finished look sharpens in a band that travels from top to bottom.
+ * The one picture of a try-on being made, in every window: the photo dissolved under a volume of drifting light (GenerationFog),
+ * then the fog thickens and parts from the top, and the finished look comes through it.
  * A soft glint crosses the finished look, then a slider wipes to the source photo and back.
- * With reduced motion the field stays still, the look simply crossfades, and the glint and the peek are skipped.
+ * With reduced motion the fog is one still frame, the look simply crossfades, and the glint and the peek are skipped.
+ * Without Skia (web, an old build) a drifting gradient and a sharpening band stand in.
  */
-export function DevelopingImage({ photoUri, resultUri, developing, isDark, children, active = true, beforeUri, showBefore = false, onRevealStart }: Props) {
+export function DevelopingImage({ photoUri, resultUri, developing, isDark, children, active = true, beforeUri, showBefore = false, onRevealStart, onRevealEnd, revealKey, surface = 'full', items }: Props) {
   const reduced = useReducedMotion();
+  const [fogFailed, setFogFailed] = useState(false);
+  const fog = fogFailed ? null : loadFog();
+  const done = Boolean(resultUri) && !developing;
+  // Seen running: its reveal is owed here, even if it finishes while nobody is looking.
+  if (revealKey && !done) revealLedger.track(revealKey);
   const drift = useRef(new Animated.Value(0)).current;
   const breathe = useRef(new Animated.Value(0)).current;
-  const haze = useRef(new Animated.Value(resultUri && !developing ? 1 : 0)).current;
-  const sweep = useRef(new Animated.Value(resultUri && !developing ? 1 : 0)).current;
+  const owedAtMount = useRef(done && Boolean(revealKey) && revealLedger.owes(revealKey!, surface)).current;
+  const haze = useRef(new Animated.Value(done && !owedAtMount ? 1 : 0)).current;
+  const sweep = useRef(new Animated.Value(done && !owedAtMount ? 1 : 0)).current;
   const glint = useRef(new Animated.Value(0)).current;
   const wipe = useRef(new Animated.Value(showBefore ? 1 : 0)).current;
   const [tall, setTall] = useState(0);
@@ -53,11 +72,20 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
   showBeforeRef.current = showBefore;
   const revealStart = useRef(onRevealStart);
   revealStart.current = onRevealStart;
-  const [revealed, setRevealed] = useState(Boolean(resultUri) && !developing);
-  const done = Boolean(resultUri) && !developing;
+  const revealEnd = useRef(onRevealEnd);
+  revealEnd.current = onRevealEnd;
+  const [revealed, setRevealed] = useState(done && !owedAtMount);
+  const [fogRevealing, setFogRevealing] = useState(false);
+  // The fog has closed over the photo: only the fog and the look under it are left.
+  const [covered, setCovered] = useState(false);
+  const useFog = Boolean(fog) && !reduced;
+  const seed = useMemo(() => fogSeed(revealKey), [revealKey]);
+  const tintKey = (items || []).map(item => `${item.color}|${(item.tags || []).join()}`).join(';');
+  const tints = useMemo(() => fogPalette(items || [], isDark), [tintKey, isDark]);
 
+  // The stand-in's drift; the fog has its own clock.
   useEffect(() => {
-    if (!developing || reduced) return;
+    if (!developing || reduced || fog || !active) return;
     const a = Animated.loop(Animated.timing(drift, { toValue: 1, duration: 9000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }));
     const b = Animated.loop(Animated.sequence([
       Animated.timing(breathe, { toValue: 1, duration: 2800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -65,24 +93,35 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
     ]));
     a.start(); b.start();
     return () => { a.stop(); b.stop(); };
-  }, [developing, reduced, drift, breathe]);
+  }, [developing, reduced, drift, breathe, Boolean(fog), active]);
 
   useEffect(() => {
-    if (!done) { haze.setValue(0); sweep.setValue(0); setRevealed(false); return; }
+    if (!done) { haze.setValue(0); sweep.setValue(0); setRevealed(false); setFogRevealing(false); setCovered(false); return; }
     if (revealed || !active) return;
+    // Played on another screen meanwhile: the look just stands here.
+    if (revealKey && !revealLedger.owes(revealKey, surface)) { haze.setValue(1); sweep.setValue(1); setRevealed(true); return; }
+    if (revealKey) revealLedger.settle(revealKey, surface);
     revealStart.current?.();
     if (reduced) {
-      Animated.timing(haze, { toValue: 1, duration: 300, useNativeDriver: false }).start();
+      Animated.timing(haze, { toValue: 1, duration: 300, useNativeDriver: false }).start(({ finished }) => { if (finished) setRevealed(true); });
       sweep.setValue(1);
-      setRevealed(true);
       return;
     }
-    ceremony.current = true;
+    if (surface === 'full') ceremony.current = true;
+    if (useFog) {
+      let cancelled = false;
+      const go = () => { if (!cancelled) setFogRevealing(true); };
+      const limit = setTimeout(go, PREFETCH_LIMIT_MS);
+      void (resultUri && /^https?:/i.test(resultUri) ? Image.prefetch(resultUri).catch(() => false) : Promise.resolve(true)).then(() => { clearTimeout(limit); go(); });
+      return () => { cancelled = true; clearTimeout(limit); };
+    }
     Animated.parallel([
       Animated.timing(haze, { toValue: 1, duration: 350, easing: Easing.out(Easing.quad), useNativeDriver: false }),
       Animated.timing(sweep, { toValue: 1, duration: REVEAL_MS, delay: 120, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
     ]).start(({ finished }) => { if (finished) setRevealed(true); });
   }, [done, active]);
+
+  useEffect(() => { if (revealed) revealEnd.current?.(); }, [revealed]);
 
   // After the reveal: the glint, then the peek. Leafing away ends them and puts the look back.
   useEffect(() => {
@@ -117,35 +156,54 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
   const tint = isDark ? 'rgba(160,170,190,0.16)' : 'rgba(200,190,230,0.28)';
   const shiftX = drift.interpolate({ inputRange: [0, 0.5, 1], outputRange: [-40, 40, -40] });
   const shiftY = drift.interpolate({ inputRange: [0, 0.5, 1], outputRange: [30, -30, 30] });
-  // The sharp band: grows from the top, with a feathered lower edge.
+  // The sharp band of the stand-in: grows from the top, with a feathered lower edge.
   const clip = sweep.interpolate({ inputRange: [0, 1], outputRange: [0, tall + FEATHER] });
+  const photo = photoUri ? <Image source={{ uri: photoUri }} blurRadius={28} style={[StyleSheet.absoluteFill, { opacity: 0.85 }]} resizeMode="cover" /> : null;
+  // Reduced motion keeps the still fog with the crossfade; once revealed nothing of the fog is left.
+  const showFog = Boolean(fog) && !revealed && wide > 0;
+  const fogLayer = showFog && fog ? (
+    <FogBoundary onError={() => setFogFailed(true)}>
+      <GenerationFog fog={fog} width={wide} height={tall} seed={seed} tints={tints} isDark={isDark}
+        running={active && !reduced} revealing={fogRevealing}
+        onCovered={() => setCovered(true)} onRevealed={() => setRevealed(true)} />
+    </FogBoundary>
+  ) : null;
 
   return (
     <View style={StyleSheet.absoluteFill} onLayout={measure}>
+      {useFog && resultUri && done ? (
+        // The look waits under the photo and the fog; the fog closes over the photo, the photo goes, the fog parts.
+        <View pointerEvents={revealed ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>{children}</View>
+      ) : null}
       {/* The developing field: the photo dissolved into colour, light drifting over it. */}
-      {photoUri ? <Image source={{ uri: photoUri }} blurRadius={28} style={[StyleSheet.absoluteFill, { opacity: 0.85 }]} resizeMode="cover" /> : null}
-      {!revealed ? (
+      {useFog && done && (covered || revealed) ? null : photo}
+      {!fog && !revealed ? (
         <Animated.View pointerEvents="none" style={[styles.field, { opacity: reduced ? 0.7 : breathe.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
           transform: [{ translateX: shiftX }, { translateY: shiftY }] }]}>
           <LinearGradient colors={[glow, tint, glow, tint]} locations={[0, 0.35, 0.65, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
         </Animated.View>
       ) : null}
-      {resultUri ? (
+      {useFog ? fogLayer : (
         <>
-          {/* First the look arrives as a soft blur … */}
-          {!revealed ? <Animated.Image source={{ uri: resultUri }} blurRadius={22} resizeMode="cover" style={[StyleSheet.absoluteFill, { opacity: haze }]} /> : null}
-          {/* … then sharpens from the top down. */}
-          {revealed || reduced ? (
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduced && !revealed ? haze : 1 }]}>{children}</Animated.View>
-          ) : (
-            <Animated.View pointerEvents="none" style={[styles.band, { height: clip }]}>
-              <View style={{ height: tall }}>{children}</View>
-              <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', isDark ? 'rgba(30,32,36,0.6)' : 'rgba(255,255,255,0.6)']}
-                style={[styles.feather, { top: undefined, bottom: 0 }]} />
-            </Animated.View>
-          )}
+          {reduced ? fogLayer : null}
+          {resultUri ? (
+            <>
+              {/* First the look arrives as a soft blur … */}
+              {!revealed && !reduced ? <Animated.Image source={{ uri: resultUri }} blurRadius={22} resizeMode="cover" style={[StyleSheet.absoluteFill, { opacity: haze }]} /> : null}
+              {/* … then sharpens from the top down. */}
+              {revealed || reduced ? (
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: reduced && !revealed ? haze : 1 }]}>{children}</Animated.View>
+              ) : (
+                <Animated.View pointerEvents="none" style={[styles.band, { height: clip }]}>
+                  <View style={{ height: tall }}>{children}</View>
+                  <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', isDark ? 'rgba(30,32,36,0.6)' : 'rgba(255,255,255,0.6)']}
+                    style={[styles.feather, { top: undefined, bottom: 0 }]} />
+                </Animated.View>
+              )}
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
       {/* The glint, above the look and never in the way of its gestures. */}
       {revealed && !reduced && wide ? (
         <Animated.View pointerEvents="none" style={[styles.glint, { width: wide * 0.45, opacity: glint.interpolate({ inputRange: [0, 0.1, 0.9, 1], outputRange: [0, 1, 1, 0] }),
