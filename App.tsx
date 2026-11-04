@@ -40,6 +40,7 @@ import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
 import { FavoritesProvider } from './src/components/SaveLook';
+import { removeFavorite } from './src/domain/favorites';
 import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
@@ -558,7 +559,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
           looks={favoriteLooks}
           beautyAdvice={beautyAdvice}
           items={items}
-          onRemove={(id) => setFavoriteLooks((prev) => prev.filter((look) => look.id !== id))}
+          onRemove={(id) => setFavoriteLooks((prev) => removeFavorite(prev, id))}
           onGoToBuilder={() => setActiveTab('builder')}
           onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }}
         />

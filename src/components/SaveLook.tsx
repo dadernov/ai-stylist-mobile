@@ -39,9 +39,9 @@ export function useSaveLook(look: GeneratedLook | null | undefined, options?: { 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   // A failure belongs to the look it happened to.
   useEffect(() => { setFailed(false); }, [look?.id, look?.tryOnImageUri]);
-  /** Saves; a look already saved stays as it is (a double tap on the photo never unsaves). */
+  /** Saves; a look already saved stays as it is (a double tap on the photo never unsaves). True only when this call saved it. */
   const save = async () => {
-    if (!look || working.current || saved) return;
+    if (!look || working.current || saved) return false;
     setFailed(false);
     working.current = true;
     setBusy(true);
@@ -51,8 +51,10 @@ export function useSaveLook(look: GeneratedLook | null | undefined, options?: { 
       successHaptic();
       notify(t('Добавлено в избранное'));
       options?.onAdded?.();
+      return true;
     } catch {
       if (mounted.current) setFailed(true);
+      return false;
     } finally {
       working.current = false;
       if (mounted.current) setBusy(false);
@@ -60,8 +62,10 @@ export function useSaveLook(look: GeneratedLook | null | undefined, options?: { 
   };
   const toggle = async () => {
     if (!look || working.current) return;
-    if (!saved) return save();
+    if (!saved) { await save(); return; }
     setFailed(false);
+    // A bare look seen over a favourite with a picture: the picture is not this heart's to delete.
+    if (removeLook(favorites, look) === favorites) { notify(t('Образ остаётся в избранном вместе с примеркой')); return; }
     setFavorites(previous => removeLook(previous, look));
     notify(t('Убрано из избранного'));
   };

@@ -6,8 +6,8 @@ const imageKey = (uri: string) => {
   return index < 0 ? uri : uri.slice(index);
 };
 const sameImage = (a?: string | null, b?: string | null) => Boolean(a && b && imageKey(a) === imageKey(b));
-const shows = (favorite: GeneratedLook, uri: string) => sameImage(favorite.tryOnImageUri, uri) || sameImage(favorite.tryOnSourceUri, uri)
-  || Boolean(favorite.tryOnHistory?.some(frame => sameImage(frame.imageUri, uri)));
+// Its current picture, known by the kept file or by where that came from. A frame merely in its history is not what it shows.
+const shows = (favorite: GeneratedLook, uri: string) => sameImage(favorite.tryOnImageUri, uri) || sameImage(favorite.tryOnSourceUri, uri);
 const samePieces = (a: string[], b: string[]) => {
   const left = new Set(a), right = new Set(b);
   return left.size > 0 && left.size === right.size && [...left].every(id => right.has(id));
@@ -16,9 +16,9 @@ const samePieces = (a: string[], b: string[]) => {
 const bareInside = (favorite: GeneratedLook) => !favorite.tryOnImageUri || Boolean(favorite.joined);
 
 /**
- * One rule for «is it saved»: a look with a try-on is saved when that very picture is, as a favourite's picture or a frame of its
- * history; a look without one, when its id is or the same pieces are saved bare. Another try-on of the same pieces is therefore a
- * favourite of its own, and the same pieces never twice bare.
+ * One rule for «is it saved»: a look with a try-on is saved when that very picture is a favourite's current picture; a look without
+ * one, when its id is or the same pieces are saved bare. Another try-on of the same pieces, or an older frame, is therefore a favourite
+ * of its own, and the same pieces never twice bare.
  */
 const isSame = (favorite: GeneratedLook, look: GeneratedLook) => look.tryOnImageUri
   ? shows(favorite, look.tryOnImageUri)
@@ -48,11 +48,22 @@ export function addLook(favorites: GeneratedLook[], look: GeneratedLook): Genera
 const withoutTryOn = ({ joined, tryOnImageUri, tryOnSourceUri, tryOnWarning, tryOnUpdatedAt, tryOnQualityMode, tryOnHistory, ...bare }: GeneratedLook): GeneratedLook =>
   ({ ...bare, tuckMode: joined?.tuckMode });
 
-/** Unsaving a try-on that joined a bare favourite gives that favourite back; anything else simply goes. */
+const unsaved = (favorite: GeneratedLook) => favorite.joined ? [withoutTryOn(favorite)] : [];
+
+/**
+ * Unsaving a try-on removes only the favourite showing that very picture; one that joined a bare favourite gives that favourite back.
+ * A look without a try-on removes only a favourite without one: a favourite with a picture stays, and stays saved, so the list comes
+ * back unchanged (the same array) and the caller can tell nothing happened.
+ */
 export const removeLook = (favorites: GeneratedLook[], look: GeneratedLook) => {
-  if (!favorites.some(favorite => isSame(favorite, look))) return favorites;
-  return favorites.flatMap(favorite => !isSame(favorite, look) ? [favorite] : look.tryOnImageUri && favorite.joined ? [withoutTryOn(favorite)] : []);
+  const goes = (favorite: GeneratedLook) => isSame(favorite, look) && Boolean(look.tryOnImageUri || !favorite.tryOnImageUri);
+  if (!favorites.some(goes)) return favorites;
+  return favorites.flatMap(favorite => goes(favorite) ? unsaved(favorite) : [favorite]);
 };
+
+/** «Удалить» on the favourites screen, the same as its heart: a try-on that joined a bare favourite gives that favourite back. */
+export const removeFavorite = (favorites: GeneratedLook[], id: string) =>
+  favorites.flatMap(favorite => favorite.id === id ? unsaved(favorite) : [favorite]);
 
 /** A look known only by its name and pieces, shaped as the favourites keep it. */
 export const plainLook = (id: string, title: string, itemIds: string[]): GeneratedLook =>

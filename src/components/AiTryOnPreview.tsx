@@ -24,7 +24,7 @@ import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { GeneratedLook, TryOnHistoryItem } from '../types/looks';
 import { lookWithResult } from '../domain/favorites';
-import { useSaveLook } from './SaveLook';
+import { SaveLookButton, useSaveLook } from './SaveLook';
 import { PhotoViewer, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
 import { CARD_CHROME, estimatedViewport, RESULT_GAP, RESULT_RADIUS, resultPhotoHeight } from './studio/resultLayout';
 import { useTheme } from '../constants/ThemeContext';
@@ -186,7 +186,7 @@ export function AiTryOnPreview({
   const shownLook = favoriteLook && resultUri ? lookWithResult(favoriteLook, { imageUri: resultUri, warning: warning || undefined,
     updatedAt: suppliedHistory.find(item => item.imageUri === resultUri)?.updatedAt || controlledUpdatedAt || Date.now(), tuckMode: effectiveTuckMode }) : favoriteLook;
   const favorite = useSaveLook(shownLook);
-  const gallery = useGallerySave(resultUri);
+  const gallery = useGallerySave(resultUri, isDraft);
   const startAgain = () => { if (context) dock.prepare({ items, context, fresh: true, options: garmentOptions }); };
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
@@ -453,6 +453,8 @@ export function AiTryOnPreview({
       {warningsBlock}
       {details}
       {historyBlock}
+      {/* Without a try-on the look can still be saved; with one, the heart among the three buttons does it. */}
+      {shownLook && !hasResult && !isBusy && !owedJob ? <SaveLookButton look={shownLook} /> : null}
       {/* With a result «Ещё раз» is the button; before it, and while a try-on runs, this one. Every try-on is the full-quality look (one call, one price). */}
       {!hasResult && !owedJob ? mainButton : null}
       {previewModal}

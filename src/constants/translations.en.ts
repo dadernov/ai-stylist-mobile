@@ -1027,4 +1027,7 @@ export const en: Record<string, string> = {
   "Почему этот образ подходит": "Why this look works",
   "Редактировать образ": "Edit look",
   "Удалить образ?": "Delete this look?",
+  "Убрать примерку?": "Remove the try-on?",
+  "Образ останется в избранном без примерки.": "The look stays in favorites without the try-on.",
+  "Образ остаётся в избранном вместе с примеркой": "The look stays in favorites with its try-on",
 };

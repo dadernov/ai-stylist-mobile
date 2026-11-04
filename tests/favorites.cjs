@@ -12,17 +12,12 @@ const DOCS = 'file:///var/app-new/Documents/';
 const files = new Map();
 const store = new Map();
 let failDownload = false;
-let listing = [];
-let ages = {};
-const deleted = [];
 const fileSystem = {
   documentDirectory: DOCS, EncodingType: { Base64: 'base64' },
   makeDirectoryAsync: async () => {},
   writeAsStringAsync: async (target, contents) => files.set(target, contents),
   copyAsync: async ({ from, to }) => files.set(to, `copy-of:${from}`),
-  downloadAsync: async (uri, target) => { if (failDownload) return { status: 404 }; files.set(target, `download-of:${uri}`); return { status: 200, uri: target }; },
-  readDirectoryAsync: async () => listing, deleteAsync: async target => { deleted.push(target); },
-  getInfoAsync: async target => ({ exists: true, modificationTime: 1000 - (ages[target.slice(target.lastIndexOf('/') + 1)] ?? 10000) })
+  downloadAsync: async (uri, target) => { if (failDownload) return { status: 404 }; files.set(target, `download-of:${uri}`); return { status: 200, uri: target }; }
 };
 const asyncStorage = { getItem: async key => store.get(key) ?? null, setItem: async (key, value) => { store.set(key, value); } };
 const stubs = { 'expo-file-system/legacy': fileSystem, '@react-native-async-storage/async-storage': { default: asyncStorage }, './keyValueStorage': { default: asyncStorage } };
@@ -30,8 +25,8 @@ const load = Module._load;
 Module._load = (request, parent, isMain) => (request in stubs ? stubs[request] : load(request, parent, isMain));
 
 const src = path.join(__dirname, '../src');
-const { addLook, isLookSaved, lookFromJob, lookWithResult, plainLook, removeLook } = require(path.join(src, 'domain/favorites.ts'));
-const { durableLook, keepTryOnImage, reanchorTryOnUri, removeUnusedFavoriteCopies } = require(path.join(src, 'services/tryOnPhotos.ts'));
+const { addLook, isLookSaved, lookFromJob, lookWithResult, plainLook, removeFavorite, removeLook } = require(path.join(src, 'domain/favorites.ts'));
+const { durableLook, keepTryOnImage, reanchorTryOnUri } = require(path.join(src, 'services/tryOnPhotos.ts'));
 const { decodeGenerated } = require(path.join(src, 'services/accountStorage.ts'));
 
 const run = async () => {
@@ -100,9 +95,41 @@ const run = async () => {
   // The mark outlives a restart.
   assert.equal(removeLook(decodeGenerated(JSON.parse(JSON.stringify(joinedList))), triedIdea)[0].makeup, 'Стрелки');
 
-  // A frame of a favourite's history counts as saved.
+  // A frame merely in a favourite's history: not saved, unsaving it touches nothing, saving it is a favourite of its own.
   const framed = { ...card, tryOnHistory: [{ id: 'old', imageUri: `${DOCS}try-ons/me/old.jpg`, updatedAt: 0 }] };
-  assert.equal(isLookSaved([framed], lookWithResult(plainLook('n', 'n', ['z']), { imageUri: `${DOCS}try-ons/me/old.jpg`, updatedAt: 0 })), true);
+  const frame = lookWithResult(plainLook('card', 'n', ['z']), { imageUri: `${DOCS}try-ons/me/old.jpg`, updatedAt: 0 });
+  assert.equal(isLookSaved([framed], frame), false);
+  assert.deepEqual(removeLook([framed], frame), [framed]);
+  const withFrame = addLook([framed], frame);
+  assert.equal(withFrame.length, 2);
+  assert.equal(new Set(withFrame.map(look => look.id)).size, 2);
+  assert.equal(withFrame.find(look => look.id === 'card').tryOnImageUri, card.tryOnImageUri, 'the other stays as it was');
+  assert.equal(isLookSaved(withFrame, frame), true);
+  assert.equal(removeLook(withFrame, frame).length, 1, 'and goes alone');
+  assert.equal(removeLook(withFrame, frame)[0], framed);
+  // The picture known by where it came from is still its current picture.
+  const fromSource = { ...card, tryOnSourceUri: 'https://server/1.jpg' };
+  assert.deepEqual(removeLook([fromSource], { ...card, tryOnImageUri: 'https://server/1.jpg' }), []);
+
+  // A bare look over a favourite with a picture: reads saved, the heart destroys nothing and hands back the same list.
+  const bareIdea = plainLook('other', 'x', ['p', 'q']);
+  assert.equal(isLookSaved(joinedList, bareIdea), true);
+  assert.equal(removeLook(joinedList, bareIdea), joinedList, 'joined, by the same pieces');
+  assert.equal(removeLook(joinedList, plainLook('advice', 'x', ['p', 'q'])), joinedList, 'joined, by id');
+  assert.equal(addLook(joinedList, bareIdea), joinedList, 'not doubled either');
+  const tried1 = addLook([], card);
+  const bareCard = plainLook('card', 'К', ['z']);
+  assert.equal(isLookSaved(tried1, bareCard), true, 'not joined, by id');
+  assert.equal(removeLook(tried1, bareCard), tried1);
+  // Only the bare record goes when a bare look has both beside it.
+  const beside = [plainLook('b', 'b', ['u']), lookWithResult(plainLook('c', 'c', ['u']), { imageUri: `${DOCS}try-ons/me/c.jpg`, updatedAt: 1 })];
+  assert.deepEqual(removeLook(beside, plainLook('n', 'n', ['u'])).map(look => look.id), ['c']);
+
+  // «Удалить» and the heart on the favourites screen do the same thing.
+  assert.deepEqual(removeFavorite(joinedList, 'advice'), removeLook(joinedList, triedIdea));
+  assert.equal(removeFavorite(joinedList, 'advice')[0].makeup, 'Стрелки');
+  assert.deepEqual(removeFavorite(tried1, 'card'), []);
+  assert.equal(removeFavorite(joinedList, 'nope').length, 1);
 
   // The app's folder moved after an update: still the same picture.
   assert.equal(isLookSaved(list, { ...tried, tryOnImageUri: 'file:///var/app-old/Documents/try-ons/me/j1.jpg' }), true);
@@ -122,15 +149,6 @@ const run = async () => {
   assert.equal((await durableLook(tempLook, 'me')).tryOnSourceUri, 'file:///var/Caches/x.jpg', 'where it came from is always written');
   assert.equal(isLookSaved(addLook([], await durableLook(tempLook, 'me')), tempLook), true);
   assert.equal((await durableLook(lookWithResult(plain, { imageUri: 'data:image/png;base64,QUJD', updatedAt: 12 }), 'me')).tryOnSourceUri, undefined, 'never megabytes in the record');
-
-  // Copies no favourite shows any more go; used, young and other files stay.
-  const dirMe = `${DOCS}try-ons/me/`;
-  listing = ['favorite-a-1.jpg', 'favorite-b-2.jpg', 'favorite-young.jpg', 'j1.jpg'];
-  ages = { 'favorite-young.jpg': 10 };
-  deleted.length = 0;
-  await removeUnusedFavoriteCopies([{ tryOnImageUri: `file:///var/app-old/Documents/try-ons/me/favorite-a-1.jpg` }], 'me', 1000);
-  assert.deepEqual(deleted, [`${dirMe}favorite-b-2.jpg`]);
-  listing = []; ages = {};
 
   const temp = await keepTryOnImage('file:///var/Caches/ImagePicker/x.png', 'tmp', 'me');
   assert.equal(temp, `${DOCS}try-ons/me/tmp.png`, 'a temporary file is copied in');
@@ -163,6 +181,13 @@ const run = async () => {
   }
   // The window is drawn by the root outlet, above the provider in the tree: without the hand-over the button would throw.
   assert.match(read('components/GenerationDock.tsx'), /<FavoritesProvider value=\{favorites\}><GenerationStage/);
+  // A look without a try-on can be saved on its card; on the favourites screen the heart asks first, and trash and heart agree.
+  assert.match(read('components/AiTryOnPreview.tsx'), /<SaveLookButton look=\{shownLook\}/);
+  assert.match(read('screens/FavoritesScreen.tsx'), /<ResultActions[^>]*onUnsave=\{onRemove\}/);
+  assert.match(fs.readFileSync(path.join(src, '../App.tsx'), 'utf8'), /removeFavorite\(prev, id\)/);
+  // The burst on a double tap waits for the save; a gallery error is said in the user's language.
+  assert.match(read('components/GenerationStage.tsx'), /save\.save\(\)\.then\(added => \{ if \(added\) bloom\(\)/);
+  assert.match(read('components/ResultKit.tsx'), /message: t\(error\?\.message \|\|/);
   // The photo only zooms: no saving in that window, and a thumbnail doesn't open it.
   const kit = read('components/ResultKit.tsx');
   const zoom = kit.slice(kit.indexOf('<Modal transparent'), kit.indexOf('</Modal>'));

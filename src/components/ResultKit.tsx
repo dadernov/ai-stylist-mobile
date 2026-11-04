@@ -19,7 +19,7 @@ import { SheetStrip } from './ui/FormScrollView';
 import { ZoomableImage } from './ui/ZoomableImage';
 
 /** The one way to the gallery from a finished look: the state of the button, and an error to say. */
-export function useGallerySave(uri: string | null | undefined) {
+export function useGallerySave(uri: string | null | undefined, draft?: boolean) {
   const { login } = useFavorites();
   const t = useT();
   const [state, setState] = useState<{ uri: string; status: 'saving' | 'saved' | 'error'; message?: string } | null>(null);
@@ -34,10 +34,11 @@ export function useGallerySave(uri: string | null | undefined) {
       await saveTryOnToGallery(uri, login);
       if (mounted.current) setState({ uri, status: 'saved' });
     } catch (error: any) {
-      if (mounted.current) setState({ uri, status: 'error', message: error?.message || t('Не удалось сохранить в галерею') });
+      if (mounted.current) setState({ uri, status: 'error', message: t(error?.message || 'Не удалось сохранить в галерею') });
     }
   };
-  return { status: current?.status || 'idle' as const, message: current?.status === 'error' ? current.message : undefined, save };
+  const note = current?.status === 'saved' ? t(draft ? 'Черновик сохранён в галерею' : 'Сохранено в галерею в полном качестве') : undefined;
+  return { status: current?.status || 'idle' as const, message: current?.status === 'error' ? current.message : undefined, note, draft: Boolean(draft), save };
 }
 
 function ActionCell({ icon: Icon, label, a11y, onPress, disabled, loading, filled, selected }: {
@@ -61,9 +62,10 @@ function ActionCell({ icon: Icon, label, a11y, onPress, disabled, loading, fille
 /**
  * The three buttons beside every finished try-on, the same words everywhere: to the gallery, into the favourites, once again.
  * The visible words are short, so three fit a row on the narrowest phone; a screen reader hears them in full.
+ * `onUnsave`: where unsaving is destructive, the screen asks first instead of the heart removing at once.
  */
-export function ResultActions({ gallery, save, onAgain, againDisabled }: {
-  gallery: ReturnType<typeof useGallerySave>; save: ReturnType<typeof useSaveLook>; onAgain: () => void; againDisabled?: boolean;
+export function ResultActions({ gallery, save, onAgain, againDisabled, onUnsave }: {
+  gallery: ReturnType<typeof useGallerySave>; save: ReturnType<typeof useSaveLook>; onAgain: () => void; againDisabled?: boolean; onUnsave?: () => void;
 }) {
   const t = useT();
   const { colors } = useTheme();
@@ -72,12 +74,13 @@ export function ResultActions({ gallery, save, onAgain, againDisabled }: {
     <View style={styles.actions}>
       <View style={styles.row}>
         <ActionCell icon={gallery.status === 'saved' ? Check : Download} loading={gallery.status === 'saving'} label={t(gallery.status === 'saved' ? 'Сохранено' : 'В галерею')}
-          a11y={t(gallery.status === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} onPress={() => { void gallery.save(); }} />
+          a11y={t(gallery.status === 'saved' ? 'Сохранено в галерею' : gallery.draft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')} onPress={() => { void gallery.save(); }} />
         <ActionCell icon={Heart} filled={save.saved} selected={save.saved} loading={save.busy} label={t(save.saved ? 'Сохранён' : 'Сохранить')}
-          a11y={t(save.saved ? 'В избранном' : 'Сохранить образ')} onPress={() => { void save.toggle(); }} />
+          a11y={t(save.saved ? 'В избранном' : 'Сохранить образ')} onPress={() => { if (save.saved && onUnsave) onUnsave(); else void save.toggle(); }} />
         <ActionCell icon={RefreshCw} label={t('Ещё раз')} a11y={t('Примерить снова')} disabled={againDisabled} onPress={onAgain} />
       </View>
-      {message ? <Text accessibilityRole="alert" style={[font('regular'), styles.error, { color: colors.danger }]} numberOfLines={2}>{message}</Text> : null}
+      {message ? <Text accessibilityRole="alert" style={[font('regular'), styles.error, { color: colors.danger }]} numberOfLines={2}>{message}</Text>
+        : gallery.note ? <Text accessibilityLiveRegion="polite" style={[font('regular'), styles.error, { color: colors.muted }]} numberOfLines={2}>{gallery.note}</Text> : null}
     </View>
   );
 }

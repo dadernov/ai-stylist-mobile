@@ -213,8 +213,10 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
   const [burst, setBurst] = useState(0);
   const doubleTap = () => {
     if (!done || !page.favorite) return;
-    setBurst(shot => shot + 1);
-    if (save.saved) tapHaptic(); else void save.save();
+    const bloom = () => setBurst(shot => shot + 1);
+    if (save.saved) { bloom(); tapHaptic(); return; }
+    // The heart says it is saved: it blooms only once that is true.
+    void save.save().then(added => { if (added) bloom(); });
   };
 
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.

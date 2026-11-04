@@ -75,9 +75,9 @@ assert.equal(tap(d, 300), true);
 assert.ok(!/setTimeout/.test(read('components/studio/doubleTap.ts')));
 const stage = read('components/GenerationStage.tsx');
 assert.match(stage, /<DoubleTapArea enabled=\{done\}/);
-assert.match(stage, /if \(save\.saved\) tapHaptic\(\); else void save\.save\(\)/);
+assert.match(stage, /if \(save\.saved\) \{ bloom\(\); tapHaptic\(\); return; \}[\s\S]*void save\.save\(\)/);
 assert.ok(!/AppPressable/.test(stage.slice(stage.indexOf('function PageView'))), 'no tap on the window\'s photo');
-assert.match(read('components/SaveLook.tsx'), /if \(!look \|\| working\.current \|\| saved\) return;/);
+assert.match(read('components/SaveLook.tsx'), /if \(!look \|\| working\.current \|\| saved\) return false;/);
 assert.match(read('components/GenerationDock.tsx'), /onPress=\{\(\) => onOpen\(job\.id\)\}/, 'the small window still opens on a tap');
 
 // --- the fog's guards -----------------------------------------------------

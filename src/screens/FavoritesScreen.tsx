@@ -124,12 +124,14 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
 
   const handleRemove = useCallback(
     (id: string) => {
-      Alert.alert(t('Удалить образ?'), t('Действие нельзя отменить.'), [
+      // A try-on that joined a look saved bare takes only itself away.
+      const joined = looks.some(look => look.id === id && look.joined);
+      Alert.alert(t(joined ? 'Убрать примерку?' : 'Удалить образ?'), t(joined ? 'Образ останется в избранном без примерки.' : 'Действие нельзя отменить.'), [
         { text: t('Отмена'), style: 'cancel' },
         { text: t('Удалить'), style: 'destructive', onPress: () => { setOpenId(null); onRemove(id); } }
       ]);
     },
-    [onRemove, t]
+    [looks, onRemove, t]
   );
 
   const header = (
@@ -273,7 +275,7 @@ function FavoriteResult({ look, uri, items, meta, beauty, onPreview, onRemove, o
       </ResultPicture>
     )}
     <ResultPieces items={items.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
-    <ResultActions gallery={gallery} save={save} againDisabled={!onTryOn || !items.length} onAgain={() => onTryOn?.()} />
+    <ResultActions gallery={gallery} save={save} onUnsave={onRemove} againDisabled={!onTryOn || !items.length} onAgain={() => onTryOn?.()} />
     {sharing.sheet}
   </>;
 }
