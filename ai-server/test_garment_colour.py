@@ -95,6 +95,66 @@ class ColourNames(UsingHead):
             self.assertEqual(gc.name_colour(np.zeros(768, np.float32), cut((229, 57, 53), box=(0, 0, 1, 1)))['colorName'], 'Хаки')
 
 
+class MeasuredColourVeto(UsingHead):
+    """A sure-looking head verdict the garment's own measured colour contradicts is not given."""
+
+    def named(self, name, pixels, boost=4):
+        bias = np.zeros(27); bias[gc.NAMES.index(name)] = boost
+        with tempfile.TemporaryDirectory() as directory:
+            self.use(head_file(directory, bias))
+            return gc.name_colour(np.zeros(768, np.float32), pixels)['colorName']
+
+    def test_caramel_is_not_khaki(self):
+        self.assertEqual(self.named('Хаки', cut((198, 142, 90))), 'Карамельный')
+
+    def test_a_green_cast_name_is_refused_across_warm_tans(self):
+        for colour in [(193, 154, 107), (196, 144, 92), (210, 180, 140)]:
+            with self.subTest(colour=colour):
+                self.assertNotIn(self.named('Хаки', cut(colour)), ('Хаки', 'Оливковый', 'Зеленый'))
+
+    def test_real_khaki_stays_khaki(self):
+        self.assertEqual(self.named('Хаки', cut((107, 123, 74))), 'Хаки')
+
+    def test_a_light_garment_is_not_a_dark_name(self):
+        self.assertNotEqual(self.named('Коричневый', cut((198, 142, 90))), 'Коричневый')
+
+    def test_a_shadowed_reading_cannot_lighten_or_refuse(self):
+        # A shadow takes chroma and lightness away: a dull dark reading says nothing against the head.
+        self.assertEqual(self.named('Коричневый', cut((90, 86, 82))), 'Коричневый')
+        self.assertEqual(self.named('Синий деним', cut((25, 30, 45))), 'Синий деним')
+
+    def test_a_many_coloured_cut_out_leaves_it_to_the_head(self):
+        image = cut((198, 142, 90))
+        image.paste((30, 60, 200, 255), (20, 105, 100, 140))
+        self.assertEqual(self.named('Хаки', image), 'Хаки')
+
+    def test_a_worn_tan_jacket_is_not_khaki(self):
+        # A person's shirt and face make the cut-out far from solid; no khaki-coloured pixel is in it at all.
+        image = cut((185, 155, 125))
+        image.paste((240, 240, 240, 255), (20, 100, 100, 140))
+        self.assertNotEqual(self.named('Хаки', image), 'Хаки')
+
+    def test_a_khaki_part_of_the_picture_keeps_the_name(self):
+        image = cut((185, 155, 125))
+        image.paste((107, 123, 74, 255), (20, 110, 100, 140))
+        self.assertEqual(self.named('Хаки', image), 'Хаки')
+
+    def test_washed_denim_keeps_its_blue(self):
+        # A weak reading of the same hue as the name does not contradict it.
+        self.assertEqual(self.named('Голубой', cut((180, 197, 212))), 'Голубой')
+
+    def test_a_certain_head_is_kept(self):
+        self.assertEqual(self.named('Хаки', cut((198, 142, 90)), boost=12), 'Хаки')
+
+
+class AppColourNames(unittest.TestCase):
+    def test_every_name_has_a_studio_tint(self):
+        source = (Path(__file__).parent.parent / 'src/components/studio/studio.ts').read_text()
+        block = source.split('const NAMED: Record<string, string> = {')[1].split('};')[0]
+        tinted = set(re.findall(r"'?([А-Яа-яЁё][А-Яа-яЁё ]*)'?: '#", block))
+        self.assertEqual(set(gc.NAMES) - tinted, set())
+
+
 def upload():
     buffer = BytesIO(); Image.new('RGB', (600, 800), (200, 60, 60)).save(buffer, 'JPEG')
     return UploadFile(file=BytesIO(buffer.getvalue()), filename='item.jpg')

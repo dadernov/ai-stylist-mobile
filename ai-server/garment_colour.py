@@ -10,6 +10,9 @@ skin pull it off). Here two opinions are joined:
   the biggest cluster, turned into a soft vote by its distance to each named colour.
 name = argmax(log P_head + 0.5 * log P_pixels): 88% right on real photos, 77% on catalogue shots
 (catdata RECOGNITION_REPORT.md, section 4.3). The confidence is the head's probability of that name.
+That sum alone lets the head overrule any measurement: a ΔE of 20 is worth only 1.3 nats, and the head was taught
+from English "khaki" (a tan) under the name Хаки (a grey-green), so it called caramel garments Хаки. So the measured
+colour also refuses names outright (_refused), but only when the measurement can be trusted.
 No head file, no answer: the fields are left out and the app names the colour as before.
 """
 import os
@@ -31,6 +34,23 @@ HEAD_PATH = Path(__file__).parent / "colour_head.npz"
 # How much the pixels weigh against the head, and how soft their vote is (CIELAB ΔE per unit of log-probability).
 PIXEL_WEIGHT = 0.5
 PIXEL_SOFTNESS = 8.0
+# The measured colour may refuse names only if it has a hue and is not in deep shadow (shade greys and darkens, so a
+# dull reading proves nothing), and the head is not all but certain.
+VETO_MIN_CHROMA = 10.0
+VETO_MIN_LIGHTNESS = 25.0
+VETO_HEAD_CERTAIN = 0.999
+# Hue: on a nearly one-coloured cut-out (a print or a person would mislead), a name this much further in the a*b* plane
+# than the nearest name; a weak reading does not refuse a name of about its own hue (washed denim is a pale blue).
+VETO_SOLID_SHARE = 0.8
+VETO_NEAR = 10.0
+VETO_HUE_MARGIN = 12.0
+VETO_WEAK_CHROMA = 14.0
+VETO_SAME_HUE_DEGREES = 45.0
+# Lightness, on any cut-out: a name this much darker in L* than the garment (shade darkens a garment, it never lightens
+# it) and with almost no pixel of that colour anywhere in the picture. Full CIELAB here: brown and caramel share a hue.
+VETO_LIGHTNESS_GAP = 15.0
+VETO_PRESENT_DISTANCE = 15.0
+VETO_ABSENT_SHARE = 0.03
 
 
 def srgb_to_lab(rgb):
@@ -78,6 +98,28 @@ def main_colour(foreground: Image.Image):
         centres = np.array([lab[labels == k].mean(0) if (labels == k).any() else centres[k] for k in range(4)])
     biggest = int(np.bincount(labels, minlength=4).argmax())
     return srgb_to_lab(np.median(pixels[labels == biggest], axis=0).astype(int))
+
+
+def _refused(colour, foreground: Image.Image, head_certainty):
+    """Which names the measured colour rules out, as a boolean per name: none when it cannot be trusted."""
+    chroma = np.linalg.norm(colour[1:])
+    if head_certainty >= VETO_HEAD_CERTAIN or colour[0] < VETO_MIN_LIGHTNESS or chroma < VETO_MIN_CHROMA:
+        return np.zeros(len(NAMES), bool)
+    rgb = np.asarray(foreground.convert("RGB").resize((160, 160)))
+    alpha = np.asarray(foreground.getchannel("A").resize((160, 160), Image.Resampling.NEAREST))
+    lab = srgb_to_lab(rgb[alpha > 180])
+    ab = lab[:, 1:]
+    reference_ab = REFERENCE_LAB[:, 1:]
+    hue_distance = np.linalg.norm(reference_ab - colour[1:], axis=1)
+    refused = hue_distance > hue_distance.min() + VETO_HUE_MARGIN
+    if chroma < VETO_WEAK_CHROMA:
+        angle = np.degrees(np.arctan2(reference_ab[:, 1], reference_ab[:, 0]) - np.arctan2(colour[2], colour[1]))
+        same_hue = np.abs((angle + 180) % 360 - 180) < VETO_SAME_HUE_DEGREES
+        refused &= ~(same_hue & (np.linalg.norm(reference_ab, axis=1) >= VETO_MIN_CHROMA))
+    if (np.linalg.norm(ab - colour[1:], axis=1) < VETO_NEAR).mean() < VETO_SOLID_SHARE:
+        refused[:] = False
+    present = (np.linalg.norm(lab[:, None] - REFERENCE_LAB[None], axis=2) < VETO_PRESENT_DISTANCE).mean(0)
+    return refused | ((colour[0] - REFERENCE_LAB[:, 0] > VETO_LIGHTNESS_GAP) & (present < VETO_ABSENT_SHARE))
 
 
 _head = None
@@ -128,5 +170,6 @@ def name_colour(embedding, foreground: Image.Image):
     if colour is not None:
         vote = -np.linalg.norm(REFERENCE_LAB - colour[None], axis=1) / PIXEL_SOFTNESS
         score = score + PIXEL_WEIGHT * (vote - vote.max() - np.log(np.exp(vote - vote.max()).sum()))
+        score = np.where(_refused(colour, foreground, head_probabilities.max()), -np.inf, score)
     best = int(score.argmax())
     return {"colorName": NAMES[best], "colorConfidence": round(float(head_probabilities[best]), 3)}
