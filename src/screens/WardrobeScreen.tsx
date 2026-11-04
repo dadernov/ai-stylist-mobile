@@ -1,4 +1,5 @@
 import { NAMED_COLORS } from '../domain/namedColors';
+import { darkColors } from '../constants/theme';
 import {
   ActivityIndicator,
   Animated,
@@ -568,7 +569,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       }
     } catch (error: any) {
       if (analysisRequestRef.current !== requestId) return;
-      const message = String(error?.message || error || t('Неизвестная ошибка'));
+      const message = String(error?.message || error || t('Что-то пошло не так. Попробуй ещё раз.'));
       setAnalysisError(message);
     } finally {
       if (analysisRequestRef.current === requestId) setAnalyzing(false);
@@ -628,7 +629,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
 
   const handleDeleteItem = useCallback(
     (id: string) => {
-      Alert.alert(t('Удалить вещь?'), t('Действие нельзя отменить.'), [
+      Alert.alert(t('Удалить вещь?'), t('Вернуть её не получится.'), [
         { text: t('Отмена'), style: 'cancel' },
         {
           text: t('Удалить'),
@@ -794,8 +795,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       <StudioSheet visible={Boolean(detail)} onClose={closeDetail} height="92%">
         {detail ? <>
           {/* At night the piece's light is only a hint of its colour over the dark studio. */}
-          <LinearGradient colors={isDark ? ['#2A2D32', `${studioTint(detail) || '#22252A'}33`] : ['#FFFFFF', studioTint(detail) || '#F0F0EE']}
-            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[styles.detailStage, isDark && { backgroundColor: '#1C1F23' }]}>
+          <LinearGradient colors={isDark ? [darkColors.stage, darkColors.stage] : ['#FFFFFF', studioTint(detail) || '#F0F0EE']}
+            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.detailStage}>
             <View style={styles.detailFloor}><FloorShadow width={180} opacity={0.24} /></View>
             <Animated.View style={{ width: '100%', alignItems: 'center', transform: [{ translateY: detailFloat }] }}>
               <GarmentImage item={detail} print style={styles.detailGarment} />
@@ -804,8 +805,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
           </LinearGradient>
           <Text style={[font('semibold'), styles.detailTitle, { color: ink }]}>{detail.name}</Text>
           {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section)
-            ? <Pill variant="primary" title={t('Примерить на себе')} icon={PersonStanding} onPress={() => { setDetailId(null); onTryOn(detail); }} /> : null}
-          {onStyleWith ? <Pill title={t('Подобрать образы с этой вещью')} icon={Layers} onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
+            ? <Pill variant="primary" title={t('Примерить')} icon={PersonStanding} onPress={() => { setDetailId(null); onTryOn(detail); }} /> : null}
+          {onStyleWith ? <Pill title={t('С чем носить')} icon={Layers} onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}
           {/* The facts as on the label sewn into the garment; unknown ones are left out. */}
           <GarmentLabel rows={([['Категория', detail.category], ['Цвет', detail.color], ['Сезон', detail.season], ['Рисунок', detail.pattern]] as [string, string][])
             .map(([name, value]): [string, string] => [t(name), value && value !== 'Не определено' && !value.startsWith('#') ? t(value) : ''])
@@ -948,7 +949,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
                       {renderField(t('Категория'), renderChips(categoryOptions, draftCategory, handleDraftCategoryChange))}
                       {renderField(t('Цвет'), renderChips(colorOptions, draftColor, handleDraftColorChange))}
                       {renderField(t('Сезон'), renderChips(seasonOptions, draftSeason, manual('season', setDraftSeason)))}
-                      {renderField(t('Паттерн'), renderChips(patternOptions, draftPattern, manual('pattern', setDraftPattern)))}
+                      {renderField(t('Рисунок'), renderChips(patternOptions, draftPattern, manual('pattern', setDraftPattern)))}
                       {renderField(t('Раздел'), renderChips(sectionOptions, draftSection, manual('section', setDraftSection)))}
                       {renderField(t('Размер'), <AtelierInput placeholder={t('Например, M')} value={draftSize} onChangeText={setDraftSize} />)}
                       {renderField(t('Бренд / магазин'), <AtelierInput placeholder={t('Например, Zara')} value={draftStore} onChangeText={setDraftStore} />)}
@@ -973,7 +974,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         {renderField(t('Категория'), renderChips(categoryOptions, editCategory, handleEditCategoryChange))}
         {renderField(t('Цвет'), renderChips(colorOptions, editColor, setEditColor))}
         {renderField(t('Сезон'), renderChips(seasonOptions, editSeason, setEditSeason))}
-        {renderField(t('Паттерн'), renderChips(patternOptions, editPattern, setEditPattern))}
+        {renderField(t('Рисунок'), renderChips(patternOptions, editPattern, setEditPattern))}
         {renderField(t('Раздел'), renderChips(sectionOptions, editSection, setEditSection))}
         {renderField(t('Размер'), <AtelierInput placeholder={t('Например, M')} value={editSize} onChangeText={setEditSize} />)}
         {renderField(t('Бренд / магазин'), <AtelierInput placeholder={t('Например, Zara')} value={editStore} onChangeText={setEditStore} />)}

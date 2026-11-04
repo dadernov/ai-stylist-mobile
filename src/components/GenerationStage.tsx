@@ -3,7 +3,7 @@ import { Animated, Keyboard, LayoutChangeEvent, Modal, NativeScrollEvent, Native
   StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { ArrowUpRight, ChevronDown, RefreshCw, X } from 'lucide-react-native';
+import { PersonStanding, ChevronDown, RefreshCw, X } from 'lucide-react-native';
 import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
@@ -20,7 +20,7 @@ import { ZoomableImage } from './ui/ZoomableImage';
 import { FormScrollView } from './ui/FormScrollView';
 import { SheetGestureContext, useSheetDrag, useSheetScrollLock } from './studio/SheetHandle';
 import { Pill } from './studio/Glass';
-import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
+import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion, handleTint } from './studio/studio';
 
 /** Before the try-on: how each garment is worn, and the button that starts it. */
 export type StageSetup = {
@@ -148,7 +148,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
           <Animated.View onLayout={drag.onLayout} {...drag.panHandlers} style={[styles.sheet, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark), borderBottomWidth: 0, transform: [{ translateY: slide }] }]}>
             <View {...drag.grabHandlers} style={styles.grab} accessible accessibilityRole="button"
               accessibilityLabel={t(busy ? 'Свернуть' : 'Закрыть')} accessibilityHint={t('Смахни вниз, чтобы закрыть')} onAccessibilityTap={close}>
-              <View style={[styles.handle, { backgroundColor: isDark ? '#3A3D42' : '#D5D7DA' }]} />
+              <View style={[styles.handle, { backgroundColor: handleTint(isDark) }]} />
             </View>
             <SheetGestureContext.Provider value={drag.hub}>
             <SafeAreaView edges={['bottom']} style={{ flex: 1 }}>
@@ -179,7 +179,7 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                   {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
                 </FormScrollView>
                 <View style={styles.actions}>
-                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} disabled={!setup.canGenerate} onPress={setup.onGenerate} />
+                  <Pill variant="primary" title={t('Примерить')} icon={PersonStanding} loading={setup.starting} disabled={!setup.canGenerate} onPress={setup.onGenerate} />
                   <SaveLookButton look={setup.look} />
                 </View>
               </> : (

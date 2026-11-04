@@ -88,7 +88,7 @@ export const SERIF_BOLD = LABEL_FACE;
 export const DISPLAY = LABEL_FACE;
 
 // Почти прямые углы, как у fashion-витрин: фото и кнопки — 4 px, только листы снизу скруглены сильнее.
-export const RADII = { sm: 4, md: 4, lg: 4, xl: 16, pill: 999 } as const;
+export const RADII = { sm: 12, md: 18, lg: 24, xl: 30, sheet: 32, pill: 999 } as const;
 
 // Базовая шкала отступов.
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;

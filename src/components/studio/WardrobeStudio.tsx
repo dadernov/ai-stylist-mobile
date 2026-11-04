@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { darkColors } from '../../constants/theme';
 import { Animated, Easing, FlatList, Image, PanResponder, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SheetFlatList } from '../ui/FormScrollView';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,6 +25,8 @@ const LIFT = 0.03;
 const FLOAT_PX = 2;
 const TICK_GAP_MS = 40;
 const REFLECTION_FADE_MS = 220;
+// A softer mirror: at full strength its flat edge reads as a separate shape under the piece.
+const softReflection = (opacity: number) => opacity * 0.6;
 /** A cut-out's shape comes in a moment; one that can't be measured stands in a square box after this long. */
 const SHAPE_WAIT_MS = 800;
 const PIECE_FADE_MS = 140;
@@ -95,7 +98,7 @@ const SlotFloor = memo(function SlotFloor({ id, uri, print, side, width, boxHeig
   if (copy === null) return <View pointerEvents="none" style={{ position: 'absolute', top: side - 17, left: 0, right: 0, alignItems: 'center' }}><FloorShadow width={width * 0.8} opacity={0.22} /></View>;
   return (
     <Animated.View pointerEvents="none" style={{ position: 'absolute', top: side, left: (side - width) / 2, width, height: reflection, opacity: fade, transform: down ? [{ translateY: down }] : [] }}>
-      <Reflection id={id} uri={copy} print={print} width={width} boxHeight={boxHeight} height={reflection} opacity={opacity} />
+      <Reflection id={id} uri={copy} print={print} width={width} boxHeight={boxHeight} height={reflection} opacity={softReflection(opacity)} />
     </Animated.View>
   );
 });
@@ -760,9 +763,9 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
       {/* Sections, then the section as a row; the piece in focus lifted */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginTop: 18 }} contentContainerStyle={styles.sections}>
         {['Все', ...present].map(name => (
-          <AppPressable key={name} accessibilityRole="button" accessibilityState={{ selected: section === name }} onPress={() => setSection(name)}>
+          <AppPressable key={name} accessibilityRole="button" accessibilityState={{ selected: section === name }} hitSlop={12} onPress={() => setSection(name)}>
             <Text style={[font(section === name ? 'semibold' : 'regular'), { fontSize: 13, color: section === name ? ink : soft }]}>
-              {t(name === 'Все' ? 'Всё' : name)}{name === 'Все' ? <Text style={{ color: INK_FAINT }}> {items.length}</Text> : null}
+              {t(name)}{name === 'Все' ? <Text style={{ color: soft }}> {items.length}</Text> : null}
             </Text>
           </AppPressable>
         ))}
@@ -796,7 +799,7 @@ export function WardrobeStudio({ items, sections, onOpen, onAdd, onTryOn, onStyl
           renderItem={({ item: entry }) => (
             <AppPressable accessibilityRole="button" accessibilityLabel={entry.name} style={{ flex: 1 / 3 }}
               onPress={() => { setSection('Все'); settle(); setRail(current => ({ ...current, id: entry.id })); setAllOpen(false); }}>
-              <LinearGradient colors={[isDark ? '#2A2D32' : '#FFFFFF', studioTint(entry) || (isDark ? '#22252A' : '#F0F0EE')]} start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }} style={styles.tile}>
+              <LinearGradient colors={isDark ? ['#2A2D32', `${studioTint(entry) || '#22252A'}33`] : ['#FFFFFF', studioTint(entry) || '#F0F0EE']} start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }} style={styles.tile}>
                 <GarmentImage item={entry} style={{ width: '100%', height: 84 }} />
                 <Text style={[font('medium'), { fontSize: 12, lineHeight: 15, color: ink, marginTop: 6 }]} numberOfLines={2}>{entry.name}</Text>
               </LinearGradient>
@@ -812,7 +815,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   facts: { fontSize: 13 },
-  name: { fontSize: 34, lineHeight: 40, letterSpacing: -1, marginTop: 2 },
+  name: { fontSize: 26, lineHeight: 32, letterSpacing: -0.7, marginTop: 2 },
   flatPlane: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' },
   stage: { flex: 1, minHeight: 220, marginHorizontal: -16, overflow: 'hidden' },
   position: { position: 'absolute', right: 20, bottom: 4, zIndex: 5 },
@@ -825,9 +828,9 @@ const styles = StyleSheet.create({
   stripStill: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, alignItems: 'flex-end' },
   // The thumbnail in the middle of its cell: the native snap centres the cell.
   thumbCell: { width: THUMB_PITCH, alignItems: 'center' },
-  thumb: { width: 60, height: 72, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.6)', alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: 60, height: 72, borderRadius: 18, backgroundColor: darkColors.stage, alignItems: 'center', justifyContent: 'center' },
   thumbImage: { width: 46, height: 52 },
-  thumbOn: { backgroundColor: '#FFFFFF', borderRadius: 18, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } },
+  thumbOn: { borderRadius: 18, borderWidth: 1.5, borderColor: INK },
   search: { height: 44, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16 },
   tile: { borderRadius: 20, padding: 8, paddingBottom: 10 }
 });

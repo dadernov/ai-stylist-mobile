@@ -1,19 +1,19 @@
 /** The pure logic of the generation view: the placeholder's colours and sweep, the status line's wave, the top-down reveal, and which reveals are owed. */
 
 /** A neutral grey that sits quietly on either theme's page. */
-export const placeholderFill = (isDark: boolean) => (isDark ? '#2B2C30' : '#E9E9EC');
+export const placeholderFill = (isDark: boolean) => (isDark ? '#2B2C30' : '#E4E4E8');
 /** Depth in the grey: a whisper lighter at the top. */
-export const placeholderDepth = (isDark: boolean): [string, string] => (isDark ? ['#313238', '#26272A'] : ['#F0F0F3', '#E3E3E7']);
+export const placeholderDepth = (isDark: boolean): [string, string] => (isDark ? ['#313238', '#26272A'] : ['#EBEBEE', '#DEDEE2']);
 
 /** The band of light: transparent at both ends so it has no edges, white at the heart, an iridescent hint on either side. */
 export function sweepColors(isDark: boolean): [string, string, ...string[]] {
   return isDark
     ? ['rgba(255,255,255,0)', 'rgba(170,190,255,0.03)', 'rgba(205,190,255,0.07)', 'rgba(255,255,255,0.13)', 'rgba(255,205,200,0.06)', 'rgba(190,240,235,0.03)', 'rgba(255,255,255,0)']
-    : ['rgba(255,255,255,0)', 'rgba(205,220,255,0.14)', 'rgba(226,214,255,0.30)', 'rgba(255,255,255,0.72)', 'rgba(255,224,218,0.28)', 'rgba(210,244,238,0.12)', 'rgba(255,255,255,0)'];
+    : ['rgba(255,255,255,0)', 'rgba(225,230,245,0.06)', 'rgba(235,230,250,0.14)', 'rgba(255,255,255,0.55)', 'rgba(250,235,232,0.12)', 'rgba(228,244,240,0.05)', 'rgba(255,255,255,0)'];
 }
 export const SWEEP_STOPS: [number, number, ...number[]] = [0, 0.16, 0.34, 0.5, 0.66, 0.84, 1];
-export const SWEEP_MS = 3000;
-export const SWEEP_REST_MS = 250;
+export const SWEEP_MS = 2400;
+export const SWEEP_REST_MS = 500;
 /** How far the light leans. */
 export const SWEEP_TILT_DEG = 14;
 /** The band's height against the frame's: tilted, it still reaches past the corners. */
@@ -24,14 +24,14 @@ export const SWEEP_OVERHANG = 1.4;
  * It starts and ends wholly outside the frame, tilt included, so a loop's jump back is never seen.
  */
 export function sweepTravel(frameWidth: number, frameHeight: number) {
-  const bandWidth = Math.round(frameWidth * 1.2);
+  const bandWidth = Math.round(frameWidth * 0.8);
   const lean = Math.ceil(Math.tan(SWEEP_TILT_DEG * Math.PI / 180) * frameHeight * SWEEP_OVERHANG / 2);
   return { bandWidth, from: -bandWidth - lean, to: frameWidth + lean };
 }
 
 export const TEXT_WAVE_MS = 2200;
-const TEXT_LOW = 0.5;
-const TEXT_WIDTH = 0.22;
+const TEXT_LOW = 0.45;
+const TEXT_WIDTH = 0.3;
 
 /** One letter's brightness as the wave `t` (0 to 1) crosses the line: dim, bright as the crest passes it, dim again. */
 export function letterWave(index: number, count: number) {

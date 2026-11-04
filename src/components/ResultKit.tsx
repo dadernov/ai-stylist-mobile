@@ -14,7 +14,7 @@ import { pictureFit } from './studio/imageFit';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame } from './ui/FittedFrame';
 import { SheetGestureBlock } from './studio/SheetHandle';
-import { font, glassEdge, glassFill, INK, INK_ON_DARK, useReducedMotion } from './studio/studio';
+import { font, glassEdge, glassFill, INK, INK_ON_DARK, useReducedMotion, VIEWER_BLACK } from './studio/studio';
 import { SheetStrip } from './ui/FormScrollView';
 import { ZoomableImage } from './ui/ZoomableImage';
 
@@ -201,11 +201,11 @@ const styles = StyleSheet.create({
   error: { fontSize: 12, lineHeight: 16 },
   strip: { flexGrow: 0, height: PIECE_SIZE },
   stripRow: { gap: 8 },
-  piece: { width: PIECE_SIZE, height: PIECE_SIZE, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
+  piece: { width: PIECE_SIZE, height: PIECE_SIZE, borderRadius: 12, backgroundColor: '#EDEDED', borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   pieceEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   controls: { position: 'absolute', top: 10, left: 10, right: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'space-between', alignItems: 'flex-start' },
   controlsRight: { flexDirection: 'row', gap: 8 },
-  viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
+  viewer: { flex: 1, backgroundColor: VIEWER_BLACK, justifyContent: 'center', padding: 16 },
   viewerImage: { width: '100%', height: '86%', flex: 0 },
   viewerClose: { alignSelf: 'center', marginTop: 12 },
   burst: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', opacity: 0 },

@@ -646,14 +646,14 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
                 <AppPressable
                   key={tab.key}
                   haptics
-                  style={[styles.tabItem, isActive && styles.tabItemActive]}
+                  style={[styles.tabItem, isActive && styles.tabItemActive, isActive && isDark && { backgroundColor: '#FFFFFF' }]}
                   accessibilityRole="tab"
                   accessibilityLabel={t(tab.label)}
                   accessibilityState={{ selected: isActive }}
                   onPress={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(undefined); setWardrobeDetailId(undefined); setBuilderEntry('fitting'); setActiveTab(tab.key); }}
                 >
-                  <TabIcon size={isActive ? 19 : 22} strokeWidth={1.8} color={isActive ? '#FFFFFF' : '#4A4F57'} />
-                  {isActive ? <Text style={styles.tabLabelActive} numberOfLines={1}>{t(tab.label)}</Text> : null}
+                  <TabIcon size={isActive ? 19 : 22} strokeWidth={1.8} color={isActive ? (isDark ? INK : '#FFFFFF') : (isDark ? '#A0A0A0' : '#4A4F57')} />
+                  {isActive ? <Text style={[styles.tabLabelActive, isDark && { color: INK }]} numberOfLines={1}>{t(tab.label)}</Text> : null}
                 </AppPressable>
               );
             })}

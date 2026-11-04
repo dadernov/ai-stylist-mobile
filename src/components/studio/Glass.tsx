@@ -20,24 +20,6 @@ export function Glass({ children, style, radius = 999, intensity = 40 }: { child
 }
 
 /** A light that sweeps across the primary button now and then, so the main action reads as alive. */
-function Sheen({ width }: { width: number }) {
-  const x = useRef(new Animated.Value(0)).current;
-  const reduced = useReducedMotion();
-  useEffect(() => {
-    if (reduced || !width) return;
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(x, { toValue: 1, duration: 2700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.delay(1800),
-      Animated.timing(x, { toValue: 0, duration: 0, useNativeDriver: true })
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [reduced, width]);
-  if (reduced || !width) return null;
-  return <Animated.View pointerEvents="none" style={{ position: 'absolute', top: 0, bottom: 0, width: width * 0.45,
-    backgroundColor: 'rgba(255,255,255,0.16)', transform: [{ translateX: x.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.6, width * 1.2] }) }, { skewX: '-18deg' }] }} />;
-}
-
 type PillProps = { title?: string; icon?: LucideIcon; onPress?: () => void; disabled?: boolean; style?: StyleProp<ViewStyle>;
   variant?: 'primary' | 'glass'; size?: 'md' | 'sm' | 'icon'; accessibilityLabel?: string; iconColor?: string;
   /** Fills the icon with its own colour, e.g. a saved heart. */ iconFill?: boolean;
@@ -88,7 +70,6 @@ export function PrimarySurface({ children, dark }: { children: ReactNode; dark: 
   return (
     <View onLayout={(event: LayoutChangeEvent) => setW(event.nativeEvent.layout.width)}
       style={{ borderRadius: 999, overflow: 'hidden', backgroundColor: dark ? '#FFFFFF' : INK }}>
-      <Sheen width={w} />
       {children}
     </View>
   );

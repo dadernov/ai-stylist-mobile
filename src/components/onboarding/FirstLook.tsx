@@ -251,7 +251,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
       const context = await tryOnContext(model, [item]);
       await store.start({ modelUri: model, items: [item], context, tuckMode: 'auto', quality: 'quality', onJob: id => { if (alive.current) setJobId(id); if (waiting.current) onLateJob(id); } });
     } catch (error: any) {
-      if (alive.current) setStartError(error?.message ? t(String(error.message)) : t('Не удалось сгенерировать примерку'));
+      if (alive.current) setStartError(error?.message ? t(String(error.message)) : t('Примерка не получилась. Попробуй ещё раз.'));
     } finally {
       busy.current = false;
       if (alive.current) setStarting(false);

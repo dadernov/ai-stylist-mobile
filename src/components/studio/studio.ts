@@ -11,7 +11,7 @@ export const font = (weight: keyof typeof MANROPE = 'regular'): TextStyle => ({ 
 export const SHEET_CLOSE_MS = 450;
 
 export const INK = '#121417';
-export const INK_SOFT = '#6E737B';
+export const INK_SOFT = '#5F646C';
 export const INK_FAINT = '#9A9EA4';
 /** Ink on the dark studio and dark sheets. */
 export const INK_ON_DARK = '#F4F5F7';
@@ -24,6 +24,10 @@ export const glassEdge = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.10)'
 export const sheetFill = (isDark: boolean) => (isDark ? 'rgba(24,26,30,0.97)' : 'rgba(250,250,249,0.97)');
 /** The dim laid over the screen behind a modal (the blur alone does not dim on Android). */
 export const backdropDim = (isDark: boolean) => (isDark ? 'rgba(0,0,0,0.45)' : 'rgba(18,20,23,0.28)');
+/** The grab handle of a sheet. */
+export const handleTint = (isDark: boolean) => (isDark ? '#3A3D42' : '#D5D7DA');
+/** The black behind a picture shown full screen. */
+export const VIEWER_BLACK = 'rgba(0,0,0,0.92)';
 /** The hairline between rows on a glass panel or a sheet. */
 export const hairline = (isDark: boolean) => (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)');
 

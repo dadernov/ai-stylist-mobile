@@ -11,7 +11,7 @@ import { font } from '../components/studio/studio';
 import { useThemedStyles } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { WardrobeItem } from '../data/mock';
-import { ArrowUpRight } from 'lucide-react-native';
+import { PersonStanding } from 'lucide-react-native';
 
 // The floating «К примерке» and the air around it.
 const FLOATING_CTA_ROOM = 50 + 12 + 8;
@@ -81,7 +81,7 @@ export function FittingScreen({ items, modelUri, onProfile, onModelChange, onWar
       </FormScrollView>
       {activeTab === 'fitting' && fittingCta ? (
         <View style={styles.floatingCta} pointerEvents="box-none">
-          <Pill variant="primary" title={t('К примерке ({count})', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} />
+          <Pill variant="primary" title={t('Примерить ({count})', { count: fittingCta.count })} icon={PersonStanding} onPress={fittingCta.open} />
         </View>
       ) : null}
     </View>

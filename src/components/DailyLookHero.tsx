@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { darkColors } from '../constants/theme';
 import { Animated, AppState, PanResponder, StyleSheet, Text, View } from 'react-native';
 import { Heart, PersonStanding, X } from 'lucide-react-native';
 import { SaveLookButton, useSaveLook } from './SaveLook';
@@ -153,7 +154,7 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   if (!items.length && !current) return null;
   // Still reading or waiting for the weather: the place is kept, nothing jumps later.
   if (record === undefined || (!settled && !current)) return <View style={styles.wrap}>{header}
-    <Glass radius={28}><Text style={[font('regular'), styles.muted, styles.note]}>{t('Смотрю, что у тебя есть…')}</Text></Glass></View>;
+    <Glass radius={28}><Text style={[font('regular'), styles.muted, styles.note]}>{t('Смотрим, что у тебя есть…')}</Text></Glass></View>;
   // Nothing of the look left to show (its pieces are gone): no empty card.
   if (!look || !info || !selected) {
     // Too few things: the state below already explains it. All skipped: a word here, the ideas below still work.
@@ -167,7 +168,7 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
     <Animated.View {...pan.panHandlers} style={{ transform: [{ translateX: swipe }, { rotate: swipe.interpolate({ inputRange: [-300, 300], outputRange: ['-5deg', '5deg'], extrapolate: 'clamp' }) }] }}>
       <Glass radius={28}>
         <View style={{ height: stageHeight }} onLayout={e => setWidth(e.nativeEvent.layout.width)}>
-          {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
+          {placed.map(piece => <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h, backgroundColor: darkColors.stage, borderRadius: 18 }}>
             <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(18, piece.w * 0.16)} style={{ width: piece.w, height: piece.h }} />
           </View>)}
           <Animated.View pointerEvents="none" style={[styles.badge, { left: 12, opacity: swipe.interpolate({ inputRange: [20, SWIPE], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>

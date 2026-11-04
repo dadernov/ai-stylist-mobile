@@ -6,7 +6,7 @@ import { Check, ImageOff, Pencil, Plus, RefreshCw, Search, Shirt, UserRound, X }
 import { WardrobeItem } from '../data/mock';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
-import { localeFor, useT } from '../constants/i18n';
+import { localeFor, useT, useLanguage } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { EmptyState } from './ui/EmptyState';
 import { Chip } from './Chip';
@@ -16,6 +16,7 @@ import { font, glassEdge, glassFill, INK, isCutout, useReducedMotion, SHEET_CLOS
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
+import { formatLookDate } from '../domain/lookDate';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { DevelopingImage } from './studio/DevelopingImage';
 import { GenerationStatus } from './studio/GenerationView';
@@ -185,8 +186,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   );
 }
 
-const shortDateTime = (timestamp: number) =>
-  new Date(timestamp).toLocaleString(localeFor(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 /**
  * The fitting room's picture: the person's own photo, or the try-on chosen in «Недавние примерки»
@@ -199,6 +198,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
 }) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { lang } = useLanguage();
   const { colors: c, isDark } = useTheme();
   const reduced = useReducedMotion();
   const { jobs, store, error, login } = useTryOnJobs();
@@ -246,7 +246,9 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
   const fieldOwed = Boolean(current && result && (revealingId === current.id || (revealPlayed !== current.id && revealLedger.owes(current.id, 'full'))));
   // The frame hugs the picture: the result's shape once known, the photo's until then.
   const frame = useFrameAspect(modelUri, result?.imageUri, busy);
-  const photoHeight = resultPhotoHeight({ available: viewport || estimatedViewport(windowHeight, insets.top), pieces: pieces.length > 0 });
+  const inlineId = visible && current ? current.id : null;
+  useEffect(() => { dock.showingInline(inlineId); return () => dock.showingInline(null); }, [inlineId, dock.showingInline]);
+  const photoHeight = resultPhotoHeight({ available: (viewport || estimatedViewport(windowHeight, insets.top)) - (result ? 26 : 0), pieces: pieces.length > 0 });
 
   return <View style={{ gap: RESULT_GAP }}>
     <View style={[styles.frameShadow, { height: photoHeight }]}>
@@ -254,11 +256,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
         {modelUri ? <Animated.Image source={{ uri: beforeUri || modelUri }} resizeMode="contain" accessibilityLabel={t('Фото для примерки')}
           style={[StyleSheet.absoluteFill, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }] }]} />
-          : <View style={styles.noPhoto}>
-            <UserRound size={40} strokeWidth={1.2} color={c.muted} />
-            <Text style={styles.noPhotoText}>{t('Фото ещё не добавлено')}</Text>
-            <Pill variant="primary" title={t('Добавить фото')} onPress={onPickModel} />
-          </View>}
+          : <EmptyState icon={UserRound} title={t('Начнём с твоего фото')} hint={t('Нужно фото в полный рост')} actionLabel={t('Добавить фото')} onAction={onPickModel} />}
         {result ? <Animated.View pointerEvents={showResult ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { opacity: fade,
           transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1] }) }] }]}>
           <AppPressable feedback={false} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть во весь экран')}
@@ -275,14 +273,13 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
         </View> : null}
         <ResultPhotoControls onShare={result && current ? () => sharing.offer({ uri: result.imageUri, items: pieces, title: current.name }) : undefined}
           compare={result && beforeUri && !fieldOwed ? { before: !after, onToggle: () => setAfter(value => !value) } : undefined}>
-          {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
+          {modelUri && !busy ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
         </ResultPhotoControls>
-        {current && (result || !busy) ? <Glass radius={24} style={styles.caption}>
+        {current && !result && !busy ? <Glass radius={24} style={styles.caption}>
           <View style={styles.captionInner}>
             <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
               <Text style={styles.captionTitle} numberOfLines={1}>{current.name}</Text>
-              {result ? <Text style={styles.captionMeta}>{shortDateTime(result.updatedAt)}</Text>
-                : current.error ? <Text style={styles.captionError} numberOfLines={3}>{t(current.error)}</Text>
+              {current.error ? <Text style={styles.captionError} numberOfLines={3}>{t(current.error)}</Text>
                 : <Text style={styles.captionMeta}>{t('Примерка не завершена')}</Text>}
             </View>
             {!result && current.status === 'retry' ? <Pill size="icon" icon={RefreshCw} loading={checkingId === current.id} haptics={false}
@@ -292,9 +289,13 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
         </Glass> : null}
       </FittedFrame>
     </View>
+    {current && result ? <View style={styles.under}>
+      <Text style={[styles.captionTitle, { flexShrink: 1 }]} numberOfLines={1}>{current.name}</Text>
+      <Text style={styles.captionMeta}>{formatLookDate(result.updatedAt, localeFor(lang))}</Text>
+    </View> : null}
     {busy && current ? <GenerationStatus label={tryOnStatusLabel(current.progress, t)} stage={current.progress?.stage} items={pieces} active={visible && !dock.windowUp} /> : null}
     {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
-      : current && result && !fieldOwed ? <>
+      : current && result ? <>
         <ResultPieces items={pieces.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
         <ResultActions gallery={gallery} save={favorite} againDisabled={!pieces.length} onAgain={() => onRedo(current)} />
       </> : current && !result ? <Pill icon={RefreshCw} title={t('Попробовать снова')} disabled={!pieces.length} onPress={() => onRedo(current)} /> : null}
@@ -375,6 +376,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   frame: { flex: 1 },
   noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
   noPhotoText: { ...font('medium'), color: c.muted, fontSize: 14, textAlign: 'center' },
+  under: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
   caption: { position: 'absolute', left: 10, right: 10, bottom: 10 },
   captionInner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8 },
   captionTitle: { ...font('semibold'), color: c.text, fontSize: 14, lineHeight: 18 },
@@ -406,6 +408,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   badgeFill: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   badgeGlass: { borderWidth: StyleSheet.hairlineWidth * 2 },
   tileStatus: { position: 'absolute', left: 8, right: 8, bottom: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 14 },
-  tileStatusText: { ...font('medium'), color: c.text, fontSize: 11, textAlign: 'center' },
+  tileStatusText: { ...font('medium'), color: c.text, fontSize: 12, textAlign: 'center' },
   tileName: { ...font('medium'), color: c.text, fontSize: 13, lineHeight: 18, paddingHorizontal: 4 }
 });

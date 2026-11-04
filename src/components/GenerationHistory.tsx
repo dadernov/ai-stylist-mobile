@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { TRYON_SECTIONS } from '../domain/accessories';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, StyleSheet, Text, View } from 'react-native';
+import { formatLookDate } from '../domain/lookDate';
 import { ArrowUpRight, ChevronRight, Clock3, History, RefreshCw, Shirt, X } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
@@ -55,10 +56,8 @@ export function GenerationHistory({ items, itemId, onFilter, onOpenItem, onTryOn
   }, [jobs, byId, itemId, t]);
   const filtered = useMemo(() => jobs.filter(job => !itemId || job.itemIds.includes(itemId))
     .sort((a, b) => b.createdAt - a.createdAt), [jobs, itemId]);
-  const date = (job: TryOnJob) => job.createdAt > 0 ? new Date(job.createdAt).toLocaleString(localeFor(lang), {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  }) : t('Ранее');
-  const status = (job: TryOnJob) => t(job.status === 'succeeded' ? 'Готово' : job.status === 'pending' ? 'Генерируем образ…'
+  const date = (job: TryOnJob) => job.createdAt > 0 ? formatLookDate(job.createdAt, localeFor(lang)) : t('Ранее');
+  const status = (job: TryOnJob) => t(job.status === 'succeeded' ? 'Готово' : job.status === 'pending' ? 'Собираем образ…'
     : job.status === 'retry' ? 'Ожидает проверки' : 'Не получилось');
   const canRepeat = !!selected?.itemIds.length && selected.itemIds.every(id => {
     const item = byId.get(id);
@@ -71,7 +70,7 @@ export function GenerationHistory({ items, itemId, onFilter, onOpenItem, onTryOn
       showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onScrollBeginDrag={Keyboard.dismiss}
       initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5}
       ListHeaderComponent={<View style={styles.filters}>
-        <View style={styles.row}><Text accessibilityRole="header" style={styles.title}>{t('История генераций')}</Text>
+        <View style={styles.row}><Text accessibilityRole="header" style={styles.title}>{t('История примерок')}</Text>
           <Text style={styles.muted}>{filtered.length}</Text></View>
         <OptionPicker label="Вещь в образе" options={Object.keys(labels)} labels={labels} value={itemId || ''}
           onChange={id => onFilter(id || undefined)} />

@@ -71,7 +71,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
           <>
             <Text style={[styles.label, { color: soft }]}>{t('Имя')}</Text>
             <TextInput
-              placeholder={t('Например, Алина')}
+              placeholder={t('Например, Саша')}
               placeholderTextColor={soft}
               style={fieldStyle('name')}
               value={name}
@@ -87,7 +87,7 @@ export function AuthScreen({ onAuthenticated, returning = false }: AuthScreenPro
 
         <Text style={[styles.label, { color: soft }]}>{t('Логин')}</Text>
         <TextInput
-          placeholder="alina"
+          placeholder="sasha"
           placeholderTextColor={soft}
           style={fieldStyle('login')}
           value={login}

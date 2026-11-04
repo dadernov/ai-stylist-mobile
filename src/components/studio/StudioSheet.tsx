@@ -10,7 +10,7 @@ import { OverlayOutlet } from '../OverlayHost';
 import { FormScrollView } from '../ui/FormScrollView';
 import { Pill } from './Glass';
 import { SheetGestureContext, SheetHandle, useSheetDrag, useSheetGestureBlock } from './SheetHandle';
-import { font, INK, INK_ON_DARK, inkSoft, sheetFill } from './studio';
+import { font, INK, INK_ON_DARK, inkSoft, sheetFill, handleTint } from './studio';
 
 type StudioSheetProps = {
   visible: boolean;
@@ -58,7 +58,7 @@ export function StudioSheet({ visible, title, subtitle, onClose, children, heigh
         <Animated.View onLayout={drag.onLayout} {...drag.panHandlers}
           style={[styles.sheet, height ? { height } : styles.fit, { backgroundColor: sheetFill(isDark), transform: [{ translateY: drag.translateY }] }]}>
           <View {...drag.grabHandlers}>
-          <SheetHandle onClose={onClose} canDismiss={dismissOnBackdrop} color={isDark ? '#3A3D42' : '#D5D7DA'} style={styles.handle} />
+          <SheetHandle onClose={onClose} canDismiss={dismissOnBackdrop} color={handleTint(isDark)} style={styles.handle} />
           {title ? (
             <View style={styles.header}>
               <View style={styles.heading}>

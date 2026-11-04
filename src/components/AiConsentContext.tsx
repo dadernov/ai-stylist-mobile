@@ -61,18 +61,18 @@ export function AiConsentProvider({ login, children }: { login: string; children
         <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />
         <View style={[styles.card, SHADOWS.floating, { backgroundColor: sheetFill(isDark), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: glassEdge(isDark) }]} accessibilityViewIsModal>
-          <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <ShieldCheck size={28} color={ink} strokeWidth={1.6} />
             <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: ink }]}>{t('Обработка фото нейросетями')}</Text>
             {points.map(point => <Text key={point} style={[font('regular'), styles.point, { color: inkSoft(isDark) }]}>• {point}</Text>)}
             <AppPressable accessibilityRole="link" onPress={() => { void Linking.openURL(privacyUrl()).catch(() => {}); }}>
               <Text style={[font('semibold'), styles.link, { color: ink }]}>{t('Политика конфиденциальности')}</Text>
             </AppPressable>
-            <View style={styles.actions}>
-              <Pill title={t('Согласен, продолжить')} variant="primary" onPress={() => void answer(true)} haptics={false} />
-              <Pill title={t('Не сейчас')} onPress={() => void answer(false)} haptics={false} />
-            </View>
           </ScrollView>
+          <View style={styles.actions}>
+            <Pill title={t('Даю согласие')} variant="primary" onPress={() => void answer(true)} haptics={false} />
+            <Pill title={t('Не сейчас')} onPress={() => void answer(false)} haptics={false} />
+          </View>
         </View>
       </View>
     </Modal> : null;
@@ -92,9 +92,9 @@ export function useAiConsent() {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'center', padding: 16 },
   card: { width: '100%', maxWidth: 520, alignSelf: 'center', borderRadius: 30, maxHeight: '88%', overflow: 'hidden' },
-  body: { gap: 14, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 20 },
+  body: { gap: 14, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 8 },
   title: { fontSize: 22, lineHeight: 28, letterSpacing: -0.6 },
   point: { fontSize: 14, lineHeight: 21 },
   link: { fontSize: 14, paddingVertical: 4, textDecorationLine: 'underline' },
-  actions: { gap: 10, marginTop: 6 },
+  actions: { gap: 10, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
 });

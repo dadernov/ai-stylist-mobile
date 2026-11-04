@@ -1,13 +1,15 @@
-import { ArrowUpRight, Heart, Palette, Pencil, Scissors, Shirt, Trash2 } from 'lucide-react-native';
+import { PersonStanding, Heart, Palette, Pencil, Scissors, Shirt, Trash2 } from 'lucide-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SheetStrip } from '../components/ui/FormScrollView';
 import { memo, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
+import { Chip } from '../components/Chip';
+import { formatLookDate } from '../domain/lookDate';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppDialog } from '../components/AppDialog';
 import { ThemeColors } from '../constants/theme';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
-import { useT } from '../constants/i18n';
+import { useT, localeFor, useLanguage } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { AppPressable } from '../components/AppPressable';
@@ -41,14 +43,6 @@ type FavoritesScreenProps = {
 };
 
 type Filter = 'all' | 'tried';
-
-// Дата в нейтральном числовом формате (без локале-зависимых названий месяцев).
-function formatDate(ts: number): string {
-  const d = new Date(ts);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getFullYear()}`;
-}
 
 // Card heights from the mock-up, so the two columns step against each other.
 const HEIGHTS = [[250, 210, 236], [210, 250, 224]];
@@ -113,6 +107,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
   const styles = useThemedStyles(makeStyles);
   const { colors: c } = useTheme();
   const t = useT();
+  const { lang } = useLanguage();
   const [filter, setFilter] = useState<Filter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -133,7 +128,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
     (id: string) => {
       // A try-on that joined a look saved bare takes only itself away.
       const joined = looks.some(look => look.id === id && look.joined);
-      Alert.alert(t(joined ? 'Убрать примерку?' : 'Удалить образ?'), t(joined ? 'Образ останется в избранном без примерки.' : 'Действие нельзя отменить.'), [
+      Alert.alert(t(joined ? 'Убрать примерку?' : 'Удалить образ?'), t(joined ? 'Образ останется в избранном без примерки.' : 'Вернуть её не получится.'), [
         { text: t('Отмена'), style: 'cancel' },
         { text: t('Удалить'), style: 'destructive', onPress: () => { setOpenId(null); setEditing(false); onRemove(id); } }
       ]);
@@ -170,7 +165,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
   const openItems = open ? (open.itemIds.map(id => itemsById[id]).filter(Boolean) as WardrobeItem[]) : [];
   const openTryOn = open ? reanchorTryOnUri(open.tryOnImageUri) : undefined;
   const meta = open
-    ? [t(open.event), t(open.style).toLocaleLowerCase(), open.weather, open.tryOnUpdatedAt ? formatDate(open.tryOnUpdatedAt) : ''].filter(Boolean)
+    ? [t(open.event), t(open.style).toLocaleLowerCase(), open.weather?.toLocaleLowerCase(), open.tryOnUpdatedAt ? formatLookDate(open.tryOnUpdatedAt, localeFor(lang)) : ''].filter(Boolean)
     : [];
 
   const beautyPanel = open && beautyAdvice && (open.makeup || open.hair) ? (
@@ -212,9 +207,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
       ) : <>
       <View style={styles.filters}>
         {(['all', 'tried'] as Filter[]).map(value => (
-          <AppPressable key={value} accessibilityRole="button" accessibilityState={{ selected: filter === value }} hitSlop={8} onPress={() => setFilter(value)}>
-            <Text style={[font(filter === value ? 'semibold' : 'regular'), styles.word, filter === value && { color: c.text }]}>{t(value === 'all' ? 'Все' : 'С примеркой')}</Text>
-          </AppPressable>
+          <Chip key={value} label={t(value === 'all' ? 'Все' : 'С примеркой')} active={filter === value} onPress={() => setFilter(value)} />
         ))}
       </View>
 
@@ -266,7 +259,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
 
             <View style={styles.actions}>
               {onTryOn ? (
-                <Pill variant="primary" icon={ArrowUpRight} title={t('Примерить на себе')}
+                <Pill variant="primary" icon={PersonStanding} title={t('Примерить')}
                   onPress={() => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); }} />
               ) : null}
               <Pill icon={Pencil} title={t('Изменить')} onPress={() => setEditing(true)} />
@@ -321,7 +314,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   resultPhoto: { flex: 1, minHeight: 150 },
   container: { flex: 1 },
   count: { fontSize: 13, color: c.muted },
-  filters: { flexDirection: 'row', gap: 16, marginBottom: 14 },
+  filters: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   word: { fontSize: 13, lineHeight: 18, color: c.muted },
   scroll: { paddingBottom: 32 },
   grid: { flexDirection: 'row', gap: GAP, alignItems: 'flex-start' },
@@ -339,14 +332,14 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   caption: { position: 'absolute', left: 8, right: 8, bottom: 8 },
   captionText: { paddingHorizontal: 12, paddingVertical: 8 },
   captionTitle: { fontSize: 13, lineHeight: 17, color: c.text },
-  captionEvent: { fontSize: 11, lineHeight: 15 },
+  captionEvent: { fontSize: 12, lineHeight: 16 },
   meta: { fontSize: 13, lineHeight: 19, color: c.muted },
   bleed: { marginHorizontal: -20 },
   pieces: { gap: 12, paddingHorizontal: 20 },
   piece: { width: 96, gap: 6 },
   pieceStage: { width: 96, height: 120, borderRadius: 18, backgroundColor: c.stage, overflow: 'hidden' },
   pieceImage: { width: 96, height: 120 },
-  pieceName: { fontSize: 11, lineHeight: 15, color: c.muted },
+  pieceName: { fontSize: 12, lineHeight: 16, color: c.muted },
   beauty: { gap: 12 },
   beautyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   beautyBody: { flex: 1, gap: 2 },

@@ -37,8 +37,10 @@ type DockApi = {
   viewed: (jobId: string) => void;
   /** The big window is up: what is under it is out of sight, its sweep pauses and its reveal waits. */
   windowUp: boolean;
+  /** The look shown in full on the screen itself: the corner window and the «ready» banner leave it alone. */
+  showingInline: (id: string | null) => void;
 };
-const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, viewed: () => {}, windowUp: false });
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, viewed: () => {}, windowUp: false, showingInline: () => {} });
 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
@@ -136,7 +138,10 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   }, [store]);
   const viewed = useCallback((id: string) => { revealLedger.forget(id); setDocked(previous => previous.filter(current => current !== id)); }, []);
   const windowUp = windowOpen || Boolean(setup);
-  const api = useMemo(() => ({ open, prepare, viewed, windowUp }), [open, prepare, viewed, windowUp]);
+  const [inlineId, setInlineId] = useState<string | null>(null);
+  const inlineRef = useRef<string | null>(null);
+  const showingInline = useCallback((id: string | null) => { inlineRef.current = id; setInlineId(id); }, []);
+  const api = useMemo(() => ({ open, prepare, viewed, windowUp, showingInline }), [open, prepare, viewed, windowUp, showingInline]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.
@@ -157,6 +162,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       const uri = resultOf(job);
       if (before !== 'pending' || job.status !== 'succeeded' || !uri) continue;
       void notifyLookReady(t('Образ готов'), t('Загляни посмотреть, как получилось.'));
+      // It is revealing right there on the screen: nothing lands on top of that moment.
+      if (inlineRef.current === job.id) continue;
       const show = () => setReady({ id: job.id, title: titleOf(job), uri, at: Date.now() });
       if (isRemoteUri(uri)) void Image.prefetch(uri).catch(() => false).then(show); else show();
     }
@@ -211,7 +218,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       await store.start({ modelUri, items: setup.items, context: setup.context, tuckMode, quality: 'quality', fresh: setup.fresh,
         options: setup.options, name: setup.name.trim() || undefined, onJob: id => started(id) });
     } catch (error: any) {
-      setActionError(error?.message ? t(String(error.message)) : t('Не удалось сгенерировать примерку'));
+      setActionError(error?.message ? t(String(error.message)) : t('Примерка не получилась. Попробуй ещё раз.'));
     } finally {
       setStarting(false);
     }
@@ -236,7 +243,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       startedAt: startedAt.current[job.id],
       photoUri: job.progress?.previewUrl || modelUri || null,
       resultUri: resultOf(job),
-      error: (job.id === shownId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
+      error: (job.id === shownId && actionError) || (failed ? t(job.error || 'Примерка не получилась. Попробуй ещё раз.') : null),
       warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
       favorite: job.result && job.status !== 'pending' ? lookFromJob(job) : null,
       onCheck: job.status === 'retry' ? () => { void store.poll(job); } : undefined,
@@ -287,8 +294,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   const inline = useOverlay('generation-stage', stage);
   // The folded window floats over whatever is on top too: drawn under the
   // try-on sheet it could be neither seen nor reached until the sheet closed.
-  const mini = dockJobs.length > 0 && !stage ? (
-    <GenerationMini jobs={dockJobs} items={items} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={id => open(id)} onDismiss={dismiss} />
+  const miniJobs = dockJobs.filter(job => job.id !== inlineId);
+  const mini = miniJobs.length > 0 && !stage ? (
+    <GenerationMini jobs={miniJobs} items={items} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={id => open(id)} onDismiss={dismiss} />
   ) : null;
   const miniInline = useOverlay('generation-mini', mini);
   // Over the screens the banner comes through the overlay host too; over the window, inside it.
@@ -357,7 +365,7 @@ function MiniPage({ job, items, visible, modelUri, startedAt, onOpen, onDismiss 
   const label = pending
     ? job.progress?.stage === 'queue' ? t('Очередь: {position}', { position: job.progress.position || 1 })
       : job.progress?.stage === 'upload' ? t('Отправка…') : clock
-    : result ? t('Готово') : t('Ошибка');
+    : result ? t('Готово') : t('Не вышло');
   const photo = job.progress?.previewUrl || modelUri || null;
   return (
     <AppPressable accessibilityRole="button" accessibilityLabel={t('Развернуть примерку: {name}', { name: job.name })}

@@ -64,7 +64,7 @@ export function FittedFrame({ aspect, radius, style, holdHeight, fill, children 
       {shown !== undefined && rect.width ? (
         <View style={{ width: rect.width, height: rect.height, borderRadius: radius, overflow: 'hidden', backgroundColor: fill }}>{children}</View>
       ) : null}
-      {measuring && slow ? <View pointerEvents="none" style={styles.loader}><ActivityIndicator /></View> : null}
+      {measuring && slow ? <View pointerEvents="none" style={styles.loader}><ActivityIndicator color="#8A8F96" /></View> : null}
     </View>
   );
 }

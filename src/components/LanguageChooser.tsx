@@ -11,7 +11,7 @@ import { StudioBackdrop } from './studio/StudioBackdrop';
 import { font, hairline } from './studio/studio';
 
 // Titles are shown in all three languages at once: the person hasn't chosen yet.
-const TITLE: Record<Lang, string> = { ru: 'Выберите язык', en: 'Choose your language', zh: '选择语言' };
+const TITLE: Record<Lang, string> = { ru: 'Выбери язык', en: 'Choose your language', zh: '选择语言' };
 const CONTINUE: Record<Lang, string> = { ru: 'Продолжить', en: 'Continue', zh: '继续' };
 const HINT: Record<Lang, string> = {
   ru: 'Язык можно поменять в любой момент в профиле.',

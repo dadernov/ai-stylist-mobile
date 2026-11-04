@@ -26,6 +26,9 @@ type StatusProps = {
 
 /** Under the picture in every window: one calm status line with light passing through it, the stylist's remarks on this very look, and its pieces. */
 export function GenerationStatus({ label, stage, items, active = true, note }: StatusProps) {
+  // The note says it once and leaves the room to the status and the stylist's word.
+  const [showNote, setShowNote] = useState(true);
+  useEffect(() => { const timer = setTimeout(() => setShowNote(false), 7000); return () => clearTimeout(timer); }, []);
   const { isDark } = useTheme();
   const reduced = useReducedMotion();
   const ink = isDark ? INK_ON_DARK : INK;
@@ -66,7 +69,7 @@ export function GenerationStatus({ label, stage, items, active = true, note }: S
         <ShimmerLine line={shown} color={ink} wave={wave} still={reduced} pulse={breath} />
       </Animated.View>
       <StylistWhile items={items} active={active} />
-      {note ? <Text maxFontSizeMultiplier={1.3} style={[styles.note, { color: inkSoft(isDark) }]}>{note}</Text> : null}
+      {note && showNote ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={[styles.note, { color: inkSoft(isDark) }]}>{note}</Text> : null}
     </View>
   );
 }
@@ -183,5 +186,5 @@ const styles = StyleSheet.create({
   comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 60, textAlign: 'center' },
   thumbs: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   thumb: { width: 44, height: 56, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
-  note: { ...font('regular'), fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  note: { ...font('regular'), fontSize: 12, lineHeight: 16, textAlign: 'center' },
 });

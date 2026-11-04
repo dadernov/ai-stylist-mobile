@@ -15,7 +15,7 @@ import { PhotoAdvice } from '../components/PhotoAdvice';
 import { PhotoGuide } from '../components/PhotoGuide';
 import { ProductHelp } from '../components/ProductHelp';
 import { Glass, Pill } from '../components/studio/Glass';
-import { font, INK } from '../components/studio/studio';
+import { font, INK, VIEWER_BLACK } from '../components/studio/studio';
 
 type ProfileScreenProps = {
   displayName: string;
@@ -100,7 +100,6 @@ export function ProfileScreen({
             <View style={styles.accountInfo}>
               <Text style={[font('semibold'), styles.userName, { color: c.text }]} numberOfLines={1}>{name}</Text>
               <Text style={[font('regular'), styles.userMeta, { color: c.muted }]} numberOfLines={1}>{contact || t('Контакт не указан')}</Text>
-              <Text style={[font('regular'), styles.userMeta, { color: c.muted }]} numberOfLines={1}>{t('Вход: {method}', { method: t(authMethod).toLocaleLowerCase() })}</Text>
             </View>
           </View>
         </FadeInView>
@@ -189,7 +188,7 @@ const styles = StyleSheet.create({
   help: { flex: 1 },
   logout: { borderRadius: 999 },
   logoutInner: { height: 50, paddingHorizontal: 22, alignItems: 'center', justifyContent: 'center' },
-  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
+  previewBackdrop: { flex: 1, backgroundColor: VIEWER_BLACK, justifyContent: 'center', padding: 16 },
   previewImageFull: { width: '100%', height: '86%' },
   previewClose: { alignSelf: 'center', marginTop: 12, height: 44, paddingHorizontal: 24, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' }
 });

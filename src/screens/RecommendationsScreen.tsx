@@ -237,13 +237,13 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
   const byId = new Map(about?.selection.map(item => [item.id, item]));
   const why = about ? (look?.source === 'stylist' && look.why ? look.why : about.tips[0]) || '' : '';
   const WeatherIcon = precipitation === 'rain' ? CloudRain : precipitation === 'snow' ? CloudSnow : CloudSun;
-  const degrees = temperature === null ? t('Погода') : `${temperature > 0 ? '+' : temperature < 0 ? '−' : ''}${Math.abs(temperature)}°`;
+  const degrees = temperature === null ? '' : `${temperature > 0 ? '+' : temperature < 0 ? '−' : ''}${Math.abs(temperature)}°`;
   const selectedForSwap = about?.selection.find(item => item.id === replaceId);
   const alternatives = selectedForSwap ? items.filter(item => item.section === selectedForSwap.section && !ids.includes(item.id) && onePiece(item) === onePiece(selectedForSwap)) : [];
   const textFade = { opacity: fade };
 
   return <FormScrollView contentContainerStyle={styles.content} scrollEnabled={!heroSwiping}>
-    <ScreenHeader title={t('Что надеть')} />
+    <ScreenHeader title={t('Идеи')} />
 
     <DailyLookHero items={items} gender={gender} beautyAdvice={beautyAdvice} favoriteItemIds={favoriteItemIds} dismissed={dismissedAtStart} login={login} displayName={displayName}
       weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} onSwiping={setHeroSwiping} />
@@ -263,7 +263,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
       <Glass radius={24}>
         <View style={styles.weatherCard}>
           <WeatherIcon size={24} strokeWidth={1.5} color={c.text} />
-          <Text style={[font('semibold'), styles.weatherDegrees]}>{degrees}</Text>
+          {degrees ? <Text style={[font('semibold'), styles.weatherDegrees]}>{degrees}</Text> : null}
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[font('semibold'), styles.link]}>{t('Погода рядом с тобой')}</Text>
             <Text style={[font('regular'), styles.muted]} numberOfLines={2}>{liveText}</Text>
