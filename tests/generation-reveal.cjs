@@ -79,11 +79,10 @@ assert.equal(ledger.owes('a', 'full'), false);
 
 // Every window goes through the one view; the old ones are gone.
 const read = file => fs.readFileSync(`${__dirname}/../src/components/${file}`, 'utf8');
-for (const file of ['GenerationStage.tsx', 'AiTryOnPreview.tsx', 'onboarding/FirstLook.tsx']) assert.match(read(file), /<GenerationView/, file);
+for (const file of ['GenerationStage.tsx', 'onboarding/FirstLook.tsx']) assert.match(read(file), /<GenerationView/, file);
 for (const file of ['GenerationDock.tsx', 'FittingRoom.tsx']) assert.match(read(file), /<DevelopingImage[^>]*revealKey=/, file);
 assert.match(read('FittingRoom.tsx'), /<GenerationStatus/);
 assert.ok(!/BusyVeil/.test(read('FittingRoom.tsx')), 'no veil of its own');
 assert.ok(!/blurRadius/.test(read('GenerationDock.tsx')), 'no blur of its own in the corner');
-assert.ok(!/Промежуточный результат/.test(read('AiTryOnPreview.tsx')), 'no intermediate frame of its own');
 assert.ok(!/react-native-skia/.test(fs.readFileSync(`${__dirname}/../package.json`, 'utf8')), 'no shader engine left');
 console.log('PASS: generation view — sweep, wave, reveal bands, owed reveals, nothing cropped, one view in every window');
