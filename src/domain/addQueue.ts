@@ -7,7 +7,7 @@
  * cut-out, and «Выровнять фото» is one tap away).
  */
 export type AddStage = 'waiting' | 'analyzing' | 'flat' | 'done' | 'failed' | 'cancelled';
-export type AddError = 'network' | 'unread' | 'photo' | 'consent';
+export type AddError = 'network' | 'unread' | 'photo' | 'consent' | 'tooLarge';
 export type AddEntry = { id: string; uri: string; stage: AddStage; askFlat: boolean; flatMade?: boolean; itemId?: string; review?: boolean; error?: AddError };
 
 export const MAX_BATCH = 10;
@@ -15,7 +15,9 @@ export const MAX_BATCH = 10;
 export const FLAT_USD = 0.027;
 
 const isActive = (entry: AddEntry) => entry.stage === 'waiting' || entry.stage === 'analyzing' || entry.stage === 'flat';
-const holdsPlace = (entry: AddEntry) => isActive(entry) || entry.stage === 'failed';
+/** The server turned the file down for its size: the same bytes would fail again, so it is not offered for a retry. */
+export const canRetry = (entry: AddEntry) => entry.stage === 'failed' && entry.error !== 'tooLarge';
+const holdsPlace = (entry: AddEntry) => isActive(entry) || canRetry(entry);
 export const queueActive = (queue: AddEntry[]) => queue.some(isActive);
 /** How many more photos fit in the batch under way; a failed one keeps its place, it can still be retried. */
 export const roomInQueue = (queue: AddEntry[]) => Math.max(0, MAX_BATCH - queue.filter(holdsPlace).length);
@@ -44,15 +46,26 @@ export const markFlatSettled = (queue: AddEntry[], id: string, made: boolean) =>
 export const markFailed = (queue: AddEntry[], id: string, error: AddError) =>
   change(queue, id, entry => (entry.stage === 'analyzing' || entry.stage === 'waiting' ? { ...entry, stage: 'failed', error, askFlat: entry.askFlat && error === 'consent' } : entry));
 
+/** What a failed request means for its photo. A refusal for size stands even when the app left the screen meanwhile. */
+export const requestOutcome = (status: number | undefined, away: boolean): AddError | 'interrupted' =>
+  status === 413 ? 'tooLarge' : away ? 'interrupted' : 'network';
+
+/** The long side a batch photo is kept at, as the single add's picker bounds it; null when it is within that already. */
+export const UPLOAD_LONG_SIDE = 4096;
+export function uploadResize(width: number, height: number, max = UPLOAD_LONG_SIDE): { width: number } | { height: number } | null {
+  if (Math.max(width, height) <= max) return null;
+  return width >= height ? { width: max } : { height: max };
+}
+
 /** Cut off by the app leaving the screen: runs again by itself, without a second flat. */
 export const markInterrupted = (queue: AddEntry[], id: string) =>
   change(queue, id, entry => (entry.stage === 'analyzing' ? { ...entry, stage: 'waiting', askFlat: false } : entry));
 
 export const retryEntry = (queue: AddEntry[], id: string) =>
-  change(queue, id, entry => (entry.stage === 'failed' ? { ...entry, stage: 'waiting', error: undefined } : entry));
+  change(queue, id, entry => (canRetry(entry) ? { ...entry, stage: 'waiting', error: undefined } : entry));
 
 export const retryFailed = (queue: AddEntry[], error?: AddError) =>
-  queue.map(entry => (entry.stage === 'failed' && (!error || entry.error === error) ? { ...entry, stage: 'waiting' as const, error: undefined } : entry));
+  queue.map(entry => (canRetry(entry) && (!error || entry.error === error) ? { ...entry, stage: 'waiting' as const, error: undefined } : entry));
 
 /** Stops what has not landed. An item in the wardrobe stays, and its flat, already being made, still reaches the card. */
 export const cancelQueue = (queue: AddEntry[]) =>
@@ -70,17 +83,19 @@ export function queueSummary(queue: AddEntry[]) {
   const count = (stage: AddStage) => queue.filter(entry => entry.stage === stage).length;
   const cancelled = count('cancelled');
   const flats = queue.filter(entry => entry.flatMade).length;
-  return { total: queue.length - cancelled, landed: queue.filter(entry => entry.itemId).length, failed: count('failed'), waiting: count('waiting'), cancelled,
+  return { total: queue.length - cancelled, landed: queue.filter(entry => entry.itemId).length, failed: count('failed'), retryable: queue.filter(canRetry).length, waiting: count('waiting'), cancelled,
     review: queue.filter(entry => entry.review).length, flats, costUsd: Number((flats * FLAT_USD).toFixed(3)), active: queueActive(queue) };
 }
 
-export function decodeAddQueue(value: unknown): AddEntry[] {
+/** `reanchor`: a written-down path goes stale when the app's folder moves on an update (services/photos); no path left drops the entry. */
+export function decodeAddQueue(value: unknown, reanchor: (uri: string) => string | undefined = uri => uri): AddEntry[] {
   if (!Array.isArray(value)) return [];
   const stages: AddStage[] = ['waiting', 'analyzing', 'flat', 'done', 'failed', 'cancelled'];
   return value.filter(entry => entry && typeof entry.id === 'string' && typeof entry.uri === 'string' && stages.includes(entry.stage))
-    .map(entry => ({ id: entry.id, uri: entry.uri, stage: entry.stage, askFlat: entry.askFlat === true, flatMade: entry.flatMade === true || undefined,
+    .map(entry => ({ entry, uri: reanchor(entry.uri) })).filter(({ uri }) => Boolean(uri))
+    .map(({ entry, uri }) => ({ id: entry.id, uri: uri as string, stage: entry.stage, askFlat: entry.askFlat === true, flatMade: entry.flatMade === true || undefined,
       itemId: typeof entry.itemId === 'string' ? entry.itemId : undefined, review: entry.review === true || undefined,
-      error: ['network', 'unread', 'photo', 'consent'].includes(entry.error) ? entry.error : undefined }));
+      error: ['network', 'unread', 'photo', 'consent', 'tooLarge'].includes(entry.error) ? entry.error : undefined }));
 }
 
 /** The server was not sure of the garment, or could not cut it out: the person is asked to look. */

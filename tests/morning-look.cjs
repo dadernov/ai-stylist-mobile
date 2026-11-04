@@ -75,4 +75,56 @@ assert.ok(!service.includes('cancelAllScheduledNotificationsAsync'), 'only its o
 const hook = fs.readFileSync(path.join(__dirname, '../src/components/useMorningLook.ts'), 'utf8');
 assert.ok(!/fetch|services\/ai'|analyzeTryOn/.test(hook), 'nothing goes to the network');
 
+// A look is named only on a known temperature of the last three days.
+{
+  const { weatherIsFresh, isMorningEntry, createSerial } = require('../src/domain/morningLook.ts');
+  const today = new Date(2026, 10, 4, 7, 0);
+  assert.equal(weatherIsFresh({ day: '2026-11-04', temperature: 3 }, today), true);
+  assert.equal(weatherIsFresh({ day: '2026-11-01', temperature: -2 }, today), true);
+  assert.equal(weatherIsFresh({ day: '2026-10-31', temperature: 3 }, today), false);
+  assert.equal(weatherIsFresh({ day: '2026-11-04', temperature: null }, today), false);
+  assert.equal(weatherIsFresh({ day: '2026-11-05', temperature: 3 }, today), false, 'a clock moved back');
+  assert.equal(weatherIsFresh(null, today), false);
+  assert.equal(weatherIsFresh({ day: '2026-11-04', temperature: 0 }, today), true, 'zero degrees is a known temperature');
+
+  // Ours however Expo Go prefixes it, or by what it carries; others stay.
+  assert.ok(isMorningEntry({ identifier: 'morning-look-2026-11-05' }));
+  assert.ok(isMorningEntry({ identifier: 'experience:@me/app:morning-look-2026-11-05' }));
+  assert.ok(isMorningEntry({ identifier: 'random', content: { data: { kind: 'morning-look' } } }));
+  assert.ok(!isMorningEntry({ identifier: 'ready-tryon', content: { data: { kind: 'tryon' } } }));
+  assert.ok(!isMorningEntry({ identifier: 'ready-tryon', content: null }));
+
+  // Signed out mid-write: the run stops, the cancel queued after it clears what it wrote, and the next session still writes.
+  const proof = (async () => {
+    const written = new Set();
+    const serial = createSerial();
+    const session = { alive: true };
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const run = serial(async () => {
+      written.add('first');
+      await gate;
+      if (session.alive) written.add('second');
+    });
+    session.alive = false;
+    serial(() => written.clear());
+    const next = serial(() => { written.add('next session'); });
+    release();
+    await run; await next;
+    assert.deepEqual([...written], ['next session']);
+    let after = false;
+    await serial(() => { throw new Error('failed'); });
+    await serial(() => { after = true; });
+    assert.ok(after, 'a failed write does not stop the line');
+  })();
+  proof.catch(error => { console.error(error); process.exit(1); });
+
+  const source = fs.readFileSync(path.join(__dirname, '../src/components/useMorningLook.ts'), 'utf8');
+  assert.match(source, /current\.alive = false; void writes\(cancelMorningNotifications\)/);
+  assert.match(source, /if \(!fresh \|\| !chosen\.lookId\) return null/);
+  assert.ok(source.indexOf('session.current = current') < source.indexOf('const reschedule'), 'the session is set before the effects that write');
+  const service = fs.readFileSync(path.join(__dirname, '../src/services/morningNotifications.ts'), 'utf8');
+  assert.match(service, /scheduled\.filter\(isMorningEntry\)/);
+}
+
 console.log('PASS: morning look plans only coming mornings, with no claim about the weather');

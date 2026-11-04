@@ -10,6 +10,25 @@ export const MORNING_DAYS = 7;
 /** Beyond these the look would rest on weather too far off: those mornings get a word without a look. */
 const NAMED_FIRINGS = 2;
 
+/** The temperature a look is named on must be recent: an older one may belong to another weather altogether. */
+export const WEATHER_FRESH_DAYS = 3;
+export function weatherIsFresh(record: { day: string; temperature: number | null } | null | undefined, now: Date) {
+  if (!record || record.temperature === null || record.temperature === undefined) return false;
+  const [year, month, date] = record.day.split(/-/).map(Number);
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(year, month - 1, date).getTime()) / 86_400_000);
+  return days >= 0 && days <= WEATHER_FRESH_DAYS;
+}
+
+/** Runs writes one after another. One that fails does not stop the next. */
+export function createSerial(onError: (error: unknown) => void = () => {}) {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (task: () => unknown) => (tail = tail.then(task).catch(onError));
+}
+
+/** Ours by the marker anywhere in its identifier (Expo Go prefixes identifiers) or by what it carries. */
+export const isMorningEntry = (entry: { identifier: string; content?: { data?: unknown } | null }) =>
+  entry.identifier.includes(MORNING_ID_PREFIX) || (entry.content?.data as { kind?: unknown } | null | undefined)?.kind === MORNING_KIND;
+
 export type MorningPlanEntry = { identifier: string; date: Date; title: string; body: string; data: { kind: string; login: string } };
 type Translator = (text: string, values?: Record<string, string | number>) => string;
 

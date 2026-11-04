@@ -3,7 +3,7 @@ import { AppState, Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { WardrobeItem } from '../data/mock';
-import { AddEntry, cancelQueue, clearFinished, decodeAddQueue, enqueue, markAnalyzing, markFailed, markFlatSettled, markInterrupted, markLanded, needsCheck, nextToRun, queueSummary, recoverQueue, retryEntry, retryFailed } from '../domain/addQueue';
+import { AddEntry, cancelQueue, clearFinished, decodeAddQueue, enqueue, markAnalyzing, markFailed, markFlatSettled, markInterrupted, markLanded, needsCheck, nextToRun, queueSummary, recoverQueue, requestOutcome, retryEntry, retryFailed, uploadResize } from '../domain/addQueue';
 import { readingColourName } from '../domain/flatReading';
 import { decodeTraits } from '../domain/garmentTraits';
 import { suggestItemName } from '../domain/itemName';
@@ -11,7 +11,7 @@ import { FLAT_SECTIONS, colorOptions, getClosestColorName, getSectionByCategory,
 import { accountKey, isPurged } from '../services/accountStorage';
 import { analyzeImage, AiResult, flattenGarment, prepareGarmentPhoto } from '../services/ai';
 import { hasAiConsent } from '../services/aiConsent';
-import { persistPhoto } from '../services/photos';
+import { persistPhoto, reanchorPhoto } from '../services/photos';
 import { loadValidated, saveJson } from '../services/storage';
 
 /** The wardrobe item a reading makes; the flat picture, when it comes, changes only its picture, as with a single item saved early. */
@@ -26,13 +26,32 @@ function itemOf(id: string, result: AiResult, card: string, source: string, name
     traits: result.traits ? decodeTraits(result.traits) : undefined, needsReview: needsCheck(result) || undefined };
 }
 
-/** HEIC and sideways photos become an upright JPEG, as the single add's picker does before its cropper. */
+/** HEIC and sideways photos become an upright JPEG, bounded as the single add's picker bounds them: a 24 MP original is over the server's limit. */
 async function uprightCopy(uri: string, login: string) {
   if (Platform.OS === 'web') return uri;
-  const rendered = await ImageManipulator.manipulate(uri).renderAsync();
-  const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 1 });
-  return (await persistPhoto(saved.uri, login)) || saved.uri;
+  const source = ImageManipulator.manipulate(uri);
+  try {
+    const rendered = await source.renderAsync();
+    try {
+      const size = uploadResize(rendered.width, rendered.height);
+      if (!size) {
+        const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
+        return (await persistPhoto(saved.uri, login)) || saved.uri;
+      }
+      // Resized from the decoded image: the file is not read and decoded a second time.
+      const scaling = ImageManipulator.manipulate(rendered).resize(size);
+      try {
+        const resized = await scaling.renderAsync();
+        try {
+          const saved = await resized.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
+          return (await persistPhoto(saved.uri, login)) || saved.uri;
+        } finally { resized.release(); }
+      } finally { scaling.release(); }
+    } finally { rendered.release(); }
+  } finally { source.release(); }
 }
+
+const decodeStoredQueue = (value: unknown) => decodeAddQueue(value, reanchorPhoto);
 
 export type AddQueueControl = {
   queue: AddEntry[];
@@ -108,9 +127,10 @@ export function useAddQueue({ login, ready, setItems, name }: { login: string; r
       }
       const summary = queueSummary(current.current);
       if (!summary.active) console.log(`Batch add: ${summary.landed} items, ${summary.flats} flats, about $${summary.costUsd}`);
-    } catch {
+    } catch (error) {
       if (!stillWanted()) return;
-      update(queue => (away.current ? markInterrupted(queue, entry.id) : markFailed(queue, entry.id, 'network')));
+      const outcome = requestOutcome((error as { status?: number } | null)?.status, away.current);
+      update(queue => (outcome === 'interrupted' ? markInterrupted(queue, entry.id) : markFailed(queue, entry.id, outcome)));
     } finally {
       if (abort.current === controller) abort.current = null;
     }
@@ -137,7 +157,7 @@ export function useAddQueue({ login, ready, setItems, name }: { login: string; r
   useEffect(() => {
     if (!ready || loaded.current) return;
     let active = true;
-    void loadValidated(key, decodeAddQueue).then(result => {
+    void loadValidated(key, decodeStoredQueue).then(result => {
       if (!active) return;
       loaded.current = true;
       if (result.value?.length) update(() => recoverQueue(result.value as AddEntry[]));
@@ -171,6 +191,6 @@ export function useAddQueue({ login, ready, setItems, name }: { login: string; r
 
 /** The photos a written-down queue still needs: the launch's clean-up of the photo folder must not take them. */
 export async function queuedPhotos(login: string) {
-  const stored = await loadValidated(accountKey(login, 'addQueue'), decodeAddQueue).catch(() => ({ value: null, failed: true }));
+  const stored = await loadValidated(accountKey(login, 'addQueue'), decodeStoredQueue).catch(() => ({ value: null, failed: true }));
   return { failed: Boolean(stored.failed), photos: (stored.value || []).map(entry => entry.uri) };
 }

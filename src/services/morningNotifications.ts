@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { MORNING_ID_PREFIX, MorningPlanEntry } from '../domain/morningLook';
+import { isMorningEntry, MorningPlanEntry } from '../domain/morningLook';
 
 /**
  * Morning look as LOCAL notifications with fixed text, written ahead. Sent by the phone itself: no server, no try-on, nothing paid.
@@ -11,7 +11,7 @@ type Api = {
   requestPermissionsAsync: () => Promise<{ status: string; granted: boolean; canAskAgain?: boolean }>;
   setNotificationChannelAsync: (id: string, channel: { name: string; importance: number }) => Promise<unknown>;
   scheduleNotificationAsync: (request: { identifier: string; content: { title: string; body: string; data: Record<string, unknown> }; trigger: { type: 'date'; date: Date; channelId?: string } }) => Promise<string>;
-  getAllScheduledNotificationsAsync: () => Promise<{ identifier: string }[]>;
+  getAllScheduledNotificationsAsync: () => Promise<{ identifier: string; content?: { data?: unknown } | null }[]>;
   cancelScheduledNotificationAsync: (id: string) => Promise<void>;
   addNotificationResponseReceivedListener: (listener: (response: Response) => void) => { remove: () => void };
   getLastNotificationResponse: () => Response | null;
@@ -49,19 +49,20 @@ export async function cancelMorningNotifications() {
     const api = load();
     if (!api) return;
     const scheduled = await api.getAllScheduledNotificationsAsync();
-    await Promise.all(scheduled.filter(entry => entry.identifier.startsWith(MORNING_ID_PREFIX)).map(entry => api.cancelScheduledNotificationAsync(entry.identifier)));
+    await Promise.all(scheduled.filter(isMorningEntry).map(entry => api.cancelScheduledNotificationAsync(entry.identifier)));
   } catch { /* nothing to do about it */ }
 }
 
 /** Replaces what was written before. Without the permission nothing is written. */
-export async function scheduleMorningNotifications(plan: MorningPlanEntry[], channelName: string) {
+export async function scheduleMorningNotifications(plan: MorningPlanEntry[], channelName: string, wanted: () => boolean = () => true) {
   await cancelMorningNotifications();
-  if (!plan.length) return;
+  if (!plan.length || !wanted()) return;
   try {
     const api = load();
     if (!api || !(await api.getPermissionsAsync()).granted) return;
     if (Platform.OS === 'android') await api.setNotificationChannelAsync(CHANNEL, { name: channelName, importance: api.AndroidImportance.DEFAULT });
     for (const entry of plan) {
+      if (!wanted()) return;
       await api.scheduleNotificationAsync({ identifier: entry.identifier, content: { title: entry.title, body: entry.body, data: entry.data },
         trigger: { type: api.SchedulableTriggerInputTypes.DATE, date: entry.date, ...(Platform.OS === 'android' ? { channelId: CHANNEL } : {}) } });
     }

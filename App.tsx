@@ -246,6 +246,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const [gender, setGender] = useState<Gender>();
   const [beautyAdvice, setBeautyAdvice] = useState(false);
   const [items, setItems] = useState<WardrobeItem[]>([]);
+  const itemsNow = useRef(items);
+  itemsNow.current = items;
   // Ключи, которые не удалось прочитать: в них запрещено писать, иначе
   // состояние по умолчанию затрёт данные, которые, возможно, ещё спасаемы.
   const unreadableKeys = useRef<Set<string>>(new Set());
@@ -393,9 +395,10 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     }
   };
 
-  const handleItemsChange = (next: WardrobeItem[]) => {
-    setItems(next);
-    void movePhotosToFiles(next);
+  // Worked out on the newest list: the add queue may have landed items since the calling dialog last rendered.
+  const handleItemsChange = (change: (current: WardrobeItem[]) => WardrobeItem[]) => {
+    setItems(change);
+    void movePhotosToFiles(change(itemsNow.current));
   };
 
   const storeProfilePhoto = (uri: string, apply: (stored: string) => void) => {
@@ -647,7 +650,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   }
   if (firstLook === 'show') {
     return <FavoritesProvider value={favoritesApi}><FirstLook login={session.login} items={items} modelUri={modelUri || avatarUri} onProfilePhoto={changeAvatar}
-      onAddItem={item => handleItemsChange([item, ...items])}
+      onAddItem={item => handleItemsChange(current => [item, ...current])}
       onPreference={(field, value) => setLastContext(current => ({ ...current, [field]: value }))}
       onLateJob={setFirstLookJob}
       onDone={(exit, jobId) => { setActiveTab(exit); if (jobId) setFirstLookJob(jobId); onFirstLookDone(); }} /></FavoritesProvider>;

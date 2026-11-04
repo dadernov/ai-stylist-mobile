@@ -345,3 +345,53 @@ console.log('PASS: anchor preserved, sport eligibility, explicit weather conflic
   screens.forEach(source => assert.match(source, /useFavoriteColors\(login\)[\s\S]*buildLooks\([\s\S]*favoriteColors/));
   console.log('PASS: the colours the user likes rise, the others are not punished');
 }
+
+// Legs in the cold: a summer piece with boots and a parka is no look for a frost, by what is known of any garment; warm tights or a warm day change that.
+{
+  const legs = (category, section, extra) => item(category, category, section, extra);
+  const sundress = legs('Сарафан', 'Верх'), boots = legs('Сапоги', 'Обувь'), parka = legs('Парка', 'Верхняя одежда');
+  const trousers = legs('Брюки', 'Низ'), sweater = legs('Свитер', 'Верх');
+  const wardrobe = [sundress, boots, parka, trousers, sweater];
+  const first = temperature => buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', temperature)[0];
+  const covers = (look, id) => look.itemIds.includes(id);
+  for (const temperature of [-15, -5, 0, 4, 8]) {
+    const looks = buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', temperature);
+    assert.ok(!covers(looks[0], 'Сарафан'), `${temperature}°: not first`);
+    assert.ok(looks.every(look => !covers(look, 'Сарафан')), `${temperature}°: not offered while trousers exist`);
+  }
+  assert.ok(buildLooks(wardrobe, 'Кэжуал', 'Прогулка', '', 26).some(look => covers(look, 'Сарафан')), 'a hot day keeps it');
+
+  // Alone in the wardrobe it is still shown, honestly: low, with the reason.
+  const only = buildLooks([sundress, boots, parka], 'Кэжуал', 'Прогулка', '', -15);
+  assert.ok(only[0].matchPercent <= 40, `got ${only[0].matchPercent}`);
+  assert.ok(only[0].warnings.some(text => text.includes('мёрзнут ноги')));
+
+  // Not this item: any skirt or dress, by its own data.
+  for (const piece of [legs('Платье', 'Верх'), legs('Мини-юбка', 'Низ'), legs('Юбка', 'Низ'), legs('Платье', 'Верх', { season: 'Лето', material: 'лён' })]) {
+    const top = piece.section === 'Низ' ? [sweater] : [];
+    const match = buildLooks([piece, boots, parka, ...top], 'Кэжуал', 'Прогулка', '', -15, 'unspecified', false, { anchorId: piece.id })[0];
+    assert.ok(match.matchPercent <= 40, `${piece.category}: ${match.matchPercent}`);
+  }
+
+  // Tights: thin ones do to a light frost, warm ones further.
+  const thin = legs('Колготки', 'Низ'), wool = item('wool', 'Колготки', 'Низ', { material: 'шерсть' });
+  const dress = legs('Платье', 'Верх');
+  assert.ok(buildLooks([dress, boots, parka, thin], 'Кэжуал', 'Прогулка', '', -3)[0].matchPercent > 40);
+  assert.ok(buildLooks([dress, boots, parka, thin], 'Кэжуал', 'Прогулка', '', -15)[0].matchPercent <= 40);
+  const warmDressed = buildLooks([dress, boots, parka, wool], 'Кэжуал', 'Прогулка', '', -15)[0];
+  assert.ok(warmDressed.itemIds.includes('wool'));
+  assert.ok(warmDressed.matchPercent > 40, `got ${warmDressed.matchPercent}`);
+  assert.ok(!warmDressed.warnings.some(text => text.includes('мёрзнут ноги')));
+
+  // A warm, long dress holds out longer than a summer one.
+  const knit = item('knit', 'Платье', 'Верх', { season: 'Зима', traits: { length: 'long' } });
+  assert.ok(buildLooks([knit, boots, parka], 'Кэжуал', 'Прогулка', '', -2)[0].matchPercent > 40);
+  assert.ok(buildLooks([sundress, boots, parka], 'Кэжуал', 'Прогулка', '', 10)[0].matchPercent <= 40);
+  assert.ok(buildLooks([dress, boots, parka], 'Кэжуал', 'Прогулка', '', 10)[0].matchPercent > 40);
+
+  // Trousers are never swapped for bare legs in the frost.
+  const { getOutfitSwaps } = require('../src/domain/outfits.ts');
+  const swaps = getOutfitSwaps([sweater, trousers, boots, parka], [sweater, trousers, boots, parka, legs('Юбка', 'Низ')], { style: 'Классика', event: 'Театр', temperature: -15 });
+  assert.ok(!swaps.some(swap => swap.to.category === 'Юбка'));
+  console.log('PASS: bare legs are not offered for the cold, whatever the garment');
+}

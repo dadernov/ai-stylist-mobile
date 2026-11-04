@@ -142,13 +142,17 @@ const GARMENT_UPLOAD_MAX_SIDE = 1280;
 const shrinkForUpload = async (fileUri: string, png: boolean, maxSide = TRYON_UPLOAD_MAX_SIDE) => {
   try {
     const rendered = await ImageManipulator.manipulate(fileUri).renderAsync();
-    const { width, height } = rendered;
-    if (Math.max(width, height) <= maxSide) return fileUri;
-    // Resized from the decoded image: the file is not read and decoded a second time.
-    const resized = await ImageManipulator.manipulate(rendered)
-      .resize(width >= height ? { width: maxSide } : { height: maxSide }).renderAsync();
-    const saved = await resized.saveAsync(png ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.9 });
-    return saved.uri;
+    try {
+      const { width, height } = rendered;
+      if (Math.max(width, height) <= maxSide) return fileUri;
+      // Resized from the decoded image: the file is not read and decoded a second time.
+      const resized = await ImageManipulator.manipulate(rendered)
+        .resize(width >= height ? { width: maxSide } : { height: maxSide }).renderAsync();
+      try {
+        const saved = await resized.saveAsync(png ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.9 });
+        return saved.uri;
+      } finally { resized.release(); }
+    } finally { rendered.release(); }
   } catch {
     return fileUri;
   }

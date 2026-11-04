@@ -60,7 +60,7 @@ type WardrobeScreenProps = {
   addQueue: AddQueueControl;
   login: string;
   items: WardrobeItem[];
-  onItemsChange: (items: WardrobeItem[]) => void;
+  onItemsChange: (change: (current: WardrobeItem[]) => WardrobeItem[]) => void;
   onTryOn: (item: WardrobeItem) => void;
   onOpenHistory: (item: WardrobeItem) => void;
   // Opens the ideas built around this garment.
@@ -324,7 +324,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const putFlat = (id: string, flat: string) => {
     const current = itemsRef.current;
     // A new card picture is read for its style vector again.
-    if (current.some(item => item.id === id)) onItemsChange(current.map(item => item.id === id ? { ...item, imageUri: flat, styleVec: undefined } : item));
+    if (current.some(item => item.id === id)) onItemsChange(latest => latest.map(item => item.id === id ? { ...item, imageUri: flat, styleVec: undefined } : item));
   };
   // Smoothing an item already in the wardrobe, from its card: the one in progress, and the picture
   // it replaced, which the card offers back until it is closed.
@@ -481,7 +481,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       profile,
       styleVec
     };
-    onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem, needsReview: undefined } : item) : [newItem, ...items]);
+    onItemsChange(latest => draftExistingId ? latest.map(item => item.id === draftExistingId ? { ...item, ...newItem, needsReview: undefined } : item) : [newItem, ...latest]);
     forgetFlat(newItem.id);
     // The category the photo was saved under, right or corrected, teaches the recognition (no photo is sent).
     if (analysis?.analysisId && draftCategory) sendCategoryFeedback(analysis.analysisId, draftCategory);
@@ -631,8 +631,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
 
   const handleSaveEdit = () => {
     if (!editItemId) return;
-    onItemsChange(
-      items.map((item) =>
+    onItemsChange((latest) =>
+      latest.map((item) =>
         item.id === editItemId
           ? {
               ...item,
@@ -660,11 +660,11 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
         {
           text: t('Удалить'),
           style: 'destructive',
-          onPress: () => { forgetFlat(id); onItemsChange(items.filter((item) => item.id !== id)); setDetailId(null); }
+          onPress: () => { forgetFlat(id); onItemsChange((latest) => latest.filter((item) => item.id !== id)); setDetailId(null); }
         }
       ]);
     },
-    [items, onItemsChange, t]
+    [onItemsChange, t]
   );
 
   const handleRetakeExisting = async (id: string) => {
@@ -836,7 +836,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             <View style={{ padding: 14, gap: 10 }}>
               <Text style={[font('regular'), styles.note]}>{t('Мы не уверены, что распознали вещь верно. Проверь категорию ниже.')}</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Pill size="sm" icon={Check} title={t('Всё верно')} onPress={() => onItemsChange(items.map(item => item.id === detail.id ? { ...item, needsReview: undefined } : item))} />
+                <Pill size="sm" icon={Check} title={t('Всё верно')} onPress={() => onItemsChange(latest => latest.map(item => item.id === detail.id ? { ...item, needsReview: undefined } : item))} />
                 <Pill size="sm" icon={Pencil} title={t('Изменить')} onPress={() => { setDetailId(null); handleEditItem(detail); }} />
               </View>
             </View>

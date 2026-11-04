@@ -239,6 +239,25 @@ const closedWarmShoes = new Set(['Ботинки', 'Сапоги']);
 const rainLayers = new Set(['Плащ', 'Тренч', 'Куртка', 'Парка', 'Бомбер']);
 const isLight = (item: WardrobeItem) => (itemColor(item)?.lightness ?? 0) > 0.8;
 
+// Legs are what freezes first: a warm coat does nothing for them. Each piece that leaves them open has the temperature it
+// still works at, from what is known of it: how warm it is, its season and its length. A kind of garment, never a list of pieces.
+const LEAVES_LEGS_OPEN = new Set([...SKIRTS, 'Шорты']);
+const isSummerPiece = (item: WardrobeItem) => item.season === 'Лето' || item.category === 'Мини-юбка' || item.category === 'Шорты'
+  || (Boolean(garments[item.category]) && warmthOf(item) === 0);
+const isLongPiece = (item: WardrobeItem) => item.category === 'Макси-юбка' || (isOnePiece(item) && item.traits?.length === 'long');
+function bareLegsBelow(item: WardrobeItem) {
+  const warm = item.season === 'Зима' || (Boolean(garments[item.category]) && warmthOf(item) >= 2);
+  return (isSummerPiece(item) ? 12 : warm ? 0 : 5) - (isLongPiece(item) ? 5 : 0);
+}
+const TIGHTS_ANY_ABOVE = -5;
+const isWarmLegwear = (item: WardrobeItem) => isLegwear(item) && (item.season === 'Зима' || warmthOf(item) >= 2);
+/** The pieces that leave the legs to the cold in this look: none once tights fit the frost. Thin tights do down to a light frost. */
+function coldBareLegs(items: WardrobeItem[], temperature: number | null) {
+  if (temperature === null) return [];
+  if (items.some(item => isLegwear(item) && (temperature >= TIGHTS_ANY_ABOVE || isWarmLegwear(item)))) return [];
+  return items.filter(item => LEAVES_LEGS_OPEN.has(item.category) && temperature < bareLegsBelow(item));
+}
+
 function itemScore(item: WardrobeItem, context: OutfitContext) {
   const garment = describe(item);
   const { event, temperature, gender } = context;
@@ -259,6 +278,7 @@ function itemScore(item: WardrobeItem, context: OutfitContext) {
     if (temperature >= 22 && item.season === 'Зима') score -= 20;
     if (temperature <= 5 && item.season === 'Зима') score += 7;
     if (temperature >= 22 && item.season === 'Лето') score += 5;
+    if (temperature < 5 && item.season === 'Лето' && (garment.section === 'Верх' || garment.section === 'Низ')) score -= 12;
   }
   if (garment.section === 'Обувь') {
     if (context.precipitation === 'rain') {
@@ -370,11 +390,14 @@ function weatherAdvice(items: WardrobeItem[], outer: WardrobeItem | undefined, t
     return true;
   });
   const tooWarm = items.filter(item => warmthOf(item) >= comfort + 3);
+  const bareLegs = coldBareLegs(items, temperature);
+  if (bareLegs.length) warnings.push(t('При {temperature}°C с {items} мёрзнут ноги: нужны плотные колготки или брюки.', { temperature, items: list(bareLegs, t) }));
   if (temperature < 12 && !outer) {
     warnings.push(t('На улице {temperature}°C: для выхода может понадобиться дополнительный слой.', { temperature }));
   }
-  if (tooLight.length && temperature < 12) {
-    warnings.push(t('При {temperature}°C {items} может не подойти для долгого пребывания на улице.', { temperature, items: list(tooLight, t) }));
+  const otherLight = tooLight.filter(item => !bareLegs.includes(item));
+  if (otherLight.length && temperature < 12) {
+    warnings.push(t('При {temperature}°C {items} может не подойти для долгого пребывания на улице.', { temperature, items: list(otherLight, t) }));
   }
   if (tooWarm.length) {
     warnings.push(t('При {temperature}°C {items} будет слишком тёплой вещью.', { temperature, items: list(tooWarm, t) }));
@@ -518,7 +541,7 @@ export function evaluateLook(items: WardrobeItem[], context: OutfitContext, t: T
       context.precipitation === 'rain' ? t('дождь') : context.precipitation === 'snow' ? t('снег') : ''].filter(Boolean).join(', ');
     // Замечания — серьёзно, советы про погоду (кеды в дождь, ветер) — слегка.
     const mild = tips.filter(tip => tip.rank <= 3).length;
-    const value = clamp01(1 - warnings.length * 0.35 - mild * 0.12);
+    const value = coldBareLegs(items, context.temperature).length ? 0.1 : clamp01(1 - warnings.length * 0.35 - mild * 0.12);
     criteria.push({ key: 'weather', status: statusOf(value), value,
       note: warnings.length ? warnings[0] : mild ? tips[0].text : t('Подходит для погоды: {conditions}.', { conditions }) });
   }
@@ -546,6 +569,8 @@ export function evaluateLook(items: WardrobeItem[], context: OutfitContext, t: T
   const failed = (key: CriterionKey) => criteria.some(criterion => criterion.key === key && criterion.status === 'bad');
   if (failed('occasion')) percent = Math.min(percent, 45);
   if (failed('set') || failed('weather')) percent = Math.min(percent, 60);
+  // Open legs in the frost: no other merit makes this a look to go out in.
+  if (coldBareLegs(items, context.temperature).length) percent = Math.min(percent, 40);
   return { percent, criteria };
 }
 
@@ -665,6 +690,8 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   const alone = (top: WardrobeItem) => top.id === anchor?.id
     || (!needsBase(top, gender) && !(sleeveless(top) && temperature !== null && temperature < WARM_ONLY_BELOW));
   const bags = choose('Сумки', 2);
+  // What is really worn: the tights join below, and whether the legs are covered depends on them.
+  const worn = (selection: WardrobeItem[]) => tights && selection.some(item => SKIRTS.has(item.category)) ? [...selection, tights] : selection;
   const optional = (candidates: WardrobeItem[]): (WardrobeItem | null)[] => candidates.length ? candidates : [null];
   const candidates: { items: WardrobeItem[]; score: number; signature: string }[] = [];
   for (const top of optional(tops)) for (const mid of top ? [...(alone(top) && !anchorOver ? [null] : []), ...mids.filter(item => canLayer(top, item))] : [null])
@@ -705,6 +732,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       const patterned = selection.filter(item => item.pattern && !['Однотонный', 'Не определено'].includes(item.pattern)).length;
       score -= Math.max(0, patterned - 1) * 5;
       if (options.dismissed?.includes(lookCore(selection))) score -= 25;
+      if (coldBareLegs(worn(selection), temperature).length) score -= 60;
       candidates.push({ items: selection, score, signature: [top?.id, mid?.id, bottom?.id, shoe?.id, layer?.id].join('|') });
     }
   }
@@ -714,7 +742,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   // Не советуем то, что сами же раскритикуем: каждое замечание к образу — штраф.
   // «Неполный образ» и «нет фото» зависят от гардероба, а не от выбора, их не считаем.
   for (const candidate of unique) {
-    const { warnings } = getOutfitAdvice(candidate.items, context);
+    const { warnings } = getOutfitAdvice(worn(candidate.items), context);
     candidate.score -= warnings.filter(text => !text.startsWith('Неполный') && !text.startsWith('У части вещей')).length * 14;
   }
   unique.sort((a, b) => b.score - a.score);
@@ -768,6 +796,7 @@ export function getOutfitSwaps(selection: WardrobeItem[], wardrobe: WardrobeItem
       if (current.has(to.id) || to.section !== from.section || isOnePiece(from) !== isOnePiece(to) || isLegwear(from) !== isLegwear(to)) continue;
       if (context.event === 'Спортзал' && !describe(to).sporty) continue;
       const replaced = selection.map(item => item.id === from.id ? to : item);
+      if (coldBareLegs(replaced, context.temperature).length > coldBareLegs(selection, context.temperature).length) continue;
       const gain = itemScore(to, context) - itemScore(from, context) + paletteScore(replaced) - paletteScore(selection);
       if (gain < 4) continue;
       const reason = context.temperature !== null && Math.abs(describe(to).warmth - warmthFor(context.temperature)) < Math.abs(describe(from).warmth - warmthFor(context.temperature))

@@ -127,4 +127,47 @@ assert.ok(!picker.includes('allowsMultipleSelection'));
 const screen = fs.readFileSync(path.join(__dirname, '../src/screens/WardrobeScreen.tsx'), 'utf8');
 assert.match(screen, /aiConsent\.ensure\(\)\)\) \{ Alert\.alert\(t\('Нужно согласие'\)[\s\S]*allowsMultipleSelection: true, selectionLimit: room/, 'the consent comes before the gallery');
 
+// A photo over the limit: its own error, no retry, no place taken; a path written down before an update is re-anchored on reading.
+{
+  assert.equal(q.requestOutcome(413, false), 'tooLarge');
+  assert.equal(q.requestOutcome(413, true), 'tooLarge');
+  assert.equal(q.requestOutcome(500, false), 'network');
+  assert.equal(q.requestOutcome(undefined, false), 'network');
+  assert.equal(q.requestOutcome(undefined, true), 'interrupted');
+  const running = q.markAnalyzing(q.enqueue([], ['x'], () => 'big').queue, 'big');
+  const big413 = q.markFailed(running, 'big', 'tooLarge');
+  assert.equal(big413[0].error, 'tooLarge');
+  assert.equal(q.canRetry(big413[0]), false);
+  assert.deepEqual(q.retryEntry(big413, 'big'), big413);
+  assert.deepEqual(q.retryFailed(big413), big413);
+  assert.equal(q.roomInQueue(big413), q.MAX_BATCH);
+  assert.equal(q.queueSummary(big413).retryable, 0);
+  assert.equal(q.queueSummary(big413).failed, 1);
+  assert.equal(q.decodeAddQueue(JSON.parse(JSON.stringify(big413)))[0].error, 'tooLarge');
+  const network = q.markFailed(running, 'big', 'network');
+  assert.equal(q.retryEntry(network, 'big')[0].stage, 'waiting');
+
+  assert.equal(q.uploadResize(4096, 3000), null);
+  assert.deepEqual(q.uploadResize(6000, 4000), { width: 4096 });
+  assert.deepEqual(q.uploadResize(4000, 6000), { height: 4096 });
+
+  const stored = [{ id: 'a', uri: 'old/photos/a.jpg', stage: 'waiting', askFlat: true }, { id: 'b', uri: 'bad', stage: 'waiting', askFlat: true }];
+  const anchored = q.decodeAddQueue(stored, uri => uri === 'bad' ? undefined : uri.replace('old', 'new'));
+  assert.deepEqual(anchored.map(entry => entry.uri), ['new/photos/a.jpg']);
+  const hook = fs.readFileSync(path.join(__dirname, '../src/components/useAddQueue.ts'), 'utf8');
+  assert.match(hook, /decodeAddQueue\(value, reanchorPhoto\)/);
+  assert.ok(!/loadValidated\([^)]*, decodeAddQueue\)/.test(hook), 'every read of the queue re-anchors');
+  const manipulated = hook.match(/async function uprightCopy[\s\S]*?\n}\n/)[0];
+  for (const name of ['source', 'rendered', 'scaling', 'resized']) assert.match(manipulated, new RegExp(`finally \\{ ${name}\\.release\\(\\); \\}`));
+  assert.ok(!/compress: 1\b/.test(manipulated));
+}
+
+// Dialogs change the newest list, so what the queue landed while they were open stays.
+{
+  const screen = fs.readFileSync(path.join(__dirname, '../src/screens/WardrobeScreen.tsx'), 'utf8');
+  const calls = screen.match(/onItemsChange\([^\n]*/g);
+  assert.ok(calls.length >= 5);
+  calls.forEach(call => assert.match(call, /onItemsChange\(\(?latest\)? =>/, call));
+}
+
 console.log('PASS: add queue runs one photo at a time and never pays twice for a flat');

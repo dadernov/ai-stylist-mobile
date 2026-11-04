@@ -5,13 +5,16 @@ import { WardrobeItem } from '../data/mock';
 import { DAILY_EVENT, DAILY_STYLE, decodeDailyLook, greetingName, pickDailyLook } from '../domain/dailyLook';
 import { LookVote, buildTaste } from '../domain/lookTaste';
 import { lookName } from '../domain/lookName';
-import { DEFAULT_MORNING, decodeMorningSettings, MorningSettings, opensIdeas, planMorning } from '../domain/morningLook';
+import { createSerial, DEFAULT_MORNING, decodeMorningSettings, MorningSettings, opensIdeas, planMorning, weatherIsFresh } from '../domain/morningLook';
 import { buildLooks } from '../domain/outfits';
 import { accountKey } from '../services/accountStorage';
 import { askMorningPermission, cancelMorningNotifications, listenToMorningTaps, MorningPermission, morningPermissionGranted, scheduleMorningNotifications } from '../services/morningNotifications';
 import { loadValidated, saveJson } from '../services/storage';
 import { Gender } from '../types/profile';
 import { useFavoriteColors } from './useFavoriteColors';
+
+// One line for all the app: a run left by a closed session, and the cancel after it, come before anything the next one writes.
+const writes = createSerial(error => console.warn('Failed to write the morning look', error));
 
 type Input = { login: string; displayName?: string; ready: boolean; items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favoriteItemIds: string[]; dismissed: string[]; votes: LookVote[]; onOpenIdeas: () => void };
 export type MorningControl = { settings: MorningSettings; permissionLost: boolean; turnOn: () => Promise<MorningPermission>; turnOff: () => void; setTime: (hour: number, minute: number) => void };
@@ -28,7 +31,15 @@ export function useMorningLook(input: Input): MorningControl {
   const favoriteColors = useFavoriteColors(input.login);
   const latest = useRef({ input, t, settings, favoriteColors });
   latest.current = { input, t, settings, favoriteColors };
-  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const session = useRef({ alive: true });
+
+  // Declared first, so the runs asked for by the effects below belong to this session. Leaving (sign-out, deletion, an expired
+  // token) marks what is under way, and a cancel after it takes off whatever that run got written.
+  useEffect(() => {
+    const current = { alive: true };
+    session.current = current;
+    return () => { current.alive = false; void writes(cancelMorningNotifications); };
+  }, [input.login]);
 
   useEffect(() => {
     let active = true;
@@ -38,23 +49,30 @@ export function useMorningLook(input: Input): MorningControl {
 
   // One at a time: the cancel of a later run must not fall on the entries of an earlier one half way.
   const reschedule = () => {
-    chain.current = chain.current.then(async () => {
+    const mine = session.current;
+    void writes(async () => {
+      if (!mine.alive) return;
       const { input: now, t: translate, settings: current, favoriteColors: colors } = latest.current;
       if (!current?.enabled || colors === undefined) return;
-      setPermissionLost(!(await morningPermissionGranted()));
+      const granted = await morningPermissionGranted();
+      if (!mine.alive) return;
+      setPermissionLost(!granted);
       const stored = await loadValidated(accountKey(now.login, 'dailyLook'), decodeDailyLook).catch(() => ({ value: null }));
+      if (!mine.alive) return;
       const record = stored.value ?? null;
+      const clock = new Date();
+      const fresh = weatherIsFresh(record, clock);
       const known = new Map(now.items.map(item => [item.id, item]));
       const candidates = buildLooks(now.items, DAILY_STYLE, DAILY_EVENT, '', record?.temperature ?? null, now.gender, now.beautyAdvice,
         { favoriteItemIds: now.favoriteItemIds, dismissed: now.dismissed, favoriteColors: colors ?? undefined, taste: buildTaste(now.votes, Date.now()) });
       const lookFor = (day: string) => {
         const chosen = pickDailyLook(candidates, now.items, record?.day === day ? record : null, day, now.dismissed);
-        if (!chosen.lookId) return null;
+        if (!fresh || !chosen.lookId) return null;
         return lookName(chosen.itemIds.map(id => known.get(id)).filter(Boolean) as WardrobeItem[], translate('и')) || null;
       };
-      const plan = planMorning({ now: new Date(), settings: current, login: now.login, name: greetingName(now.displayName, now.login), hasClothes: now.items.length >= 2, lookFor, t: translate });
-      await scheduleMorningNotifications(plan, translate('Образ дня'));
-    }).catch(error => console.warn('Failed to write the morning look', error));
+      const plan = planMorning({ now: clock, settings: current, login: now.login, name: greetingName(now.displayName, now.login), hasClothes: now.items.length >= 2, lookFor, t: translate });
+      await scheduleMorningNotifications(plan, translate('Образ дня'), () => mine.alive);
+    });
   };
 
   const enabled = settings?.enabled === true;
@@ -91,7 +109,7 @@ export function useMorningLook(input: Input): MorningControl {
     turnOff: () => {
       remember({ ...base(), enabled: false });
       setPermissionLost(false);
-      chain.current = chain.current.then(cancelMorningNotifications);
+      void writes(cancelMorningNotifications);
     },
     setTime: (hour, minute) => remember({ ...base(), hour, minute })
   };
