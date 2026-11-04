@@ -40,14 +40,14 @@ export function LookEditor({ title, itemIds, items, onSave, onCancel }: {
             <Text style={styles.slotTitle}>{t(slot.title)}</Text>
             <Text style={[styles.slotValue, !selected && styles.slotEmpty]} numberOfLines={1}>{selected ? selected.name : t('Не выбрано')}</Text>
           </View>
-          {selected?.imageUri ? <Image source={{ uri: selected.imageUri }} style={styles.preview} resizeMode="cover" /> : null}
+          {selected?.imageUri ? <Image source={{ uri: selected.imageUri }} style={styles.preview} resizeMode="contain" /> : null}
         </View>
         {list.length ? <SheetStrip showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
           {list.map(item => {
             const active = selected?.id === item.id;
             return <AppPressable key={item.id} haptics accessibilityRole="button" accessibilityLabel={item.name} accessibilityState={{ selected: active }} style={[styles.card, active && styles.cardActive]}
               onPress={() => setPicked(current => ({ ...current, [slot.section]: active ? undefined : item }))}>
-              {item.imageUri ? <Image source={{ uri: item.imageUri }} style={styles.image} resizeMode="cover" /> : null}
+              {item.imageUri ? <Image source={{ uri: item.imageUri }} style={styles.image} resizeMode="contain" /> : null}
               <Text style={[styles.cardLabel, active && styles.cardLabelActive]} numberOfLines={1}>{item.name}</Text>
             </AppPressable>;
           })}

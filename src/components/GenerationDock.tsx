@@ -23,7 +23,7 @@ import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { DevelopingImage } from './studio/DevelopingImage';
-import { revealLedger } from './studio/generationFog';
+import { revealLedger } from './studio/generationReveal';
 import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
 import { tryOnStatusLabel } from './tryOnStatus';
 
@@ -35,7 +35,7 @@ type DockApi = {
   prepare: (items: WardrobeItem[], preset?: { options?: GarmentOptions; name?: string }) => void;
   /** A finished look was looked at elsewhere (the recent try-ons): it leaves the small window. */
   viewed: (jobId: string) => void;
-  /** The big window is up: what is under it is out of sight, its fog pauses and its reveal waits. */
+  /** The big window is up: what is under it is out of sight, its sweep pauses and its reveal waits. */
   windowUp: boolean;
 };
 const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, viewed: () => {}, windowUp: false });
@@ -321,7 +321,7 @@ function GenerationMini({ jobs, items, bottom, modelUri, startedAt, onOpen, onDi
   );
 }
 
-/** The small window: the same fog over the same photo and the same reveal, with the status cut down to its clock. */
+/** The small window: the same placeholder and the same reveal, with the status cut down to its clock. */
 function MiniPage({ job, items, visible, modelUri, startedAt, onOpen, onDismiss }: {
   job: TryOnJob; items: WardrobeItem[]; visible: boolean; modelUri?: string; startedAt?: number; onOpen: (id: string) => void; onDismiss: (id: string) => void;
 }) {
@@ -343,12 +343,11 @@ function MiniPage({ job, items, visible, modelUri, startedAt, onOpen, onDismiss 
       : job.progress?.stage === 'upload' ? t('Отправка…') : clock
     : result ? t('Готово') : t('Ошибка');
   const photo = job.progress?.previewUrl || modelUri || null;
-  const garments = job.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
   return (
     <AppPressable accessibilityRole="button" accessibilityLabel={t('Развернуть примерку: {name}', { name: job.name })}
       onPress={() => onOpen(job.id)} style={styles.page}>
-      <DevelopingImage surface="mini" revealKey={job.id} photoUri={photo} resultUri={result} developing={pending} isDark={isDark} active={visible} items={garments}>
-        {result ? <Image source={{ uri: result }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      <DevelopingImage surface="mini" revealKey={job.id} photoUri={photo} resultUri={result} developing={pending} isDark={isDark} active={visible}>
+        {result ? <Image source={{ uri: result }} style={StyleSheet.absoluteFill} resizeMode="contain" /> : null}
       </DevelopingImage>
       <View style={styles.footer} pointerEvents="none">
         {pending ? <ActivityIndicator size={12} color="#FFFFFF" />

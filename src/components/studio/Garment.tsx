@@ -31,7 +31,7 @@ export function GarmentImage({ item, style, blur, print, printRadius = PRINT_RAD
   if (print && !isCutout(item.imageUri)) {
     return (
       <View style={[style as StyleProp<ViewStyle>, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Image source={{ uri: item.imageUri }} resizeMode="cover" resizeMethod="resize" fadeDuration={0} blurRadius={blur} onLoadEnd={onLoadEnd}
+        <Image source={{ uri: item.imageUri }} resizeMode="contain" resizeMethod="resize" fadeDuration={0} blurRadius={blur} onLoadEnd={onLoadEnd}
           style={{ width: `${PRINT_FRAME.width * 100}%`, height: `${PRINT_FRAME.height * 100}%`, borderRadius: printRadius }} />
       </View>
     );

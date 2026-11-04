@@ -137,7 +137,9 @@ assert.match(view, /holdHeight=\{!done \|\| settling\}/, 'the frame stands still
 assert.match(read('onboarding/FirstLook.tsx'), /resizeMode=\{fit\}/);
 assert.match(read('ui/FittedFrame.tsx'), /resizeMode=\{pictureFit\(aspect\)\}/);
 const developing = read('studio/DevelopingImage.tsx');
-assert.ok(!/resizeMode="contain"/.test(developing), 'before and blurred after fill the shared rect');
+assert.match(developing, /beforeUri \}\} resizeMode="contain"/, 'the photo before is shown whole in the shared rect');
+assert.ok(!/resizeMode="cover"/.test(developing), 'nothing in the view is cropped');
+assert.match(developing, /blurRadius=\{BLUR\} resizeMode=\{fit\}/, 'the blurred look sits exactly as the sharp one');
 assert.ok(!/resizeMode="contain"/.test(read('onboarding/FirstLook.tsx').split('<GenerationView')[1].split('/>\n    </View>')[0]));
 for (const file of ['GenerationHistory.tsx']) assert.match(read(file), /FittedImage|FittedFrame/, file);
 console.log('PASS: image fit — the picture\'s own rect for every aspect, one frame for before and after');

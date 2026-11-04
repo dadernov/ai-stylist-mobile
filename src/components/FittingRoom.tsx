@@ -19,7 +19,9 @@ import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { DevelopingImage } from './studio/DevelopingImage';
 import { GenerationStatus } from './studio/GenerationView';
-import { revealLedger } from './studio/generationFog';
+import { useFrameAspect } from './studio/useImageAspect';
+import { FittedFrame } from './ui/FittedFrame';
+import { revealLedger } from './studio/generationReveal';
 import { successHaptic } from '../services/haptics';
 import { useShareChoice } from './SharePoster';
 import { PhotoViewer, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
@@ -41,7 +43,7 @@ type Props = {
   initialItemIds?: string[];
   // The screen shows "Try on" as a floating button, always in reach while picking.
   onSelectionCta: (cta: { count: number; open: () => void } | null) => void;
-  /** The tab holding this room is on screen: hidden, its generation fog pauses and a finished look's reveal waits. */
+  /** The tab holding this room is on screen: hidden, its generation sweep pauses and a finished look's reveal waits. */
   visible?: boolean;
   /** The height of the list this room scrolls in, less what floats over it: the frame and its buttons fit it whole. */
   viewport?: number;
@@ -231,15 +233,17 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
   const ink = isDark ? '#FFFFFF' : INK;
   // A look that finished owes its reveal here until it has played, seen live or on coming back.
   const [revealPlayed, setRevealPlayed] = useState<string>();
-  // The ledger settles as the reveal starts: from then on this keeps the fog in the frame until it has played.
+  // The ledger settles as the reveal starts: from then on this keeps the placeholder in the frame until it has played.
   const [revealingId, setRevealingId] = useState<string>();
   const fieldOwed = Boolean(current && result && (revealingId === current.id || (revealPlayed !== current.id && revealLedger.owes(current.id, 'full'))));
+  // The frame hugs the picture: the result's shape once known, the photo's until then.
+  const frame = useFrameAspect(modelUri, result?.imageUri, busy);
   const photoHeight = resultPhotoHeight({ available: viewport || estimatedViewport(windowHeight, insets.top), pieces: pieces.length > 0 });
 
   return <View style={{ gap: RESULT_GAP }}>
     <View style={[styles.frameShadow, { height: photoHeight }]}>
-      <View style={styles.frame}>
-        {modelUri ? <Animated.Image source={{ uri: modelUri }} resizeMode={result ? 'contain' : 'cover'} accessibilityLabel={t('Фото для примерки')}
+      <FittedFrame aspect={frame.aspect} radius={RESULT_RADIUS} holdHeight={busy || frame.settling} style={styles.frame}>
+        {modelUri ? <Animated.Image source={{ uri: modelUri }} resizeMode="contain" accessibilityLabel={t('Фото для примерки')}
           style={[StyleSheet.absoluteFill, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }] }]} />
           : <View style={styles.noPhoto}>
@@ -257,7 +261,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
         {/* The one generation picture, while it runs and until its reveal has played; then the frame's own layers, identical under it. */}
         {current && (busy || fieldOwed) ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <DevelopingImage key={current.id} revealKey={current.id} photoUri={current.progress?.previewUrl || modelUri || null} resultUri={result?.imageUri || null} developing={busy} isDark={isDark}
-            active={visible && !dock.windowUp} items={pieces}  onRevealStart={() => { setRevealingId(current.id); successHaptic(); }} onRevealEnd={() => { setRevealPlayed(current.id); setRevealingId(undefined); }}>
+            active={visible && !dock.windowUp} onRevealStart={() => { setRevealingId(current.id); successHaptic(); }} onRevealEnd={() => { setRevealPlayed(current.id); setRevealingId(undefined); }}>
             {result ? <Image source={{ uri: result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} /> : null}
           </DevelopingImage>
         </View> : null}
@@ -278,7 +282,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
               onPress={() => { const id = current.id; setCheckingId(id); void store.poll(current).finally(() => setCheckingId(value => value === id ? null : value)); }} /> : null}
           </View>
         </Glass> : null}
-      </View>
+      </FittedFrame>
     </View>
     {busy && current ? <GenerationStatus label={tryOnStatusLabel(current.progress, t)} stage={current.progress?.stage} items={pieces} active={visible && !dock.windowUp} /> : null}
     {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
@@ -300,7 +304,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
           return <AppPressable key={job.id} accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
             accessibilityState={{ selected: on }} onPress={() => show(job)}
             style={[styles.thumb, { borderColor: on ? ink : 'transparent' }]}>
-            {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
+            {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
               : <Glass radius={14} style={[StyleSheet.absoluteFill, styles.thumbState]}>
                 <View style={styles.thumbCenter}>
                   {job.status === 'pending' ? <ActivityIndicator color={ink} /> : <RefreshCw color={job.error ? c.danger : c.muted} size={20} />}
@@ -334,7 +338,7 @@ const PickTile = memo(function PickTile({ item, selected, disabled, status, onTo
     <AppPressable haptics onPress={() => onToggle(item)} disabled={disabled} accessibilityRole="checkbox"
       accessibilityLabel={item.name} accessibilityState={{ checked: selected, disabled }} style={{ gap: 8 }}>
       <View style={[styles.tile, { backgroundColor: fill.backgroundColor, borderColor: selected ? ink : fill.borderColor }, disabled && { opacity: 0.6 }]}>
-        {item.imageUri && !failed ? <Image source={{ uri: item.imageUri }} resizeMode={cutout ? 'contain' : 'cover'} onError={() => setFailed(true)}
+        {item.imageUri && !failed ? <Image source={{ uri: item.imageUri }} resizeMode="contain" onError={() => setFailed(true)}
           style={cutout ? styles.tileCutout : styles.tilePrint} />
           : <View style={styles.tileMissing}>
             {failed ? <ImageOff size={30} strokeWidth={1} color={c.muted} /> : <Shirt size={36} strokeWidth={1} color={c.muted} />}
@@ -359,9 +363,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   error: { ...font('regular'), color: c.danger, fontSize: 13, lineHeight: 18 },
   link: { ...font('semibold'), color: c.text, fontSize: 13, paddingVertical: 8 },
   // The picture: a 34-radius frame on a soft shadow, as in the mock-up.
-  frameShadow: { width: '100%', maxWidth: 480, alignSelf: 'center', borderRadius: RESULT_RADIUS,
-    boxShadow: '0px 30px 60px -24px rgba(20,25,30,0.35)' },
-  frame: { flex: 1, borderRadius: RESULT_RADIUS, overflow: 'hidden', backgroundColor: c.surface },
+  frameShadow: { width: '100%', maxWidth: 480, alignSelf: 'center', },
+  frame: { flex: 1 },
   noPhoto: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
   noPhotoText: { ...font('medium'), color: c.muted, fontSize: 14, textAlign: 'center' },
   caption: { position: 'absolute', left: 10, right: 10, bottom: 10 },
