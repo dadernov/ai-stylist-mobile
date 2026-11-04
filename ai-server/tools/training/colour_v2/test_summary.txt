@@ -1,0 +1,30 @@
+=== shipped veto=on
+REAL 66/75 = 88.0%
+KAGL old truth: 258/340 = 75.9%; warm 40/57 = 70.2%
+KAGL audited truth: 258/340 = 75.9%; warm 40/57 = 70.2%
+SWATCH all 365/552 = 66.1%; warm colours 135/230 = 58.7%; mustard/khaki/olive/beige 106/161 = 65.8%; warm->green names 2
+=== final veto=on
+REAL 60/75 = 80.0%
+KAGL old truth: 245/340 = 72.1%; warm 41/57 = 71.9%
+KAGL audited truth: 250/340 = 73.5%; warm 46/57 = 80.7%
+SWATCH all 410/552 = 74.3%; warm colours 157/230 = 68.3%; mustard/khaki/olive/beige 130/161 = 80.7%; warm->green names 1
+=== shipped veto=soft
+REAL 66/75 = 88.0%
+KAGL old truth: 262/340 = 77.1%; warm 40/57 = 70.2%
+KAGL audited truth: 262/340 = 77.1%; warm 40/57 = 70.2%
+SWATCH all 321/552 = 58.2%; warm colours 119/230 = 51.7%; mustard/khaki/olive/beige 75/161 = 46.6%; warm->green names 12
+=== final veto=soft
+REAL 60/75 = 80.0%
+KAGL old truth: 250/340 = 73.5%; warm 41/57 = 71.9%
+KAGL audited truth: 254/340 = 74.7%; warm 45/57 = 78.9%
+SWATCH all 403/552 = 73.0%; warm colours 152/230 = 66.1%; mustard/khaki/olive/beige 123/161 = 76.4%; warm->green names 4
+=== shipped veto=off
+REAL 66/75 = 88.0%
+KAGL old truth: 263/340 = 77.4%; warm 39/57 = 68.4%
+KAGL audited truth: 263/340 = 77.4%; warm 39/57 = 68.4%
+SWATCH all 250/552 = 45.3%; warm colours 106/230 = 46.1%; mustard/khaki/olive/beige 21/161 = 13.0%; warm->green names 5
+=== final veto=off
+REAL 60/75 = 80.0%
+KAGL old truth: 251/340 = 73.8%; warm 40/57 = 70.2%
+KAGL audited truth: 255/340 = 75.0%; warm 44/57 = 77.2%
+SWATCH all 389/552 = 70.5%; warm colours 148/230 = 64.3%; mustard/khaki/olive/beige 114/161 = 70.8%; warm->green names 3
