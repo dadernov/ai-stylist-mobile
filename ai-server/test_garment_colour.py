@@ -39,8 +39,8 @@ class UsingHead(unittest.TestCase):
 
 class ColourNames(UsingHead):
     def test_the_names_are_the_apps_own_in_its_order(self):
-        source = (Path(__file__).parent.parent / 'src/screens/WardrobeScreen.tsx').read_text()
-        block = source.split('const namedColors = [')[1].split('];')[0]
+        source = (Path(__file__).parent.parent / 'src/domain/namedColors.ts').read_text()
+        block = source.split('NAMED_COLORS')[1].split('];')[0]
         self.assertEqual(re.findall(r"\{ name: '([^']+)', hex: '(#[0-9A-F]{6})' \}", block), gc.NAMED)
 
     def test_the_shipped_head_names_the_apps_colours(self):
