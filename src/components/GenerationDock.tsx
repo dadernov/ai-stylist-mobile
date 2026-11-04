@@ -17,6 +17,8 @@ import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
 import { AppPressable } from './AppPressable';
 import { GenerationStage, StagePage } from './GenerationStage';
+import { FavoritesProvider, useFavorites } from './SaveLook';
+import { lookFromJob } from '../domain/favorites';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
@@ -207,6 +209,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   };
 
   const sharing = useShareChoice(login);
+  // The root outlet draws the window above the favourites' provider: they are handed on to it.
+  const favorites = useFavorites();
   // The share sheet lives in the window: a request left behind would pop up when the window next opens.
   const showsPages = windowOpen && !setup;
   useEffect(() => { if (!showsPages) sharing.clear(); }, [showsPages]);
@@ -225,6 +229,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       resultUri: resultOf(job),
       error: (job.id === visibleId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
       warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
+      favorite: job.result && job.status !== 'pending' ? lookFromJob(job) : null,
       saveState: saveStates[job.id] || 'idle',
       onSave: () => { void save(job); },
       onShare: () => { const uri = resultOf(job); if (uri) sharing.offer({ uri, title: titleOf(job), items: job.itemIds.flatMap(id => items.filter(item => item.id === id)) }); },
@@ -246,7 +251,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
         onOptions: options => setSetup(current => current && { ...current, options }), onGenerate: () => { void generate(); } }}
     />
   ) : windowOpen && dockJobs.length ? (
-    <GenerationStage
+    <FavoritesProvider value={favorites}><GenerationStage
       key={windowKey}
       pages={dockJobs.map(pageOf)}
       initialPage={firstPage}
@@ -255,7 +260,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       onClose={close}
       // Inside the window's modal, as the banner: iOS shows a sheet only from the screen on top.
       banner={<>{banner}{sharing.sheet}</>}
-    />
+    /></FavoritesProvider>
   ) : null;
   const inline = useOverlay('generation-stage', stage);
   // The folded window floats over whatever is on top too: drawn under the

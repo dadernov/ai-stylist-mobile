@@ -51,8 +51,6 @@ type OutfitBuilderProps = {
   savedLooks: SavedLook[];
   onSavedLooksChange: (looks: SavedLook[]) => void;
   onLooksGenerated: (looks: GeneratedLook[], context: { style: string; event: string; weather: string }) => void;
-  onFavoriteAdd: (look: GeneratedLook) => void;
-  favoriteLookIds?: Set<string>;
   onProfile: () => void;
   onModelChange?: (uri: string) => void;
   onWardrobe: () => void;
@@ -148,9 +146,7 @@ type GeneratedLookCardProps = {
   index: number;
   modelUri?: string;
   itemsById: Record<string, WardrobeItem>;
-  favoriteLookIds?: Set<string>;
   onSaveToLooks: (look: GeneratedLook) => void;
-  onFavoriteAdd: (look: GeneratedLook) => void;
   onTryOnGenerated: (
     lookId: string,
     payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
@@ -167,9 +163,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
   index,
   modelUri,
   itemsById,
-  favoriteLookIds,
   onSaveToLooks,
-  onFavoriteAdd,
   onTryOnGenerated
 }: GeneratedLookCardProps) {
   const styles = useThemedStyles(makeStyles);
@@ -178,7 +172,6 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
     () => Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[],
     [look.itemIds, itemsById]
   );
-  const isFavorited = favoriteLookIds?.has(look.id);
   const { colors } = useTheme();
   // The card shows what matters at a glance; the reasoning opens on demand.
   const [details, setDetails] = useState(false);
@@ -195,7 +188,6 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
           </View>
           <View style={styles.lookActions}>
             <CardAction label={t('В луки')} onPress={() => onSaveToLooks(look)} />
-            <CardAction label={isFavorited ? t('Добавлено') : t('В избранное')} disabled={isFavorited} onPress={() => onFavoriteAdd(look)} />
           </View>
         </View>
         {look.weather ? <Text style={styles.lookWeather}>{look.weather}</Text> : null}
@@ -222,6 +214,7 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
         <AiTryOnPreview
           modelUri={modelUri}
           items={lookItems}
+          favoriteLook={look}
           tuckMode={look.tuckMode}
           resultUri={look.tryOnImageUri}
           warningMessage={look.tryOnWarning}
@@ -241,9 +234,7 @@ type SavedLookCardProps = {
   index: number;
   modelUri?: string;
   itemsById: Record<string, WardrobeItem>;
-  favoriteLookIds?: Set<string>;
   onEdit: (look: SavedLook) => void;
-  onFavoriteAdd: (look: GeneratedLook) => void;
   onDelete: (id: string) => void;
   onTryOnGenerated: (
     lookId: string,
@@ -256,9 +247,7 @@ const SavedLookCard = memo(function SavedLookCard({
   index,
   modelUri,
   itemsById,
-  favoriteLookIds,
   onEdit,
-  onFavoriteAdd,
   onDelete,
   onTryOnGenerated
 }: SavedLookCardProps) {
@@ -268,7 +257,6 @@ const SavedLookCard = memo(function SavedLookCard({
     () => Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[],
     [look.itemIds, itemsById]
   );
-  const isFavorited = favoriteLookIds?.has(look.id);
   return (
     <FadeInView delay={index * 60}>
       <Glass radius={28} style={styles.lookCard}>
@@ -278,7 +266,6 @@ const SavedLookCard = memo(function SavedLookCard({
           </View>
           <View style={styles.lookActions}>
             <CardAction label={t('Изменить')} onPress={() => onEdit(look)} />
-            <CardAction label={isFavorited ? t('Добавлено') : t('В избранное')} disabled={isFavorited} onPress={() => onFavoriteAdd(savedLookToGeneratedLook(look))} />
             <CardAction label={t('Удалить')} danger onPress={() => onDelete(look.id)} />
           </View>
         </View>
@@ -286,6 +273,7 @@ const SavedLookCard = memo(function SavedLookCard({
         <AiTryOnPreview
           modelUri={modelUri}
           items={lookItems}
+          favoriteLook={savedLookToGeneratedLook(look)}
           tuckMode={look.tuckMode}
           resultUri={look.tryOnImageUri}
           warningMessage={look.tryOnWarning}
@@ -307,8 +295,6 @@ export function OutfitBuilderScreen({
   savedLooks,
   onSavedLooksChange,
   onLooksGenerated,
-  onFavoriteAdd,
-  favoriteLookIds,
   onProfile,
   onModelChange,
   onWardrobe,
@@ -649,9 +635,8 @@ export function OutfitBuilderScreen({
         </View>
         </Glass>
       </View>
-      {activeTab === 'history' && <GenerationHistory items={items} savedLooks={savedLooks} itemId={historyItemId}
+      {activeTab === 'history' && <GenerationHistory items={items} itemId={historyItemId}
         onFilter={setHistoryItemId} onOpenItem={onOpenItem}
-        onSave={look => onSavedLooksChange([look, ...savedLooks.filter(existing => existing.id !== look.id)])}
         onTryOn={ids => { setRepeatSelection(previous => ({ ids, key: (previous?.key || 0) + 1 })); setActiveTab('fitting'); }} />}
       <FormScrollView style={activeTab === 'history' && { display: 'none' }}
         contentContainerStyle={[styles.pageContent, activeTab === 'fitting' && fittingCta ? { paddingBottom: 96 } : null]}>
@@ -741,9 +726,7 @@ export function OutfitBuilderScreen({
                   beautyAdvice={beautyAdvice}
                   modelUri={modelUri}
                   itemsById={itemsById}
-                  favoriteLookIds={favoriteLookIds}
                   onSaveToLooks={handleSaveGeneratedLook}
-                  onFavoriteAdd={onFavoriteAdd}
                   onTryOnGenerated={updateGeneratedLookTryOn}
                 />
               ))}
@@ -767,9 +750,7 @@ export function OutfitBuilderScreen({
                 index={index}
                 modelUri={modelUri}
                 itemsById={itemsById}
-                favoriteLookIds={favoriteLookIds}
                 onEdit={openEditLook}
-                onFavoriteAdd={onFavoriteAdd}
                 onDelete={handleDeleteLook}
                 onTryOnGenerated={updateSavedLookTryOn}
               />

@@ -30,3 +30,29 @@ export async function cacheTryOnImage(source: string, id: string, login: string)
     throw new Error('Не удалось сохранить фото на устройстве. Освободи место и повтори загрузку результата.');
   }
 }
+
+/**
+ * A file of the app's own that outlives a restart, whatever the picture is now: a server link (gone within a day),
+ * a data uri or a temporary file becomes one, and what is already kept stays where it is. Throws rather than keep a link.
+ */
+export async function keepTryOnImage(source: string, id: string, login: string): Promise<string> {
+  const anchored = reanchorTryOnUri(source);
+  if (!anchored) throw new Error('Invalid try-on path');
+  if (isRemoteUri(anchored) || isDataUri(anchored)) return (await cacheTryOnImage(anchored, id, login)).imageUri;
+  if (!FileSystem.documentDirectory || anchored.startsWith(ROOT)) return anchored;
+  const dir = ROOT + encodeURIComponent(login) + '/';
+  const extension = anchored.split(/[?#]/)[0].split('.').pop()?.toLowerCase() || 'jpg';
+  const target = `${dir}${id.replace(/[^a-z0-9_-]/gi, '_')}.${/^[a-z0-9]{1,5}$/.test(extension) ? extension : 'jpg'}`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  await FileSystem.copyAsync({ from: anchored, to: target });
+  return target;
+}
+
+/** The look as a favourite stores it: its picture a kept file, and no frame in its history that would die or bloat the record. */
+export async function durableLook<T extends { id: string; tryOnImageUri?: string; tryOnSourceUri?: string; tryOnUpdatedAt?: number; tryOnHistory?: { imageUri: string }[] }>(look: T, login: string): Promise<T> {
+  const source = look.tryOnImageUri;
+  const tryOnHistory = look.tryOnHistory?.filter(frame => !isRemoteUri(frame.imageUri) && !isDataUri(frame.imageUri));
+  if (!source) return { ...look, tryOnHistory };
+  const tryOnImageUri = await keepTryOnImage(source, `favorite-${look.id}-${look.tryOnUpdatedAt || Date.now()}`, login);
+  return { ...look, tryOnImageUri, tryOnHistory, tryOnSourceUri: isRemoteUri(source) ? source : look.tryOnSourceUri };
+}

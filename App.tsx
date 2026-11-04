@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Linking, Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { useFonts, Onest_700Bold, Onest_800ExtraBold, Onest_900Black } from '@expo-google-fonts/onest';
 import { TenorSans_400Regular } from '@expo-google-fonts/tenor-sans';
@@ -39,6 +39,7 @@ import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
+import { FavoritesProvider } from './src/components/SaveLook';
 import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
@@ -509,9 +510,10 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     local: hasLocalHistory({ items: items.length, photo: Boolean(modelUri || avatarUri), jobs: jobsStore.getSnapshot().jobs.length, looks: favoriteLooks.length + savedLooks.length }),
   });
 
+  const favoritesApi = useMemo(() => ({ favorites: favoriteLooks, setFavorites: setFavoriteLooks, login: session.login, notify: showToast }), [favoriteLooks, session.login]);
+
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
-    const favoriteLookIds = new Set(favoriteLooks.map((look) => look.id));
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId}
         onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('builder'); }}
@@ -538,33 +540,17 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
           onWardrobe={() => { setWardrobeDetailId(undefined); setActiveTab('wardrobe'); }}
           savedLooks={savedLooks}
           onSavedLooksChange={setSavedLooks}
-          favoriteLookIds={favoriteLookIds}
           onLooksGenerated={(looks, context) => {
             setLastLooks(looks);
             setLastContext(context);
             showToast(t('Образы готовы'));
           }}
-          onFavoriteAdd={(look) => {
-            // Повторное нажатие на ту же карточку (до перегенерации) даёт тот же
-            // look.id — без дедупа это создавало дубликаты с общим React key и
-            // общим id, которые onRemove стирал разом (аудит #22, #37).
-            let alreadyAdded = false;
-            setFavoriteLooks((prev) => {
-              if (prev.some((existing) => existing.id === look.id)) {
-                alreadyAdded = true;
-                return prev;
-              }
-              return [look, ...prev];
-            });
-            if (!alreadyAdded) showToast(t('Добавлено в избранное'));
-          }}
         />
       );
     if (activeTab === 'recommendations')
-      return <RecommendationsScreen items={items} login={session.login} displayName={displayName} initialStyle={lastContext.style} initialEvent={lastContext.event} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice} favorites={favoriteLooks}
+      return <RecommendationsScreen items={items} login={session.login} displayName={displayName} initialStyle={lastContext.style} initialEvent={lastContext.event} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice}
         dismissed={dismissedLooks.map(entry => entry.core)}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
-        onFavorite={look => { setFavoriteLooks(previous => previous.some(item => item.id === look.id) ? previous : [look, ...previous]); showToast(t('Добавлено в избранное')); }}
         onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
     if (activeTab === 'favorites')
       return (
@@ -628,11 +614,11 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     return <SafeAreaView style={styles.container} edges={['left', 'right']}><LoadingScreen /></SafeAreaView>;
   }
   if (firstLook === 'show') {
-    return <FirstLook login={session.login} items={items} modelUri={modelUri || avatarUri} onProfilePhoto={changeAvatar}
+    return <FavoritesProvider value={favoritesApi}><FirstLook login={session.login} items={items} modelUri={modelUri || avatarUri} onProfilePhoto={changeAvatar}
       onAddItem={item => handleItemsChange([item, ...items])}
       onPreference={(field, value) => setLastContext(current => ({ ...current, [field]: value }))}
       onLateJob={setFirstLookJob}
-      onDone={(exit, jobId) => { setActiveTab(exit); if (jobId) setFirstLookJob(jobId); onFirstLookDone(); }} />;
+      onDone={(exit, jobId) => { setActiveTab(exit); if (jobId) setFirstLookJob(jobId); onFirstLookDone(); }} /></FavoritesProvider>;
   }
 
   // Screens leave this much room at the bottom so the floating bar never covers their last row.
@@ -642,6 +628,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     <StudioBackdrop>
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['left', 'right']}>
       {/* Try-ons run above every screen; the folded window sits over the fitting room's own button. */}
+      <FavoritesProvider value={favoritesApi}>
       <GenerationDockProvider items={items} modelUri={modelUri || avatarUri} bottom={tabBarSpace + 76} initialDocked={firstLookJob}>
       {accountError ? <Text accessibilityRole="alert" style={{ color: colors.danger, padding: 12 }}>{accountError}</Text> : null}
       <View style={[styles.content, { paddingBottom: tabBarSpace }]}>{screen}</View>
@@ -698,6 +685,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
         </Animated.View>
       ) : null}
       </GenerationDockProvider>
+      </FavoritesProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </SafeAreaView>
     </StudioBackdrop>

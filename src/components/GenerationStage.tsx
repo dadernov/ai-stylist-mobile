@@ -10,6 +10,8 @@ import { useT } from '../constants/i18n';
 import { DevelopingImage } from './studio/DevelopingImage';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
+import { GeneratedLook } from '../types/looks';
+import { SaveLookButton } from './SaveLook';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { lookComments } from '../domain/lookComments';
 import { selectionHaptic, successHaptic } from '../services/haptics';
@@ -51,6 +53,8 @@ export type StagePage = {
   resultUri: string | null;
   error?: string | null;
   warning?: string | null;
+  /** The finished look as a favourite. */
+  favorite?: GeneratedLook | null;
   saveState: 'idle' | 'saving' | 'saved' | 'error';
   onSave: () => void;
   onShare: () => void;
@@ -260,6 +264,7 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
 
       {!busy ? (
         <View style={styles.actions}>
+          {done && page.favorite ? <SaveLookButton look={page.favorite} /> : null}
           {done ? (
             <View style={styles.row}>
               <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'}

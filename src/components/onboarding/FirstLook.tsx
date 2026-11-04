@@ -27,6 +27,8 @@ import { DevelopingImage } from '../studio/DevelopingImage';
 import { useFrameAspect } from '../studio/useImageAspect';
 import { FittedFrame } from '../ui/FittedFrame';
 import { ChoicePill, Glass, Pill } from '../studio/Glass';
+import { SaveLookButton } from '../SaveLook';
+import { lookFromJob } from '../../domain/favorites';
 import { font, INK, INK_ON_DARK, inkSoft, isCutout, useReducedMotion } from '../studio/studio';
 import { canTryOn, firstLookDecision, FirstLookStep, magicView, nextStep, QUESTIONS, QuestionId } from './firstLookLogic';
 
@@ -310,6 +312,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
     {!ready ? <Pill title={t('Подождать в приложении')} haptics={false} onPress={() => { waiting.current = true; onDone('wardrobe', jobId); }} /> : null}
     {ready && job?.result?.warning ? <Note>{t(String(job.result.warning))}</Note> : null}
     {ready && revealed ? <>
+      {job?.result ? <SaveLookButton look={lookFromJob(job)} /> : null}
       <Pill variant="primary" title={t('Добавить ещё вещи')} haptics={false} onPress={() => onDone('wardrobe')} />
       <Pill title={t('Смотреть идеи')} haptics={false} onPress={() => onDone('recommendations')} />
     </> : null}

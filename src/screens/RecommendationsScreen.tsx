@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Keyboard, Linking, PanResponder, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Heart, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CloudRain, CloudSnow, CloudSun, Lightbulb, MapPin, PersonStanding, RefreshCw, Shirt, Thermometer, X } from 'lucide-react-native';
+import { SaveLookButton, useFavorites } from '../components/SaveLook';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FormScrollView, SheetStrip } from '../components/ui/FormScrollView';
@@ -33,8 +34,8 @@ import { DailyLookHero } from '../components/DailyLookHero';
 import { lookName } from '../domain/lookName';
 
 type Props = {
-  items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favorites: GeneratedLook[];
-  onFavorite: (look: GeneratedLook) => void; onTryOn: (ids: string[]) => void; onWardrobe: () => void;
+  items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean;
+  onTryOn: (ids: string[]) => void; onWardrobe: () => void;
   // Set from a garment's card: the ideas are then built around that garment.
   anchorRequest?: { id: string; at: number };
   // Looks put aside with "Not now" in the last weeks sink in the ideas.
@@ -69,7 +70,7 @@ function describeLook(look: GeneratedLook, ids: string[], index: number, items: 
   return { selection, advice, match, swaps, savedId, palette, tips, title, main };
 }
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, onFavorite, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName }: Props) {
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
@@ -92,6 +93,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const [expanded, setExpanded] = useState(false);
   const [replaceId, setReplaceId] = useState<string | null>(null);
   // Saving a look updates its heart without shuffling the list under the user's finger.
+  const { favorites } = useFavorites();
   const [favoriteItemIds] = useState(() => [...new Set(favorites.flatMap(look => look.itemIds))]);
   // Read once: a look hidden now leaves the screen at once, and sinks from the next visit.
   const [dismissedAtStart] = useState(() => dismissed || []);
@@ -135,7 +137,6 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
   const look = visible[index] as GeneratedLook | undefined;
   const ids = look ? swapped[look.id] || look.itemIds : [];
   const about = look ? describeLook(look, ids, index, items, anchor?.id, precipitation, t) : null;
-  const saved = about ? favorites.some(favorite => favorite.id === about.savedId) : false;
   useStudioTint(studioTint(about?.main), 0.42);
 
   // A new occasion, style, weather or anchor starts again from the first look.
@@ -152,24 +153,14 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
     setHidden(previous => [...previous, look.id]);
     onDismiss?.(lookCore(about.selection));
   };
-  const favorite = () => {
-    if (!look || !about || saved) return;
-    const { advice, savedId, tips, title } = about;
-    told('favorite');
-    onFavorite({ ...look, title, id: savedId, itemIds: ids, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode });
-  };
+  const toSave: GeneratedLook | null = look && about ? { ...look, title: about.title, id: about.savedId, itemIds: ids, fitReasons: about.advice.reasons, stylingTips: about.tips, warnings: about.advice.warnings, tuckMode: about.advice.tuckMode } : null;
 
   // The hero's own look, with the same saved form and the same teaching as the stage below; only the live weather decides it.
   const heroPrecipitation: Precipitation = live?.precipitation ?? null;
   const dailyAbout = (daily: GeneratedLook) => {
     const { selection, advice, savedId, tips, title } = describeLook(daily, daily.itemIds, 0, items, undefined, heroPrecipitation, t);
     const tell = (action: LookAction) => { if (login) void hasAiConsent(login).then(ok => { if (ok) sendLookFeedback(action, daily, selection, 0, heroPrecipitation); }); };
-    const isSaved = favorites.some(other => other.id === savedId);
-    return { selection, title, saved: isSaved, told: tell, favorite: () => {
-      if (isSaved) return;
-      tell('favorite');
-      onFavorite({ ...daily, title, id: savedId, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode });
-    } };
+    return { selection, title, told: tell, look: { ...daily, title, id: savedId, fitReasons: advice.reasons, stylingTips: tips, warnings: advice.warnings, tuckMode: advice.tuckMode } };
   };
   // Put aside in the hero: it leaves the ideas below at once too, and sinks from the next visit.
   const skipDaily = (core: string) => {
@@ -317,8 +308,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, favorites, 
 
       <View style={styles.actions}>
         <Pill variant="primary" icon={PersonStanding} title={t('Примерить образ')} style={{ flex: 1 }} onPress={() => { told('tryon'); onTryOn(ids); }} />
-        <Pill icon={Heart} iconFill={saved} accessibilityLabel={t(saved ? 'Сохранено в избранном' : 'В избранное')} accessibilityState={{ selected: saved }} onPress={favorite} />
       </View>
+      {toSave ? <SaveLookButton look={toSave} onAdded={() => told('favorite')} /> : null}
     </> : null}
 
     {gaps.length && items.length ? <Glass radius={24} style={styles.gaps}>

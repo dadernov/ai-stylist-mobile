@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, PanResponder, StyleSheet, Text, View } from 'react-native';
 import { Heart, PersonStanding, X } from 'lucide-react-native';
+import { SaveLookButton, useSaveLook } from './SaveLook';
 import { WardrobeItem } from '../data/mock';
 import { useT } from '../constants/i18n';
 import { ThemeColors } from '../constants/theme';
@@ -26,7 +27,7 @@ const SWIPE = 90;
 const WEATHER_PATIENCE = 8000;
 
 /** What the screen says and does about a look: the same words and the same saved form as on the stage below. */
-export type DailyAbout = { selection: WardrobeItem[]; title: string; saved: boolean; favorite: () => void; told: (action: 'dismiss' | 'tryon') => void };
+export type DailyAbout = { selection: WardrobeItem[]; title: string; look: GeneratedLook; told: (action: 'favorite' | 'dismiss' | 'tryon') => void };
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean; favoriteItemIds: string[]; dismissed: string[];
@@ -85,11 +86,13 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   const look: GeneratedLook | null = useMemo(() => current ? { id: current.lookId, title: '', itemIds: current.itemIds, weather: current.temperature === null ? '' : `${current.temperature}°C`,
     temperature: current.temperature, style: HERO_STYLE, event: HERO_EVENT, makeup: '', hair: '' } : null, [current?.lookId, current?.itemIds.join(',')]);
   const info = look ? about(look) : null;
+  // A swipe to the right saves as the button below does, and never takes a saved look away.
+  const swipeSave = useSaveLook(info?.look, { onAdded: () => info?.told('favorite') });
   const selection = info?.selection;
 
   const swipe = useRef(new Animated.Value(0)).current;
   const back = () => { if (reduced) swipe.setValue(0); else Animated.spring(swipe, { toValue: 0, damping: 16, stiffness: 180, useNativeDriver: true }).start(); };
-  const like = () => { info?.favorite(); back(); };
+  const like = () => { if (!swipeSave.saved) void swipeSave.toggle(); back(); };
   const skip = () => {
     if (!current || !selection || !info) return;
     const core = lookCore(selection);
@@ -181,9 +184,9 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
     {/* The same choices as buttons: a swipe is not the only way to them. */}
     <View style={styles.actions}>
       <Pill variant="primary" icon={PersonStanding} title={t('Примерить')} style={{ flex: 1 }} onPress={tryOn} />
-      <Pill icon={Heart} iconFill={info.saved} accessibilityLabel={t(info.saved ? 'Сохранено в избранном' : 'В избранное')} accessibilityState={{ selected: info.saved }} onPress={like} />
       <Pill icon={X} accessibilityLabel={t('Не сегодня')} onPress={skip} />
     </View>
+    <SaveLookButton look={info.look} onAdded={() => info.told('favorite')} />
   </View>;
 }
 

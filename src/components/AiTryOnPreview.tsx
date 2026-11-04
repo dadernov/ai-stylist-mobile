@@ -22,7 +22,9 @@ import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 import { FormScrollView, SheetStrip } from './ui/FormScrollView';
 import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
-import { TryOnHistoryItem } from '../types/looks';
+import { GeneratedLook, TryOnHistoryItem } from '../types/looks';
+import { lookWithResult } from '../domain/favorites';
+import { SaveLookButton } from './SaveLook';
 import { Check, Download, X, Share2 } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useImageAspect } from './studio/useImageAspect';
@@ -34,6 +36,8 @@ import { useSheetGestureBlock } from './studio/SheetHandle';
 type AiTryOnPreviewProps = {
   modelUri?: string;
   items: WardrobeItem[];
+  /** The look on this card: its one button saves it, with the try-on on show if there is one. */
+  favoriteLook?: GeneratedLook;
   resultUri?: string;
   warningMessage?: string;
   updatedAt?: number;
@@ -80,6 +84,7 @@ const STAGE_SECTIONS: Record<string, string> = { bottom: 'Низ', shoes: 'Об�
 export function AiTryOnPreview({
   modelUri,
   items,
+  favoriteLook,
   resultUri: controlledResultUri,
   warningMessage,
   updatedAt: controlledUpdatedAt,
@@ -471,6 +476,8 @@ export function AiTryOnPreview({
       {warning ? <Text style={styles.hint}>{warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
       {warningsBlock}
       {historyBlock}
+      {favoriteLook && !isBusy ? <SaveLookButton look={resultUri ? lookWithResult(favoriteLook, { imageUri: resultUri, warning: warning || undefined,
+        updatedAt: history.find(item => item.imageUri === resultUri)?.updatedAt || controlledUpdatedAt || Date.now(), tuckMode: effectiveTuckMode }) : favoriteLook} /> : null}
       {mainButton}
       {/* One button: every try-on is the full-quality look (one call, one price).
           Drafts made earlier stay labelled in the history. */}

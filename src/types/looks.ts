@@ -19,6 +19,8 @@ export type GeneratedLook = {
   source?: 'stylist' | 'rules';
   why?: string;
   tryOnImageUri?: string;
+  /** The server link the kept picture came from: the look on screen may still hold it, and is the same favourite. */
+  tryOnSourceUri?: string;
   tryOnWarning?: string;
   tryOnUpdatedAt?: number;
   tryOnQualityMode?: 'fast' | 'quality';

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { TRYON_SECTIONS } from '../domain/accessories';
 import { ActivityIndicator, FlatList, Image, Keyboard, Modal, StyleSheet, Text, View } from 'react-native';
-import { ArrowUpRight, Check, ChevronRight, Clock3, History, RefreshCw, Save, Shirt, X } from 'lucide-react-native';
+import { ArrowUpRight, ChevronRight, Clock3, History, RefreshCw, Shirt, X } from 'lucide-react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
-import { SavedLook } from '../types/looks';
+import { lookFromJob } from '../domain/favorites';
+import { SaveLookButton } from './SaveLook';
 import { TryOnJob } from '../services/tryOnJobs';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -21,15 +22,13 @@ import { font, hairline } from './studio/studio';
 
 type Props = {
   items: WardrobeItem[];
-  savedLooks: SavedLook[];
   itemId?: string;
   onFilter: (id?: string) => void;
   onOpenItem: (id: string) => void;
   onTryOn: (ids: string[]) => void;
-  onSave: (look: SavedLook) => void;
 };
 
-export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenItem, onTryOn, onSave }: Props) {
+export function GenerationHistory({ items, itemId, onFilter, onOpenItem, onTryOn }: Props) {
   const { jobs, ready, error, store } = useTryOnJobs();
   const { colors: c, isDark } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -57,7 +56,6 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
   }) : t('Ранее');
   const status = (job: TryOnJob) => t(job.status === 'succeeded' ? 'Готово' : job.status === 'pending' ? 'Генерируем образ…'
     : job.status === 'retry' ? 'Ожидает проверки' : 'Не получилось');
-  const saved = !!selected?.result && savedLooks.some(look => look.id === `job-${selected.id}` || look.tryOnImageUri === selected.result?.imageUri);
   const canRepeat = !!selected?.itemIds.length && selected.itemIds.every(id => {
     const item = byId.get(id);
     return item?.imageUri && TRYON_SECTIONS.includes(item.section);
@@ -81,8 +79,8 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
         {ready && <Pill variant="primary" title={t(itemId && byId.has(itemId) ? 'Примерить вещь' : 'К примерке')} icon={ArrowUpRight}
           onPress={() => onTryOn(itemId && byId.has(itemId) ? [itemId] : [])} />}
       </View>}
-      renderItem={({ item: job }) => <AppPressable accessibilityRole="button"
-        accessibilityLabel={t('Открыть генерацию: {name}', { name: job.name })} onPress={() => setSelectedId(job.id)} style={styles.card}>
+      renderItem={({ item: job }) => <View style={styles.card}><AppPressable accessibilityRole="button"
+        accessibilityLabel={t('Открыть генерацию: {name}', { name: job.name })} onPress={() => setSelectedId(job.id)} style={styles.cardBody}>
         <View style={[styles.photo, job.result && styles.bare]}>
           {job.result ? <FittedImage uri={job.result.imageUri} radius={24} style={StyleSheet.absoluteFill} />
             : job.status === 'pending' ? <ActivityIndicator size="large" color={c.text} /> : <Clock3 size={32} color={c.muted} strokeWidth={1.3} />}
@@ -90,7 +88,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
         <Text numberOfLines={2} style={styles.name}>{job.name}</Text>
         <Text style={styles.date}>{date(job)}</Text>
         <Text style={[styles.status, job.status === 'failed' && { color: c.danger }]}>{status(job)}</Text>
-      </AppPressable>} />
+      </AppPressable>{job.result ? <SaveLookButton look={lookFromJob(job)} compact /> : null}</View>} />
     {selected && <Modal presentationStyle="fullScreen" animationType="slide" onRequestClose={close}>
       <SafeAreaProvider>
       <StudioBackdrop>
@@ -125,13 +123,7 @@ export function GenerationHistory({ items, savedLooks, itemId, onFilter, onOpenI
           })}
           {selected.status === 'retry' && <Pill title={t('Проверить результат')} icon={RefreshCw} loading={checkingId === selected.id} haptics={false}
             onPress={() => { const id = selected.id; setCheckingId(id); void store.poll(selected).finally(() => { if (mounted.current) setCheckingId(value => value === id ? null : value); }); }} />}
-          {selected.result && <Pill variant="primary" title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved}
-            onPress={() => {
-              const result = selected.result!;
-              onSave({ id: `job-${selected.id}`, name: selected.name, itemIds: selected.itemIds, createdAt: selected.createdAt,
-                tryOnImageUri: result.imageUri, tryOnUpdatedAt: result.updatedAt, tryOnWarning: result.warning, tuckMode: result.tuckMode,
-                tryOnQualityMode: 'quality', tryOnHistory: [result] });
-            }} />}
+          {selected.result && <SaveLookButton variant="primary" look={lookFromJob(selected)} />}
           {canRepeat && <Pill title={t('Примерить снова')} icon={ArrowUpRight}
             onPress={() => { close(); onTryOn(selected.itemIds); }} />}
         </FormScrollView>}
@@ -150,7 +142,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   heading: { ...font('semibold'), color: c.text, fontSize: 15, lineHeight: 20, flexShrink: 1, textAlign: 'center' },
   muted: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 19 },
   error: { ...font('regular'), color: c.danger, fontSize: 13, lineHeight: 18 },
-  card: { width: '48%', flexGrow: 0, flexShrink: 1, gap: 3, marginBottom: 22 },
+  card: { width: '48%', flexGrow: 0, flexShrink: 1, gap: 8, marginBottom: 22 },
+  cardBody: { gap: 3 },
   // Photo frames as in the studio: 24 radius on the soft stage.
   photo: { width: '100%', aspectRatio: 3 / 4, borderRadius: 24, overflow: 'hidden', backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   name: { ...font('medium'), color: c.text, fontSize: 14, lineHeight: 19 },

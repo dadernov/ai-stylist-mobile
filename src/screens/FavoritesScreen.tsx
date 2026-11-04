@@ -16,8 +16,9 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
 import { Glass, Pill } from '../components/studio/Glass';
 import { GarmentImage } from '../components/studio/Garment';
-import { gridLook } from '../components/studio/lookLayout';
+import { gridCount, gridLook } from '../components/studio/lookLayout';
 import { FittedImage } from '../components/ui/FittedFrame';
+import { useImageAspect } from '../components/studio/useImageAspect';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { SheetGestureBlock } from '../components/studio/SheetHandle';
 import { font, INK_FAINT, studioTint } from '../components/studio/studio';
@@ -45,6 +46,8 @@ function formatDate(ts: number): string {
 const HEIGHTS = [[250, 210, 236], [210, 250, 224]];
 const GAP = 12;
 const CAPTION_ROOM = 62;
+const PIECES_LOW = 112;
+const PIECES_TALL = 156;
 const RIGHT_OFFSET = 32;
 
 const lookTitle = (look: GeneratedLook, t: (key: string) => string) => look.title.split(' + ').map(part => t(part)).join(' + ');
@@ -65,29 +68,31 @@ const FavoriteCard = memo(function FavoriteCard({ look, height, width, index, it
   const styles = useThemedStyles(makeStyles);
   const lookItems = useMemo(() => look.itemIds.map(id => itemsById[id]).filter(Boolean) as WardrobeItem[], [look.itemIds, itemsById]);
   const tryOnUri = reanchorTryOnUri(look.tryOnImageUri);
-  const placed = useMemo(() => (tryOnUri || !width ? [] : gridLook(lookItems, width, height - CAPTION_ROOM)), [tryOnUri, lookItems, width, height]);
+  // A picture that can't be read any more (an old link long gone) leaves its look to the pieces, with no empty frame.
+  const aspect = useImageAspect(tryOnUri);
+  const shownTryOn = aspect === null ? null : tryOnUri;
+  const piecesHeight = shownTryOn ? (gridCount(lookItems) >= 4 ? PIECES_TALL : PIECES_LOW) : height - CAPTION_ROOM;
+  const placed = useMemo(() => (!width ? [] : gridLook(lookItems, width, piecesHeight)), [lookItems, width, piecesHeight]);
+  // The try-on on top in its own shape, the pieces under it: the card is as tall as the two together, so neither stands in a blank frame.
+  const tryOnHeight = shownTryOn ? Math.round(Math.min(width * 1.7, Math.max(width * 0.9, width / (aspect || 0.75)))) : 0;
+  const cardHeight = shownTryOn ? tryOnHeight + (placed.length ? piecesHeight : 0) + CAPTION_ROOM : height;
   const byId = new Map(lookItems.map(item => [item.id, item]));
   const tint = studioTint(lookItems.find(item => item.id === placed[0]?.id));
   const title = lookTitle(look, t);
   return (
     <FadeInView delay={Math.min(index, 6) * 70}>
-      <AppPressable accessibilityRole="button" accessibilityLabel={title} onPress={() => onOpen(look.id)} style={[styles.card, { height }]}>
-        {tryOnUri ? (
-          <Image source={{ uri: tryOnUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        ) : (
-          <>
-            <LinearGradient colors={isDark ? ['#2A2D32', '#1C1F23'] : ['#FFFFFF', tint || '#E4E4E1']} style={StyleSheet.absoluteFill} />
+      <AppPressable accessibilityRole="button" accessibilityLabel={title} onPress={() => onOpen(look.id)} style={[styles.card, { height: cardHeight }]}>
+        <LinearGradient colors={isDark ? ['#2A2D32', '#1C1F23'] : ['#FFFFFF', tint || '#E4E4E1']} style={StyleSheet.absoluteFill} />
+        {shownTryOn ? <FittedImage uri={shownTryOn} radius={26} style={{ width, height: tryOnHeight }} /> : null}
             {placed.length ? placed.map(piece => (
-              <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: piece.y, width: piece.w, height: piece.h }}>
+              <View key={piece.id} pointerEvents="none" style={{ position: 'absolute', left: piece.x, top: tryOnHeight + piece.y, width: piece.w, height: piece.h }}>
                 <GarmentImage item={byId.get(piece.id)} print printRadius={Math.min(16, piece.w * 0.14)} style={{ width: piece.w, height: piece.h }} />
               </View>
-            )) : <View style={[styles.emptyPieces, { bottom: CAPTION_ROOM }]}><Shirt size={40} strokeWidth={1} color={INK_FAINT} /></View>}
-          </>
-        )}
+            )) : shownTryOn ? null : <View style={[styles.emptyPieces, { bottom: CAPTION_ROOM }]}><Shirt size={40} strokeWidth={1} color={INK_FAINT} /></View>}
         <Glass radius={18} style={styles.caption}>
           <View style={styles.captionText}>
             <Text style={[font('semibold'), styles.captionTitle]} numberOfLines={2}>{title}</Text>
-            <Text style={[font('regular'), styles.captionEvent, { color: isDark ? '#D0D3D8' : '#4F555C' }]} numberOfLines={1}>{t(look.event)}</Text>
+            {look.event ? <Text style={[font('regular'), styles.captionEvent, { color: isDark ? '#D0D3D8' : '#4F555C' }]} numberOfLines={1}>{t(look.event)}</Text> : null}
           </View>
         </Glass>
       </AppPressable>

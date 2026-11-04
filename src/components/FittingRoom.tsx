@@ -1,10 +1,8 @@
 import { usePhotoPicker } from './usePhotoPicker';
-import { OverlayOutlet } from './OverlayHost';
 import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SheetStrip } from './ui/FormScrollView';
 import { ArrowUpRight, Bookmark, BookmarkCheck, Check, Download, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WardrobeItem } from '../data/mock';
 import { SavedLook, TryOnHistoryItem } from '../types/looks';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
@@ -24,6 +22,8 @@ import { useGenerationDock } from './GenerationDock';
 import { tryOnStatusLabel } from './tryOnStatus';
 import { saveTryOnToGallery } from '../services/tryOnExport';
 import { TryOnJob } from '../services/tryOnJobs';
+import { lookFromJob, lookWithResult, plainLook } from '../domain/favorites';
+import { SaveLookButton } from './SaveLook';
 import { isLegwear } from '../domain/legwear';
 import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 
@@ -213,13 +213,13 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
   }, [showResult, reduced, fade]);
   const [saved, setSaved] = useState<string[]>([]);
   const [viewer, setViewer] = useState(false);
-  // A finished try-on opened full screen has been looked at: it no longer waits in the small window.
-  const openViewer = (job: TryOnJob) => {
+  // A finished try-on brought into the frame has been looked at: it no longer waits in the small window.
+  const show = (job: TryOnJob) => {
     setCurrentId(job.id);
-    if (!job.result) return;
-    dock.viewed(job.id);
-    setViewer(true);
+    if (job.result) dock.viewed(job.id);
   };
+  // The picture itself only zooms: its actions stand right under it.
+  const zoom = (job: TryOnJob) => { show(job); if (job.result) setViewer(true); };
   const [gallery, setGallery] = useState<{ uri: string; state: 'saving' | 'saved' | 'error'; message?: string }>();
   const galleryState = gallery && gallery.uri === result?.imageUri ? gallery : undefined;
   const pieces = (current?.itemIds || []).map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
@@ -259,7 +259,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
         {result ? <Animated.View pointerEvents={showResult ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { opacity: fade,
           transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1.04, 1] }) }] }]}>
           <AppPressable feedback={false} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть во весь экран')}
-            onPress={() => openViewer(current!)} style={StyleSheet.absoluteFill}>
+            onPress={() => zoom(current!)} style={StyleSheet.absoluteFill}>
             <Image source={{ uri: result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
           </AppPressable>
         </Animated.View> : null}
@@ -304,12 +304,12 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
       </View>
     </View>
     {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
-      : current ? <View style={styles.actions}>
-        {result ? <Pill style={{ flex: 1 }} variant={quiet ? 'glass' : 'primary'} icon={galleryState?.state === 'saved' ? Check : Download}
-          title={t(galleryState?.state === 'saving' ? 'Сохраняем…' : galleryState?.state === 'saved' ? 'Сохранено' : 'Сохранить')}
+      : current ? <View style={{ gap: 8 }}>{result ? <SaveLookButton look={lookFromJob(current)} variant={quiet ? 'glass' : 'primary'} /> : null}<View style={styles.actions}>
+        {result ? <Pill style={{ flex: 1 }} icon={galleryState?.state === 'saved' ? Check : Download}
+          title={t(galleryState?.state === 'saving' ? 'Сохраняем…' : galleryState?.state === 'saved' ? 'Сохранено' : 'В галерею')}
           accessibilityLabel={t('Сохранить в галерею')} disabled={galleryState?.state === 'saving'} onPress={() => { void saveToGallery(); }} /> : null}
         <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Переодеть')} disabled={!pieces.length} onPress={() => onRedo(current.itemIds)} />
-      </View> : null}
+      </View></View> : null}
     {galleryState?.message ? <Text style={galleryState.state === 'error' ? styles.error : styles.muted}>{galleryState.message}</Text> : null}
     {error ? <Text style={styles.error}>{t(error)}</Text> : null}
     {recent.length ? <>
@@ -323,7 +323,7 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
         {recent.map(job => {
           const on = job.id === current?.id;
           return <AppPressable key={job.id} accessibilityRole="button" accessibilityLabel={t('Открыть примерку: {name}', { name: job.name })}
-            accessibilityState={{ selected: on }} onPress={() => openViewer(job)}
+            accessibilityState={{ selected: on }} onPress={() => show(job)}
             style={[styles.thumb, { borderColor: on ? ink : 'transparent' }]}>
             {job.result ? <Image source={{ uri: job.result.imageUri }} resizeMode="cover" style={StyleSheet.absoluteFill} />
               : <Glass radius={14} style={[StyleSheet.absoluteFill, styles.thumbState]}>
@@ -335,19 +335,11 @@ function FittingStage({ items, modelUri, onSave, onOpenHistory, onPickModel, onR
         })}
       </SheetStrip>
     </> : null}
-    <Modal visible={viewer && Boolean(result)} presentationStyle="fullScreen" animationType="slide" onRequestClose={() => setViewer(false)}>
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: c.background }}>
-        {result && current ? <SafeAreaView style={{ flex: 1, backgroundColor: c.background, paddingHorizontal: 20, gap: 16 }}>
-          <View style={styles.viewerHead}>
-            <Text numberOfLines={2} style={styles.viewerTitle}>{current.name}</Text>
-            <Pill size="icon" icon={X} accessibilityLabel={t('Закрыть примерку')} onPress={() => setViewer(false)} />
-          </View>
-          <ZoomableImage uri={result.imageUri} />
-          <PrimaryButton title={t(saved.includes(current.id) ? 'Сохранено' : 'Сохранить образ')} icon={saved.includes(current.id) ? Check : Save}
-            disabled={saved.includes(current.id)} onPress={() => saveLook(current)} style={{ marginBottom: 16 }} />
-        </SafeAreaView> : null}
-      </SafeAreaProvider>
-      <OverlayOutlet />
+    <Modal transparent animationType="fade" visible={viewer && Boolean(result)} onRequestClose={() => setViewer(false)}>
+      <View style={styles.zoomBackdrop}>
+        {result ? <ZoomableImage uri={result.imageUri} style={styles.zoomImage} /> : null}
+        <Pill title={t('Закрыть')} style={styles.zoomClose} onPress={() => setViewer(false)} />
+      </View>
     </Modal>
   </View>;
 }
@@ -442,7 +434,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
           .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
       }}
       sheetContent={<TextInput style={styles.nameInput} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
-      sheetFooter={<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
+      sheetFooter={<>{latest ? <SaveLookButton look={lookWithResult(plainLook(`fitting-${items.map(item => item.id).join('-')}`, name.trim() || items.map(item => item.name).join(' + '), items.map(item => item.id)), latest)} /> : null}<PrimaryButton title={t(saved ? 'Сохранено' : 'Сохранить образ')} icon={saved ? Check : Save} disabled={saved} variant="ghost" onPress={() => {
         onSave({
           id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
           itemIds: items.map(item => item.id), createdAt: Date.now(),
@@ -450,7 +442,7 @@ function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Prop
           tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
         });
         setSaved(true);
-      }} />} />
+      }} /></>} />
   </StudioSheet>;
 }
 
@@ -490,8 +482,9 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   thumb: { width: 62, height: 84, borderRadius: 16, overflow: 'hidden', borderWidth: 2, backgroundColor: c.surface },
   thumbState: { borderRadius: 14 },
   thumbCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  viewerHead: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
-  viewerTitle: { ...font('semibold'), flex: 1, color: c.text, fontSize: 17, lineHeight: 22 },
+  zoomBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
+  zoomImage: { width: '100%', height: '86%', flex: 0 },
+  zoomClose: { alignSelf: 'center', marginTop: 12 },
   nameInput: { ...font('regular'), color: c.text, backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   searchBar: { height: 44 },
   searchInner: { flex: 1, flexDirection: 'row', gap: 10, alignItems: 'center', paddingHorizontal: 16 },
