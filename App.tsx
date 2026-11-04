@@ -39,7 +39,6 @@ import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
-import { removeUnusedFavoriteCopies } from './src/services/tryOnPhotos';
 import { FavoritesProvider } from './src/components/SaveLook';
 import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
@@ -389,10 +388,6 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
 
   useEffect(() => {
     persist(STORAGE_KEYS.favorites, favoriteLooks, 'избранное');
-    // Copies of pictures no favourite shows any more. Never from a list that could not be read: it only looks empty.
-    if (isReady && session && !unreadableKeys.current.has(STORAGE_KEYS.favorites) && !unreadableKeys.current.has(STORAGE_KEYS.savedLooks) && !unreadableKeys.current.has(STORAGE_KEYS.lastLooks)) {
-      void removeUnusedFavoriteCopies([...favoriteLooks, ...savedLooks, ...lastLooks], session.login).catch(() => {});
-    }
   }, [isReady, favoriteLooks]);
 
   // Items the server has not read yet get its reading once, in the background: the traits
