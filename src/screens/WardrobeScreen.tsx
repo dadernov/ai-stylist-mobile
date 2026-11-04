@@ -1,3 +1,4 @@
+import { NAMED_COLORS } from '../domain/namedColors';
 import {
   ActivityIndicator,
   Animated,
@@ -188,35 +189,7 @@ const sectionByCategory: Record<string, string> = {
 
 export const getSectionByCategory = (category: string) => sectionByCategory[category] || 'Верх';
 
-const namedColors = [
-  { name: 'Белый', hex: '#FFFFFF' },
-  { name: 'Молочный', hex: '#FFF8E7' },
-  { name: 'Кремовый', hex: '#FFF4D6' },
-  { name: 'Бежевый', hex: '#F5F5DC' },
-  { name: 'Песочный', hex: '#E6D1A3' },
-  { name: 'Карамельный', hex: '#CDAA7D' },
-  { name: 'Коричневый', hex: '#8B5A2B' },
-  { name: 'Черный', hex: '#000000' },
-  { name: 'Графит', hex: '#3A3A3A' },
-  { name: 'Серый', hex: '#808080' },
-  { name: 'Серебристый', hex: '#BFC5C9' },
-  { name: 'Синий', hex: '#1E88E5' },
-  { name: 'Синий деним', hex: '#2F4B7C' },
-  { name: 'Голубой', hex: '#4FC3F7' },
-  { name: 'Бирюзовый', hex: '#26C6DA' },
-  { name: 'Зеленый', hex: '#43A047' },
-  { name: 'Оливковый', hex: '#7D8F3B' },
-  { name: 'Хаки', hex: '#6B7B4A' },
-  { name: 'Желтый', hex: '#FDD835' },
-  { name: 'Горчичный', hex: '#C9A227' },
-  { name: 'Оранжевый', hex: '#FB8C00' },
-  { name: 'Красный', hex: '#E53935' },
-  { name: 'Бордовый', hex: '#7B1E3B' },
-  { name: 'Розовый', hex: '#F48FB1' },
-  { name: 'Пудровый', hex: '#E5B6C6' },
-  { name: 'Фиолетовый', hex: '#8E24AA' },
-  { name: 'Лавандовый', hex: '#B39DDB' }
-];
+const namedColors = NAMED_COLORS;
 
 export const colorOptions = namedColors.map((item) => item.name);
 

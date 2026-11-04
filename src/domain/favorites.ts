@@ -13,12 +13,12 @@ const samePieces = (a: string[], b: string[]) => {
 };
 
 /**
- * One rule for «is it saved»: a look with a try-on is saved when that very picture is; a look without one, when its id or
- * its pieces are. Another try-on of the same pieces is therefore a favourite of its own, and the same pieces never twice bare.
+ * One rule for «is it saved»: a look with a try-on is saved when that very picture is; a look without one, when its id is or
+ * the same pieces are saved without a try-on. Another try-on of the same pieces is therefore a favourite of its own, and the same pieces never twice bare.
  */
 const isSame = (favorite: GeneratedLook, look: GeneratedLook) => look.tryOnImageUri
   ? shows(favorite, look.tryOnImageUri)
-  : favorite.id === look.id || samePieces(favorite.itemIds, look.itemIds);
+  : favorite.id === look.id || (!favorite.tryOnImageUri && samePieces(favorite.itemIds, look.itemIds));
 
 export const isLookSaved = (favorites: GeneratedLook[], look: GeneratedLook) => favorites.some(favorite => isSame(favorite, look));
 

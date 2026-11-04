@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertCircle, Check, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
@@ -21,6 +21,8 @@ import { FavoritesProvider, useFavorites } from './SaveLook';
 import { lookFromJob } from '../domain/favorites';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
+import { DevelopingImage } from './studio/DevelopingImage';
+import { revealLedger } from './studio/generationFog';
 import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
 import { tryOnStatusLabel } from './tryOnStatus';
 
@@ -36,8 +38,10 @@ type DockApi = {
   started: (jobId: string, leave?: () => void) => void;
   /** A finished look was looked at elsewhere (the recent try-ons): it leaves the small window. */
   viewed: (jobId: string) => void;
+  /** The big window is up: what is under it is out of sight, its fog pauses and its reveal waits. */
+  windowUp: boolean;
 };
-const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {}, viewed: () => {} });
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {}, viewed: () => {}, windowUp: false });
 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
@@ -82,7 +86,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   // When this app session first saw each try-on running, for the progress bar and the timer.
   const startedAt = useRef<Record<string, number>>({});
   for (const job of jobs) {
-    if (job.status === 'pending') startedAt.current[job.id] ??= Date.now();
+    // Seen running in this session: its reveal is owed, wherever the user is when it finishes.
+    if (job.status === 'pending') { startedAt.current[job.id] ??= Date.now(); revealLedger.track(job.id); }
     else delete startedAt.current[job.id];
   }
   // Finished looks the user has looked at in the window: they leave the dock when it closes.
@@ -117,8 +122,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
     setActionError(null);
     setSetup({ ...request, options: request.options || {} });
   }, []);
-  const viewed = useCallback((id: string) => setDocked(previous => previous.filter(current => current !== id)), []);
-  const api = useMemo(() => ({ open, prepare, started, viewed }), [open, prepare, started, viewed]);
+  const viewed = useCallback((id: string) => { revealLedger.forget(id); setDocked(previous => previous.filter(current => current !== id)); }, []);
+  const windowUp = windowOpen || Boolean(setup);
+  const api = useMemo(() => ({ open, prepare, started, viewed, windowUp }), [open, prepare, started, viewed, windowUp]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.
@@ -266,7 +272,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   // The folded window floats over whatever is on top too: drawn under the
   // try-on sheet it could be neither seen nor reached until the sheet closed.
   const mini = dockJobs.length > 0 && !stage ? (
-    <GenerationMini jobs={dockJobs} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={id => open(id)} onDismiss={dismiss} />
+    <GenerationMini jobs={dockJobs} items={items} bottom={bottom} modelUri={modelUri} startedAt={startedAt.current} onOpen={id => open(id)} onDismiss={dismiss} />
   ) : null;
   const miniInline = useOverlay('generation-mini', mini);
   // Over the screens the banner comes through the overlay host too; over the window, inside it.
@@ -282,8 +288,8 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   );
 }
 
-function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }: {
-  jobs: TryOnJob[]; bottom: number; modelUri?: string; startedAt: Record<string, number>;
+function GenerationMini({ jobs, items, bottom, modelUri, startedAt, onOpen, onDismiss }: {
+  jobs: TryOnJob[]; items: WardrobeItem[]; bottom: number; modelUri?: string; startedAt: Record<string, number>;
   onOpen: (id: string) => void; onDismiss: (id: string) => void;
 }) {
   const { isDark } = useTheme();
@@ -304,7 +310,7 @@ function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }
     <Animated.View style={[styles.mini, SHADOWS.floating, { bottom: offset, backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark), opacity: appear,
       transform: [{ scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }] }]}>
       <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={32}>
-        {jobs.map(job => <MiniPage key={job.id} job={job} modelUri={modelUri} startedAt={startedAt[job.id]} onOpen={onOpen} onDismiss={onDismiss} />)}
+        {jobs.map((job, index) => <MiniPage key={job.id} job={job} items={items} visible={index === page} modelUri={modelUri} startedAt={startedAt[job.id]} onOpen={onOpen} onDismiss={onDismiss} />)}
       </ScrollView>
       {jobs.length > 1 ? (
         <View style={styles.dots} pointerEvents="none">
@@ -315,40 +321,35 @@ function GenerationMini({ jobs, bottom, modelUri, startedAt, onOpen, onDismiss }
   );
 }
 
-function MiniPage({ job, modelUri, startedAt, onOpen, onDismiss }: {
-  job: TryOnJob; modelUri?: string; startedAt?: number; onOpen: (id: string) => void; onDismiss: (id: string) => void;
+/** The small window: the same fog over the same photo and the same reveal, with the status cut down to its clock. */
+function MiniPage({ job, items, visible, modelUri, startedAt, onOpen, onDismiss }: {
+  job: TryOnJob; items: WardrobeItem[]; visible: boolean; modelUri?: string; startedAt?: number; onOpen: (id: string) => void; onDismiss: (id: string) => void;
 }) {
   const t = useT();
+  const { isDark } = useTheme();
   const pending = job.status === 'pending';
   const result = resultOf(job);
   const failed = !pending && !result;
   const [now, setNow] = useState(Date.now());
-  const pulse = useRef(new Animated.Value(0)).current;
-  const reduced = useReducedMotion();
   useEffect(() => {
     if (!pending) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
-    if (reduced) { pulse.setValue(0.5); return () => clearInterval(timer); }
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => { loop.stop(); clearInterval(timer); };
-  }, [pending, pulse, reduced]);
+    return () => clearInterval(timer);
+  }, [pending]);
   const elapsed = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
   const clock = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
   const label = pending
     ? job.progress?.stage === 'queue' ? t('Очередь: {position}', { position: job.progress.position || 1 })
       : job.progress?.stage === 'upload' ? t('Отправка…') : clock
     : result ? t('Готово') : t('Ошибка');
-  const photo = result || job.progress?.previewUrl || modelUri;
+  const photo = job.progress?.previewUrl || modelUri || null;
+  const garments = job.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[];
   return (
     <AppPressable accessibilityRole="button" accessibilityLabel={t('Развернуть примерку: {name}', { name: job.name })}
       onPress={() => onOpen(job.id)} style={styles.page}>
-      {photo ? <Image source={{ uri: photo }} blurRadius={pending ? 14 : 0} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
-      {pending ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.veil,
-        { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.45] }) }]} /> : null}
+      <DevelopingImage surface="mini" revealKey={job.id} photoUri={photo} resultUri={result} developing={pending} isDark={isDark} active={visible} items={garments}>
+        {result ? <Image source={{ uri: result }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+      </DevelopingImage>
       <View style={styles.footer} pointerEvents="none">
         {pending ? <ActivityIndicator size={12} color="#FFFFFF" />
           : result ? <Check size={14} color="#FFFFFF" /> : <AlertCircle size={14} color="#FFFFFF" />}
@@ -368,7 +369,6 @@ const styles = StyleSheet.create({
   // A photo frame of the studio: 24 radius, glass ground and its light edge.
   mini: { position: 'absolute', right: 16, width: MINI_WIDTH, height: MINI_HEIGHT, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   page: { width: MINI_WIDTH, height: MINI_HEIGHT, overflow: 'hidden' },
-  veil: { backgroundColor: '#FFFFFF' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 10, paddingTop: 16, paddingBottom: 11, backgroundColor: 'rgba(18,20,23,0.5)' },
   footerText: { ...font('semibold'), color: '#FFFFFF', fontSize: 12, lineHeight: 16, flexShrink: 1 },

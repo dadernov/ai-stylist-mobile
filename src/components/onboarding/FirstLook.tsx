@@ -23,9 +23,8 @@ import { PhotoGuide } from '../PhotoGuide';
 import { PhotoAdvice } from '../PhotoAdvice';
 import { tryOnStatusLabel } from '../tryOnStatus';
 import { StudioBackdrop } from '../studio/StudioBackdrop';
-import { DevelopingImage } from '../studio/DevelopingImage';
-import { useFrameAspect } from '../studio/useImageAspect';
-import { FittedFrame } from '../ui/FittedFrame';
+import { GenerationView } from '../studio/GenerationView';
+import { REVEAL_TOTAL_MS } from '../studio/generationFog';
 import { ChoicePill, Glass, Pill } from '../studio/Glass';
 import { SaveLookButton } from '../SaveLook';
 import { lookFromJob } from '../../domain/favorites';
@@ -262,11 +261,10 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   const job = jobs.find(candidate => candidate.id === jobId);
   const view = declined ? 'declined' : magicView(job, Boolean(startError));
   const resultUri = job?.result?.imageUri || null;
-  const { aspect, settling, fit } = useFrameAspect(modelUri, resultUri, view !== 'ready');
   useEffect(() => {
     if (view !== 'ready') { setRevealed(false); return; }
-    // DevelopingImage sharpens over about 1.3 s; with reduced motion it simply crossfades.
-    const timer = setTimeout(() => setRevealed(true), reduced ? 0 : 1400);
+    // The look comes through the fog first; with reduced motion it simply crossfades.
+    const timer = setTimeout(() => setRevealed(true), reduced ? 0 : REVEAL_TOTAL_MS + 100);
     return () => clearTimeout(timer);
   }, [view, reduced]);
 
@@ -292,14 +290,11 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   const ink = isDark ? INK_ON_DARK : INK;
   return <>
     <Heading title={ready ? t('Вот и ты!') : t('Примеряем на тебя')} text={ready ? t('Твоя первая примерка готова. Дальше будет только интереснее.') : t('Это займёт около минуты. А пока расскажи немного о себе.')} />
-    <View style={styles.frame} accessible accessibilityLabel={ready ? t('Готовая примерка') : t('Примерка готовится')}>
-      <FittedFrame aspect={aspect} radius={28} style={StyleSheet.absoluteFill}>
-        <DevelopingImage photoUri={modelUri} resultUri={resultUri} developing={!ready || settling} isDark={isDark}>
-          {resultUri ? <Image source={{ uri: resultUri }} resizeMode={fit} style={StyleSheet.absoluteFill} /> : null}
-        </DevelopingImage>
-      </FittedFrame>
+    <View accessible accessibilityLabel={ready ? t('Готовая примерка') : t('Примерка готовится')}>
+      <GenerationView jobKey={jobId} busy={!ready} label={tryOnStatusLabel(job?.progress, t)} stage={job?.progress?.stage} items={[garment]} sourceUri={modelUri}
+        photoUri={modelUri} resultUri={resultUri} radius={28} frameStyle={styles.frame}
+        renderResult={fit => <Image source={{ uri: resultUri! }} resizeMode={fit} style={StyleSheet.absoluteFill} />} />
     </View>
-    {!ready ? <Text accessibilityLiveRegion="polite" style={[font('regular'), styles.status, { color: inkSoft(isDark) }]}>{tryOnStatusLabel(job?.progress, t)}</Text> : null}
     {!ready ? <Glass radius={24}><View style={styles.card}>
       {question ? <>
         <Text style={[font('semibold'), styles.question, { color: ink }]}>{t(question.title)}</Text>
@@ -330,7 +325,6 @@ const styles = StyleSheet.create({
   preview: { width: '60%', aspectRatio: 3 / 4, alignSelf: 'center', borderRadius: 24 },
   garment: { width: 140, height: 140, alignSelf: 'center', borderRadius: 20 },
   frame: { width: '100%', aspectRatio: 3 / 4 },
-  status: { fontSize: 13, textAlign: 'center' },
   card: { gap: 12, padding: 16 },
   question: { fontSize: 16, lineHeight: 22 },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

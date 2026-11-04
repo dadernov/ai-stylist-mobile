@@ -18,13 +18,14 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/flat-reading.cjs && node tests/outfits.cjs && node tests/look-comments.cjs && node tests/look-layout.cjs && node tests/image-fit.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/closet-sync.cjs && node tests/modal-safe-area.cjs && node tests/overlay-outlets.cjs && node tests/overlay-nesting.cjs && node tests/sheet-gesture.cjs && node tests/first-look.cjs && node tests/daily-look.cjs && node tests/wardrobe-rail.cjs && node tests/reflection-cache.cjs && node tests/favorites.cjs"
+    "test": "node tests/i18n-coverage.cjs && node tests/item-name.cjs && node tests/flat-reading.cjs && node tests/outfits.cjs && node tests/look-comments.cjs && node tests/look-layout.cjs && node tests/image-fit.cjs && node tests/storage.cjs && node tests/crop.cjs && node tests/account-jobs.cjs && node tests/closet-sync.cjs && node tests/modal-safe-area.cjs && node tests/overlay-outlets.cjs && node tests/overlay-nesting.cjs && node tests/sheet-gesture.cjs && node tests/first-look.cjs && node tests/daily-look.cjs && node tests/wardrobe-rail.cjs && node tests/reflection-cache.cjs && node tests/favorites.cjs && node tests/generation-fog.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/onest": "^0.4.2",
     "@expo-google-fonts/tenor-sans": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.31",
     "expo-blur": "~57.0.3",
     "expo-crypto": "~57.0.4",
@@ -38,8 +39,8 @@
     "expo-media-library": "~57.0.5",
     "expo-notifications": "~57.0.21",
     "expo-secure-store": "~57.0.4",
-    "expo-splash-screen": "~57.0.10",
     "expo-sharing": "~57.0.22",
+    "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-updates": "~57.0.26",
     "lucide-react-native": "^1.46.0",
