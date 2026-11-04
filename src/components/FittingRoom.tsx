@@ -12,7 +12,7 @@ import { EmptyState } from './ui/EmptyState';
 import { Chip } from './Chip';
 import { PhotoAdvice } from './PhotoAdvice';
 import { Glass, Pill } from './studio/Glass';
-import { font, glassEdge, glassFill, INK, isCutout, useReducedMotion } from './studio/studio';
+import { font, glassEdge, glassFill, INK, isCutout, useReducedMotion, SHEET_CLOSE_MS } from './studio/studio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
@@ -82,7 +82,12 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   }, [selection.length, onSelectionCta, dock.prepare]);
   useEffect(() => () => onSelectionCta(null), [onSelectionCta]);
   // Come here with garments (a card, a look, the history): their setup step opens. Nothing starts before its «Примерить».
-  useEffect(() => { if (selection.length && (initialItemId || initialItemIds?.length)) dock.prepare(selection); }, []);
+  // The sheet that sent us here is still sliding away, and iOS drops a window opened meanwhile.
+  useEffect(() => {
+    if (!selection.length || !(initialItemId || initialItemIds?.length)) return;
+    const timer = setTimeout(() => dock.prepare(selection), SHEET_CLOSE_MS);
+    return () => clearTimeout(timer);
+  }, []);
   const visibleItems = items.filter(item => (section === 'Все' || item.section === section)
     && `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   // Stable while the wardrobe is unchanged, so a tile redraws only when its own state does.
@@ -121,7 +126,8 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
           const present = job.itemIds.flatMap(id => items.filter(item => item.id === id));
           if (!present.length) return;
           setSelectedIds(present.map(item => item.id));
-          dock.prepare(present, { options: job.options, name: job.name === present.map(item => item.name).join(' + ') ? undefined : job.name });
+          const name = job.name === present.map(item => item.name).join(' + ') ? undefined : job.name;
+          setTimeout(() => dock.prepare(present, { options: job.options, name }), SHEET_CLOSE_MS);
         }} />
       <PhotoAdvice uri={modelUri} />
       <View style={styles.row}>
@@ -210,7 +216,9 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
   const busy = current?.status === 'pending';
   const [after, setAfter] = useState(true);
   useEffect(() => { setAfter(true); }, [result?.imageUri]);
-  const showResult = Boolean(result && (after || !modelUri));
+  // «Before» is the very photo this look was made from; a look without it on record has no comparison rather than a wrong one.
+  const beforeUri = result ? current?.sourceUri : undefined;
+  const showResult = Boolean(result && (after || !beforeUri));
   // 1 shows the try-on, 0 the person's own photo.
   const fade = useRef(new Animated.Value(showResult ? 1 : 0)).current;
   useEffect(() => {
@@ -243,7 +251,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
   return <View style={{ gap: RESULT_GAP }}>
     <View style={[styles.frameShadow, { height: photoHeight }]}>
       <FittedFrame aspect={frame.aspect} radius={RESULT_RADIUS} holdHeight={busy || frame.settling} style={styles.frame}>
-        {modelUri ? <Animated.Image source={{ uri: modelUri }} resizeMode="contain" accessibilityLabel={t('Фото для примерки')}
+        {modelUri ? <Animated.Image source={{ uri: beforeUri || modelUri }} resizeMode="contain" accessibilityLabel={t('Фото для примерки')}
           style={[StyleSheet.absoluteFill, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
             transform: [{ scale: reduced ? 1 : fade.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }] }]} />
           : <View style={styles.noPhoto}>
@@ -266,7 +274,7 @@ function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPic
           </DevelopingImage>
         </View> : null}
         <ResultPhotoControls onShare={result && current ? () => sharing.offer({ uri: result.imageUri, items: pieces, title: current.name }) : undefined}
-          compare={result && modelUri && !fieldOwed ? { before: !after, onToggle: () => setAfter(value => !value) } : undefined}>
+          compare={result && beforeUri && !fieldOwed ? { before: !after, onToggle: () => setAfter(value => !value) } : undefined}>
           {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
         </ResultPhotoControls>
         {current && (result || !busy) ? <Glass radius={24} style={styles.caption}>

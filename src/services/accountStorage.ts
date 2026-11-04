@@ -6,7 +6,7 @@ import { WardrobeItem } from '../data/mock';
 import { decodeGarmentProfile, decodeStyleVec, decodeTraits } from '../domain/garmentTraits';
 export { decodeTraits } from '../domain/garmentTraits';
 import { loadRaw, loadValidated, saveJson } from './storage';
-import { mergeSavedLooks } from '../domain/favorites';
+import { mergeSavedLooks, settleTryOnLinks } from '../domain/favorites';
 import { reanchorPhoto, removeUnusedPhotos } from './photos';
 
 export type ProfileState = { displayName: string; authMethod?: string; avatarUri?: string; modelUri?: string; gender?: Gender; beautyAdvice?: boolean };
@@ -16,6 +16,7 @@ const OWNER_KEY = 'legacyWardrobeOwner';
 let migration: Promise<unknown> = Promise.resolve();
 
 export function prepareAccountStorage(login: string, claimLegacy = false): Promise<'ready' | 'claim'> {
+  purged.delete(login); // Registered again under the login: a new account.
   const run = async (): Promise<'ready' | 'claim'> => {
     const marker = accountKey(login, 'storageVersion');
     if (await AsyncStorage.getItem(marker) === '1') return 'ready';
@@ -163,16 +164,31 @@ export async function migrateSavedLooks(login: string, data: { favorites: Genera
   }
 }
 
+const purged = new Set<string>();
+export const isPurged = (login: string) => purged.has(login);
+
 /** Стирает всё локальное для аккаунта: записи, фото гардероба и кадры примерок. */
 export async function purgeAccountData(login: string) {
+  purged.add(login);
   const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion', 'aiConsent', 'closetSync', 'dismissedLooks', 'favoriteColors', 'dailyLook', 'onboardingSeen', SAVED_MERGED].map(key => accountKey(login, key));
   await Promise.all(keys.flatMap(key => [storage.removeItem(key).catch(() => {}), AsyncStorage.removeItem(key).catch(() => {})]));
   await removeUnusedPhotos([], login).catch(() => {});
   await removeTryOnFrames(login).catch(() => {});
+  // The pre-accounts copy kept as a backup is this account's data too: left behind, it would come back with the same login.
+  if (await AsyncStorage.getItem(OWNER_KEY).catch(() => null) === login) {
+    await AsyncStorage.multiRemove([...Object.values(DATA_KEYS), OWNER_KEY]).catch(() => {});
+  }
 }
 
 async function removeTryOnFrames(login: string) {
   const FileSystem = await import('expo-file-system/legacy');
   if (!FileSystem.documentDirectory) return;
   await FileSystem.deleteAsync(`${FileSystem.documentDirectory}try-ons/${encodeURIComponent(login)}/`, { idempotent: true });
+}
+
+/** The favourites with no picture left hanging on a server link. A list that could not be read is left alone. */
+export async function settleFavoriteLinks(login: string, favorites: GeneratedLook[], failed: Set<string>) {
+  if (failed.has(DATA_KEYS.favorites)) return favorites;
+  const { keepTryOnImage } = await import('./tryOnPhotos');
+  return settleTryOnLinks(favorites, Date.now(), (uri, id) => keepTryOnImage(uri, id, login));
 }

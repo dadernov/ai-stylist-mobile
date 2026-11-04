@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, AppState, Image, NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertCircle, Check, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
@@ -24,7 +24,7 @@ import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { DevelopingImage } from './studio/DevelopingImage';
 import { revealLedger } from './studio/generationReveal';
-import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
+import { font, glassEdge, glassFill, useReducedMotion, SHEET_CLOSE_MS } from './studio/studio';
 import { tryOnStatusLabel } from './tryOnStatus';
 
 /** A look about to be tried on: the window first asks how to wear each garment. */
@@ -127,6 +127,13 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       setSetup({ items: garments, context, fresh: known.some(job => job.status === 'succeeded'), options: preset?.options || {}, name: preset?.name || '' });
     })();
   }, [modelUri, store, open, aiConsent.ensure, login]);
+  // A try-on that finished while the app slept is fetched as it wakes.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') for (const job of store.getSnapshot().jobs) if (job.status === 'retry') void store.poll(job);
+    });
+    return () => subscription.remove();
+  }, [store]);
   const viewed = useCallback((id: string) => { revealLedger.forget(id); setDocked(previous => previous.filter(current => current !== id)); }, []);
   const windowUp = windowOpen || Boolean(setup);
   const api = useMemo(() => ({ open, prepare, viewed, windowUp }), [open, prepare, viewed, windowUp]);
@@ -134,7 +141,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.
   const firstPage = initialPage >= 0 ? initialPage : Math.max(0, dockJobs.findIndex(job => job.id === visibleId));
-  const visibleJob = visibleId ? byId.get(visibleId) : undefined;
+  // The page on screen: named by a swipe or a look, else the first the window opened on.
+  const shownId = visibleId || dockJobs[firstPage]?.id || null;
+  const visibleJob = shownId ? byId.get(shownId) : undefined;
   useEffect(() => {
     if (windowOpen && visibleJob && visibleJob.status !== 'pending') seen.current.add(visibleJob.id);
   }, [windowOpen, visibleJob?.id, visibleJob?.status]);
@@ -185,7 +194,13 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
 
   const generate = async () => {
     if (!setup || !setup.context || !modelUri || starting) return;
-    if (!(await aiConsent.ensure())) return;
+    // Withdrawn since the step opened: the consent window can't show beside this one, so it steps aside and comes back after the answer.
+    if (!(await hasAiConsent(login))) {
+      const { items: garments, options, name } = setup;
+      setSetup(null);
+      setTimeout(() => prepare(garments, { options, name }), SHEET_CLOSE_MS);
+      return;
+    }
     void askReadyNotificationPermission(t('Готовые образы'));
     setStarting(true);
     setActionError(null);
@@ -221,9 +236,10 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       startedAt: startedAt.current[job.id],
       photoUri: job.progress?.previewUrl || modelUri || null,
       resultUri: resultOf(job),
-      error: (job.id === visibleId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
+      error: (job.id === shownId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
       warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
       favorite: job.result && job.status !== 'pending' ? lookFromJob(job) : null,
+      onCheck: job.status === 'retry' ? () => { void store.poll(job); } : undefined,
       onShare: () => { const uri = resultOf(job); if (uri) sharing.offer({ uri, title: titleOf(job), items: job.itemIds.flatMap(id => items.filter(item => item.id === id)) }); },
       onRegenerate: () => { void again(job); },
     };

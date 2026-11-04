@@ -112,11 +112,12 @@ const test = async (name, body) => { await body(); console.log(`PASS: ${name}`);
     assert.equal(merged[0].title, 'Вечер');
     assert.equal(merged[0].tryOnHistory[0].imageUri, picture('old'));
     const named = mergeSavedLooks([plainLook('idea', 'Идея', ['b', 'a'])], [bare]);
-    assert.deepEqual(named.map(look => look.title), ['Мой образ']);
+    assert.deepEqual(named.map(look => look.title), ['Идея', 'Мой образ']);
+    assert.equal(mergeSavedLooks([plainLook('idea', 'Мой образ', ['b', 'a'])], [bare]).length, 1);
     // A picture of its own beside the same pieces is a favourite of its own: neither name nor picture is lost.
     assert.equal(mergeSavedLooks([plainLook('idea', 'Идея', ['c'])], [tried]).length, 2);
-    // Same pieces twice in the old list, both bare: one look.
-    assert.equal(mergeSavedLooks([], [bare, { ...bare, id: 's3', name: 'Копия' }]).length, 1);
+    // Same pieces twice in the old list under two names: no name is lost.
+    assert.equal(mergeSavedLooks([], [bare, { ...bare, id: 's3', name: 'Копия' }]).length, 2);
   });
 
   await test('editing: a name keeps the try-on; new pieces drop it, its advice and its identity', () => {
@@ -147,7 +148,7 @@ const test = async (name, body) => { await body(); console.log(`PASS: ${name}`);
     const dock = read('components/GenerationDock.tsx');
     assert.equal((dock.match(/store\.start\(/g) || []).length, 1);
     assert.match(dock, /onGenerate: \(\) => \{ void generate\(\); \}/);
-    assert.match(dock.split('const generate = async')[1], /aiConsent\.ensure\(\)/);
+    assert.match(dock.split('const generate = async')[1], /hasAiConsent\(login\)/);
     assert.ok(!/store\.start|generate\(\)/.test(dock.split('const prepare = useCallback')[1].split('const viewed')[0]), 'opening the setup step sends nothing');
     assert.match(read('components/GenerationStage.tsx'), /disabled=\{!setup\.canGenerate\} onPress=\{setup\.onGenerate\}/);
     assert.ok(!/store\.start/.test(read('components/FittingRoom.tsx')));

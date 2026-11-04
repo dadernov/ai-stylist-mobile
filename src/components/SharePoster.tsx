@@ -32,7 +32,9 @@ export const SharePoster = forwardRef<View, { request: ShareRequest; width: numb
   const s = width / 360;
   const aspect = useImageAspect(request.uri);
   const pieces = request.items.filter(item => item.imageUri).slice(0, PIECES);
-  const title = lookName(request.items, t('и')) || request.title;
+  const generated = request.items.map(item => item.name).join(' + ');
+  // A name the user gave stands; the pieces' list that serves as a default reads better as a phrase.
+  const title = request.title && request.title !== generated ? request.title : lookName(request.items, t('и')) || request.title;
   // Only weather already known: the poster never asks for location, and a city never leaves the device on it.
   const [weather] = useState(cachedWeather);
   const degrees = weather ? Math.round(weather.temperature) : 0;

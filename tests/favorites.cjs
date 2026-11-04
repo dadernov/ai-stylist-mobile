@@ -29,6 +29,7 @@ const { addLook, isLookSaved, lookFromJob, lookWithResult, plainLook, removeFavo
 const { durableLook, keepTryOnImage, reanchorTryOnUri } = require(path.join(src, 'services/tryOnPhotos.ts'));
 const { decodeGenerated } = require(path.join(src, 'services/accountStorage.ts'));
 
+const favoritesDomain = require('../src/domain/favorites');
 const run = async () => {
   // --- dedupe -------------------------------------------------------------
   const plain = plainLook('idea', 'Образ', ['a', 'b']);
@@ -192,6 +193,17 @@ const run = async () => {
   const kit = read('components/ResultKit.tsx');
   const zoom = kit.slice(kit.indexOf('<Modal transparent'), kit.indexOf('</Modal>'));
   assert.ok(zoom.includes('ZoomableImage') && !/save|Сохран/i.test(zoom));
+  // Old links: expired ones leave the look without a try-on, its name and pieces kept; fresh ones become files; a failed download waits.
+  const day = 24 * 60 * 60 * 1000, now = 10 * day;
+  const old = { id: 'o', title: 'Старый', itemIds: ['a'], tryOnImageUri: 'https://x/o.jpg', tryOnUpdatedAt: now - 2 * day };
+  const fresh = { id: 'f', title: 'Свежий', itemIds: ['b'], tryOnImageUri: 'https://x/f.jpg', tryOnUpdatedAt: now - 1000 };
+  const [gone, fileNow] = await favoritesDomain.settleTryOnLinks([old, fresh], now, async () => 'file:///kept.jpg');
+  assert.equal(gone.tryOnImageUri, undefined); assert.equal(gone.title, 'Старый'); assert.deepEqual(gone.itemIds, ['a']);
+  assert.equal(fileNow.tryOnImageUri, 'file:///kept.jpg');
+  const [waiting] = await favoritesDomain.settleTryOnLinks([fresh], now, async () => { throw new Error('offline'); });
+  assert.equal(waiting.tryOnImageUri, fresh.tryOnImageUri);
+  const local = [{ id: 'l', title: 'Файл', itemIds: ['c'], tryOnImageUri: 'file:///l.jpg' }];
+  assert.equal(await favoritesDomain.settleTryOnLinks(local, now, async () => ''), local);
   console.log('favorites ok');
 };
 run().catch(error => { console.error(error); process.exit(1); });

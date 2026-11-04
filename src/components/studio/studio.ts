@@ -7,6 +7,9 @@ import { darkColors } from '../../constants/theme';
 export const MANROPE = { regular: 'Manrope_400Regular', medium: 'Manrope_500Medium', semibold: 'Manrope_600SemiBold', bold: 'Manrope_700Bold' };
 export const font = (weight: keyof typeof MANROPE = 'regular'): TextStyle => ({ fontFamily: MANROPE[weight] });
 
+/** How long a closing sheet stays on screen: iOS drops a window opened before it has gone. */
+export const SHEET_CLOSE_MS = 450;
+
 export const INK = '#121417';
 export const INK_SOFT = '#6E737B';
 export const INK_FAINT = '#9A9EA4';

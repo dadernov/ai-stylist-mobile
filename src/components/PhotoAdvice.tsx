@@ -7,6 +7,8 @@ import { useT } from '../constants/i18n';
 import { Glass } from './studio/Glass';
 import { font } from './studio/studio';
 import { checkTryOnPhoto, PhotoIssue } from '../services/ai';
+import { onAiConsentChange } from '../services/aiConsent';
+import { useAiConsent } from './AiConsentContext';
 
 // One check per photo and session: the answer does not change, and a failed
 // check is simply retried next time instead of showing anything.
@@ -14,9 +16,18 @@ const checked = new Map<string, Promise<PhotoIssue[]>>();
 
 export function usePhotoCheck(uri?: string | null) {
   const [issues, setIssues] = useState<PhotoIssue[]>([]);
+  const { allowed } = useAiConsent();
+  // The photo goes to the server for this check: only with the consent, and it stops when the consent is withdrawn.
+  const [granted, setGranted] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void allowed().then(value => { if (alive) setGranted(value); }).catch(() => {});
+    const off = onAiConsentChange((_, value) => setGranted(value));
+    return () => { alive = false; off(); };
+  }, [allowed]);
   useEffect(() => {
     setIssues([]);
-    if (!uri) return;
+    if (!uri || !granted) return;
     let alive = true;
     let pending = checked.get(uri);
     if (!pending) {
@@ -25,7 +36,7 @@ export function usePhotoCheck(uri?: string | null) {
     }
     pending.then(found => { if (alive) setIssues(found); });
     return () => { alive = false; };
-  }, [uri]);
+  }, [uri, granted]);
   return issues;
 }
 

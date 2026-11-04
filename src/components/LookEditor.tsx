@@ -55,7 +55,12 @@ export function LookEditor({ title, itemIds, items, onSave, onCancel }: {
       </View>;
     })}
     <View style={styles.actions}>
-      <Pill variant="primary" title={t('Сохранить')} style={{ flex: 1 }} onPress={() => onSave(name.trim() || title, selection.map(item => item.id))} />
+      <Pill variant="primary" title={t('Сохранить')} style={{ flex: 1 }} onPress={() => {
+        const ids = selection.map(item => item.id);
+        // Nothing picked differently: pieces gone from the wardrobe since aren't a change of the look.
+        const same = ids.length === inLook.length && ids.every(id => inLook.some(item => item.id === id));
+        onSave(name.trim() || title, same ? itemIds : ids);
+      }} />
       <Pill title={t('Отмена')} onPress={onCancel} />
     </View>
   </>;

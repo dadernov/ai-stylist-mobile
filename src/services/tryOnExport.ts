@@ -21,7 +21,8 @@ export async function shareLocalFile(fileUri: string) {
     await Sharing.shareAsync(fileUri, { mimeType: mimeTypeOf(fileUri) });
     return;
   }
-  try { await Share.share({ url: fileUri }); } catch { /* The share sheet was dismissed or unavailable. */ }
+  // Dismissing resolves rather than throws: what is thrown is a sheet that could not open, for the user to see.
+  await Share.share({ url: fileUri });
 }
 
 // A browser shares the picture itself where it can, and downloads it where it cannot.

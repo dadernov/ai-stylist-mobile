@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ShieldCheck } from 'lucide-react-native';
 import { SHADOWS } from '../constants/theme';
@@ -12,8 +12,9 @@ import { backdropDim, font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, use
 import { AppPressable } from './AppPressable';
 import { useOverlay } from './OverlayHost';
 
-type Api = { ensure: () => Promise<boolean>; revoke: () => Promise<void> };
+type Api = { ensure: () => Promise<boolean>; revoke: () => Promise<void>; allowed: () => Promise<boolean> };
 const Context = createContext<Api | null>(null);
+const CONSENT_SHOW_PATIENCE = 2500;
 
 export function AiConsentProvider({ login, children }: { login: string; children: ReactNode }) {
   const { isDark } = useTheme();
@@ -22,18 +23,30 @@ export function AiConsentProvider({ login, children }: { login: string; children
   const t = useT();
   const [open, setOpen] = useState(false);
   const pending = useRef<((granted: boolean) => void)[]>([]);
-  const ensure = useCallback(async () => {
-    if (await hasAiConsent(login)) return true;
-    return new Promise<boolean>(resolve => { pending.current.push(resolve); setOpen(true); });
-  }, [login]);
-  const answer = async (granted: boolean) => {
-    if (granted) await saveAiConsent(login, true).catch(() => {});
+  // iOS shows one window at a time and silently drops another: a prompt that never appeared must not leave its caller waiting for ever.
+  const shownWatch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settle = (granted: boolean) => {
+    if (shownWatch.current) clearTimeout(shownWatch.current);
+    shownWatch.current = null;
     setOpen(false);
     const waiting = pending.current; pending.current = [];
     waiting.forEach(resolve => resolve(granted));
   };
+  const ensure = useCallback(async () => {
+    if (await hasAiConsent(login)) return true;
+    return new Promise<boolean>(resolve => {
+      pending.current.push(resolve);
+      setOpen(true);
+      if (Platform.OS !== 'web' && !shownWatch.current) shownWatch.current = setTimeout(() => settle(false), CONSENT_SHOW_PATIENCE);
+    });
+  }, [login]);
+  const answer = async (granted: boolean) => {
+    if (granted) await saveAiConsent(login, true).catch(() => {});
+    settle(granted);
+  };
   const revoke = useCallback(() => saveAiConsent(login, false), [login]);
-  const value = useMemo(() => ({ ensure, revoke }), [ensure, revoke]);
+  const allowed = useCallback(() => hasAiConsent(login), [login]);
+  const value = useMemo(() => ({ ensure, revoke, allowed }), [ensure, revoke, allowed]);
   const points = [
     t('Фото вещей отправляются на сервер приложения: нейросеть определяет тип, цвет и вырезает фон. Сам разбор идёт в памяти, но вещи, которые ты сохраняешь, и твоё фото для примерки хранятся на нашем сервере в зашифрованном виде, пока существует аккаунт: так гардероб не пропадёт вместе с телефоном.'),
     t('Для примерки твоё фото в полный рост и фото выбранных вещей передаются сервису fal.ai (США), где изображение создаёт нейросеть Seedream компании ByteDance (в резервном режиме — сервису FASHN AI). fal.ai не сохраняет запрос, а свой экземпляр готового кадра удаляет через час. На нашем сервере кадр хранится не дольше 24 часов.'),
@@ -42,7 +55,8 @@ export function AiConsentProvider({ login, children }: { login: string; children
   ];
   // Consent is asked from inside sheets (try-on, item editor): the window is
   // drawn in the topmost one, or iOS would never show it (OverlayHost).
-  const prompt = open ? <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={() => void answer(false)}>
+  const prompt = open ? <Modal transparent visible animationType={reduced ? 'none' : 'fade'} onRequestClose={() => void answer(false)}
+      onShow={() => { if (shownWatch.current) clearTimeout(shownWatch.current); shownWatch.current = null; }}>
       <View style={styles.backdrop}>
         <BlurView intensity={30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropDim(isDark) }]} />

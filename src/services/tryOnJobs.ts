@@ -1,10 +1,11 @@
 import * as Crypto from 'expo-crypto';
+import { LINK_LIFE_MS } from '../domain/favorites';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { Session } from './auth';
 import { analyzeTryOnGenerateLook, getTryOnJob, TryOnGenerateResult, TryOnProgress, TryOnQualityMode, TuckMode } from './ai';
 import { ApiError } from './http';
-import { accountKey } from './accountStorage';
+import { accountKey, isPurged } from './accountStorage';
 import { loadValidated, saveJson } from './storage';
 import { reanchorPhoto } from './photos';
 import { cacheTryOnImage, reanchorTryOnUri } from './tryOnPhotos';
@@ -45,6 +46,9 @@ const qualityOf = (job: TryOnJob): TryOnQualityMode => job.quality || 'quality';
 export const tryOnContext = (modelUri: string, items: WardrobeItem[]) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,
   JSON.stringify([modelUri, [...items].sort((a, b) => a.id.localeCompare(b.id)).map(i => [i.id, i.section, i.category, i.sourceImageUri || i.imageUri])]));
 
+// Imported from an old look, a picture that lived only on the server is gone after a day: «ready» with an empty frame would be a lie.
+const isExpiredLink = (uri: string, at: number) => /^https?:/i.test(uri) && Date.now() - at > LINK_LIFE_MS;
+
 export class TryOnJobStore {
   private snapshot: JobSnapshot = { jobs: [], ready: false };
   private listeners = new Set<() => void>();
@@ -58,6 +62,7 @@ export class TryOnJobStore {
   getSnapshot = () => this.snapshot;
   private emit() { this.listeners.forEach(listener => listener()); }
   private async save() {
+    if (isPurged(this.session.login)) return; // The account was deleted meanwhile: a late answer must not bring its journal back.
     if (!this.writable) throw new Error('История примерок повреждена и сохранена без изменений.');
     try { await saveJson(accountKey(this.session.login, 'tryOnJobs'), this.snapshot.jobs.map(({ progress: _progress, ...job }) => job)); }
     catch (error) {
@@ -105,7 +110,7 @@ export class TryOnJobStore {
       return value as TryOnJob[];
     });
     this.writable = !result.failed;
-    this.snapshot = { ready: true, readOnly: result.failed, jobs: (result.value || []).map(job => job.result ? { ...job, result: { ...job.result, imageUri: reanchorTryOnUri(job.result.imageUri) || job.result.imageUri } } : job).map(job => job.sourceUri ? { ...job, sourceUri: reanchorPhoto(job.sourceUri) } : job),
+    this.snapshot = { ready: true, readOnly: result.failed, jobs: (result.value || []).filter(job => !(job.context.startsWith('legacy:') && job.result && isExpiredLink(job.result.imageUri, job.result.updatedAt))).map(job => job.result ? { ...job, result: { ...job.result, imageUri: reanchorTryOnUri(job.result.imageUri) || job.result.imageUri } } : job).map(job => job.sourceUri ? { ...job, sourceUri: reanchorPhoto(job.sourceUri) } : job),
       error: result.failed ? 'История примерок не читается. Исходные данные сохранены без изменений.' : undefined };
     this.emit();
   }
@@ -120,7 +125,7 @@ export class TryOnJobStore {
         warning: look.tryOnWarning, tuckMode: look.tuckMode, qualityMode: look.tryOnQualityMode });
       for (const frame of frames) {
         const imageUri = reanchorTryOnUri(frame.imageUri) || frame.imageUri;
-        if (known.has(imageUri)) continue;
+        if (isExpiredLink(imageUri, frame.updatedAt) || known.has(imageUri)) continue;
         known.add(imageUri);
         imported.push({ id: Crypto.randomUUID(), context: `legacy:${look.id}`, itemIds: [...look.itemIds],
           garments: look.itemIds.flatMap(id => { const item = items.find(item => item.id === id); return item ? [{ id, name: item.name }] : []; }),

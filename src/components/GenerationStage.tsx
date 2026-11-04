@@ -65,6 +65,8 @@ export type StagePage = {
   favorite?: GeneratedLook | null;
   onShare: () => void;
   onRegenerate: () => void;
+  /** The result may be ready on the server after all: asks again, for free. */
+  onCheck?: () => void;
 };
 
 type Props = {
@@ -214,7 +216,7 @@ const Pager = forwardRef<ScrollView, ScrollViewProps>(function Pager(props, ref)
 function PageView({ page, width, active, onDone }: { page: StagePage; width: number; active: boolean; onDone: () => void }) {
   const t = useT();
   const { colors: { danger }, isDark } = useTheme();
-  const { key, busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, onShare, onRegenerate } = page;
+  const { key, busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, onShare, onRegenerate, onCheck } = page;
   const done = Boolean(resultUri) && !busy;
   const gallery = useGallerySave(done ? resultUri : null);
   const save = useSaveLook(done ? page.favorite : null);
@@ -260,7 +262,8 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
       ) : !busy ? (
         <View style={styles.actions}>
           <View style={styles.row}>
-            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Попробовать снова')} onPress={onRegenerate} />
+            {onCheck ? <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Проверить результат')} onPress={onCheck} />
+              : <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Попробовать снова')} onPress={onRegenerate} />}
             <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} />
           </View>
         </View>

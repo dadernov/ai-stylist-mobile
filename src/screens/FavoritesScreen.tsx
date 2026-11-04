@@ -2,6 +2,7 @@ import { ArrowUpRight, Heart, Palette, Pencil, Scissors, Shirt, Trash2 } from 'l
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SheetStrip } from '../components/ui/FormScrollView';
 import { memo, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppDialog } from '../components/AppDialog';
 import { ThemeColors } from '../constants/theme';
@@ -239,7 +240,7 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
           <LookEditor key={open.id} title={lookTitle(open, t)} itemIds={open.itemIds} items={items} onCancel={() => setEditing(false)}
             onSave={(title, itemIds) => saveEdit(open, title === lookTitle(open, t) ? open.title : title, itemIds)} />
         ) : open && openTryOn ? (
-          <FavoriteResult look={open} uri={openTryOn} modelUri={modelUri} items={openItems} meta={meta.join(', ')} beauty={beautyPanel}
+          <FavoriteResult look={open} uri={openTryOn} items={openItems} meta={meta.join(', ')} beauty={beautyPanel}
             onPreview={uri => setPreviewUri(uri)} onRemove={() => handleRemove(open.id)} onEdit={() => setEditing(true)}
             onTryOn={onTryOn ? () => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); } : undefined} />
         ) : open ? (
@@ -281,8 +282,8 @@ export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGo
 }
 
 /** A favourite with a try-on: the same photo, thumbnails and three buttons as every result; its advice opens over the photo so nothing scrolls. */
-function FavoriteResult({ look, uri, modelUri, items, meta, beauty, onPreview, onRemove, onEdit, onTryOn }: {
-  look: GeneratedLook; uri: string; modelUri?: string; items: WardrobeItem[]; meta: string; beauty: ReactNode; onPreview: (uri: string) => void; onRemove: () => void; onEdit: () => void; onTryOn?: () => void;
+function FavoriteResult({ look, uri, items, meta, beauty, onPreview, onRemove, onEdit, onTryOn }: {
+  look: GeneratedLook; uri: string; items: WardrobeItem[]; meta: string; beauty: ReactNode; onPreview: (uri: string) => void; onRemove: () => void; onEdit: () => void; onTryOn?: () => void;
 }) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
@@ -293,13 +294,16 @@ function FavoriteResult({ look, uri, modelUri, items, meta, beauty, onPreview, o
   const sharing = useShareChoice(login);
   const [advice, setAdvice] = useState(false);
   const [before, setBefore] = useState(false);
-  const shown = before && modelUri ? modelUri : uri;
+  // «Before» is the photo this look was made from, as the journal remembers it; none on record means no comparison, not a wrong one.
+  const { jobs } = useTryOnJobs();
+  const beforeUri = jobs.find(job => job.result && (job.result.imageUri === uri || job.result.imageUri === look.tryOnSourceUri))?.sourceUri;
+  const shown = before && beforeUri ? beforeUri : uri;
   return <>
     {meta ? <Text style={[font('regular'), styles.meta]} numberOfLines={1}>{meta}</Text> : null}
     {advice ? <ScrollView style={styles.resultPhoto}>{beauty}</ScrollView> : null}
     {advice ? <Pill size="sm" icon={Palette} title={t('Примерка')} style={{ alignSelf: 'flex-start' }} onPress={() => setAdvice(false)} /> : (
       <ResultPicture uri={shown} onOpen={() => onPreview(shown)}>
-        <ResultPhotoControls onShare={() => sharing.offer({ uri, items, title: look.title })} compare={modelUri ? { before, onToggle: () => setBefore(value => !value) } : undefined}>
+        <ResultPhotoControls onShare={() => sharing.offer({ uri, items, title: look.title })} compare={beforeUri ? { before, onToggle: () => setBefore(value => !value) } : undefined}>
           <Pill size="sm" icon={Pencil} accessibilityLabel={t('Изменить')} onPress={onEdit} />
           {beauty ? <Pill size="sm" icon={Palette} accessibilityLabel={t('Макияж и укладка')} onPress={() => setAdvice(true)} /> : null}
           <Pill size="sm" icon={Trash2} iconColor={c.danger} accessibilityLabel={t('Удалить')} onPress={onRemove} />

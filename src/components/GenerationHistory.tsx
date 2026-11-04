@@ -152,7 +152,7 @@ function HistoryResult({ job, byId, canRepeat, onExpand, onAgain, onOpenItem }: 
       <ResultPhotoControls onShare={() => sharing.offer({ uri, items: pieces.flatMap(piece => piece.item ? [piece.item] : []), title: job.name })} />
     </ResultPicture>
     {job.error ? <Text accessibilityRole="alert" style={styles.error} numberOfLines={2}>{t(job.error)}</Text> : null}
-    {job.result?.warning ? <Text style={styles.muted} numberOfLines={2}>{t(job.result.warning)}</Text> : null}
+    {job.result?.warning ? <Text style={styles.muted} numberOfLines={2}>{job.result.warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
     <ResultPieces items={pieces} onPress={onOpenItem} />
     <ResultActions gallery={gallery} save={save} againDisabled={!canRepeat} onAgain={onAgain} />
     {sharing.sheet}

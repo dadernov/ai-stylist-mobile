@@ -26,7 +26,7 @@ import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
 import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
-import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, migrateSavedLooks, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
+import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, migrateSavedLooks, prepareAccountStorage, settleFavoriteLinks, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { readGarmentProfile, readGarmentStyle, readGarmentTraits } from './src/services/ai';
 import { decodeGarmentProfile } from './src/domain/garmentTraits';
 import { hasAiConsent } from './src/services/aiConsent';
@@ -34,7 +34,7 @@ import { GeneratedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
-import { Shirt, PersonStanding, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
+import { AlertCircle, Check, Shirt, PersonStanding, Layers, Heart, UserRound, Lightbulb, LucideIcon } from 'lucide-react-native';
 import { Gender } from './src/types/profile';
 import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
@@ -166,6 +166,7 @@ function SessionGate() {
   const logout = async () => {
     try {
       await signOut(session);
+      setError('');
       setSession(null);
     } catch { setError(t('Не удалось завершить выход. Попробуй ещё раз.')); }
   };
@@ -173,8 +174,11 @@ function SessionGate() {
     if (!session) return;
     try {
       await deleteAccount(session);
-      await purgeAccountData(session.login);
+      setError('');
+      // The screens go first, with their try-on polling: one still running would write its journal back after the purge.
       setSession(null);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await purgeAccountData(session.login);
     } catch (e: any) { setError(e?.message || t('Не удалось удалить аккаунт. Проверь соединение и попробуй ещё раз.')); }
   };
   if (!ready || !language.ready) return <LoadingScreen />;
@@ -257,7 +261,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     const hydrate = async () => {
       const data = await loadAccountData(session.login);
       // Before anything is shown or written: the old list of looks joins the favourites.
-      const moved = await migrateSavedLooks(session.login, data);
+      const migrated = await migrateSavedLooks(session.login, data);
+      const moved = { ...migrated, favorites: await settleFavoriteLinks(session.login, migrated.favorites, data.failed).catch(() => migrated.favorites) };
       if (!alive.current) return;
       unreadableKeys.current = data.failed;
       const profile = data.profile;
@@ -292,8 +297,12 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
         ...cleanedItems.flatMap((item) => [item.imageUri, item.sourceImageUri]),
         profile?.avatarUri, profile?.modelUri
       ];
-      if (!data.failed.size) {
-        removeUnusedPhotos(referenced, session.login).catch((error) => console.warn('Failed to clean photo folder', error));
+      // The photos looks were made from stay for «before», as long as the journal names them; an unreadable journal stops the cleaning.
+      const journal = await loadRaw(accountKey(session.login, 'tryOnJobs')).catch(() => ({ failed: true, value: null }));
+      let sources: string[] | null = [];
+      try { sources = (JSON.parse(journal.value || '[]') as { sourceUri?: string }[]).flatMap(job => job.sourceUri ? [job.sourceUri] : []); } catch { sources = null; }
+      if (!data.failed.size && !journal.failed && sources) {
+        removeUnusedPhotos([...referenced, ...sources], session.login).catch((error) => console.warn('Failed to clean photo folder', error));
       }
 
       // Перенос для тех, кто уже пользуется приложением: их фото лежат в
@@ -490,7 +499,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
       Animated.timing(toastAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => {
         setToastMessage(null);
       });
-    }, 1400);
+    }, Math.max(1600, translate(message).length * 55));
   };
 
   const changeAvatar = (uri: string) => {
@@ -671,9 +680,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
             }
           ]}
         >
-          <View style={styles.toastIconCircle}>
-            <Text style={styles.toastIcon}>✓</Text>
-          </View>
+          {/не удал|не читается|ошибк/i.test(toastMessage) ? <AlertCircle size={18} strokeWidth={1.8} color={colors.danger} /> : <Check size={18} strokeWidth={1.8} color={colors.toastText} />}
           <Text style={styles.toastText}>{toastMessage}</Text>
         </Animated.View>
       ) : null}
@@ -791,21 +798,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: RADII.xl,
     backgroundColor: c.toastBg,
     ...SHADOWS.floating
-  },
-  toastIconCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: c.goldHairline,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  toastIcon: {
-    color: c.toastText,
-    fontSize: 11,
-    fontWeight: '800',
-    lineHeight: 13
   },
   toastText: {
     color: c.toastText,

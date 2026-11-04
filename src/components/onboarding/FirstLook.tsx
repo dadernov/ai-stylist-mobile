@@ -306,7 +306,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
       </> : <Text style={[font('medium'), styles.question, { color: ink }]}>{t('Спасибо! Осталось чуть-чуть.')}</Text>}
     </View></Glass> : null}
     {!ready ? <Pill title={t('Подождать в приложении')} haptics={false} onPress={() => { waiting.current = true; onDone('wardrobe', jobId); }} /> : null}
-    {ready && job?.result?.warning ? <Note>{t(String(job.result.warning))}</Note> : null}
+    {ready && job?.result?.warning ? <Note>{String(job.result.warning).split(' · ').map(part => t(part)).join(' · ')}</Note> : null}
     {ready && revealed ? <>
       {job?.result ? <SaveLookButton look={lookFromJob(job)} /> : null}
       <Pill variant="primary" title={t('Добавить ещё вещи')} haptics={false} onPress={() => onDone('wardrobe')} />
