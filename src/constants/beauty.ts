@@ -1,5 +1,5 @@
 // Советы по макияжу и укладке под событие. Раньше этот же объект был
-// побайтово продублирован в OutfitBuilderScreen.tsx и RecommendationsScreen.tsx —
+// побайтово продублирован в FittingScreen.tsx и RecommendationsScreen.tsx —
 // правка в одном месте не попадала во второе. Вынесен сюда как общий источник.
 export type BeautyTip = { makeup: string; hair: string };
 

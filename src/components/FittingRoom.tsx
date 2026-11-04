@@ -2,20 +2,17 @@ import { usePhotoPicker } from './usePhotoPicker';
 import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, Keyboard, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SheetStrip } from './ui/FormScrollView';
-import { ArrowUpRight, Bookmark, BookmarkCheck, Check, ImageOff, Pencil, Plus, RefreshCw, Save, Search, Shirt, UserRound, X } from 'lucide-react-native';
+import { Check, ImageOff, Pencil, Plus, RefreshCw, Search, Shirt, UserRound, X } from 'lucide-react-native';
 import { WardrobeItem } from '../data/mock';
-import { SavedLook, TryOnHistoryItem } from '../types/looks';
 import { useTheme, useThemedStyles } from '../constants/ThemeContext';
 import { ThemeColors } from '../constants/theme';
 import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
-import { AiTryOnPreview } from './AiTryOnPreview';
 import { EmptyState } from './ui/EmptyState';
 import { Chip } from './Chip';
 import { PhotoAdvice } from './PhotoAdvice';
 import { Glass, Pill } from './studio/Glass';
 import { font, glassEdge, glassFill, INK, isCutout, useReducedMotion } from './studio/studio';
-import { StudioSheet } from './studio/StudioSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useGenerationDock } from './GenerationDock';
@@ -28,8 +25,8 @@ import { useShareChoice } from './SharePoster';
 import { PhotoViewer, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
 import { estimatedViewport, RESULT_GAP, RESULT_RADIUS, resultPhotoHeight } from './studio/resultLayout';
 import { TryOnJob } from '../services/tryOnJobs';
-import { lookFromJob, lookWithResult, plainLook } from '../domain/favorites';
-import { SaveLookButton, useSaveLook } from './SaveLook';
+import { lookFromJob } from '../domain/favorites';
+import { useSaveLook } from './SaveLook';
 import { isLegwear } from '../domain/legwear';
 import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 
@@ -39,12 +36,11 @@ type Props = {
   onProfile: () => void;
   onModelChange?: (uri: string) => void;
   onWardrobe: () => void;
-  onSave: (look: SavedLook) => void;
   onOpenHistory: () => void;
   initialItemId?: string;
   initialItemIds?: string[];
   // The screen shows "Try on" as a floating button, always in reach while picking.
-  onSelectionCta?: (cta: { count: number; open: () => void } | null) => void;
+  onSelectionCta: (cta: { count: number; open: () => void } | null) => void;
   /** The tab holding this room is on screen: hidden, its generation fog pauses and a finished look's reveal waits. */
   visible?: boolean;
   /** The height of the list this room scrolls in, less what floats over it: the frame and its buttons fit it whole. */
@@ -60,7 +56,7 @@ const LAYERS: Record<string, number> = { 'Верх': 4, 'Верхняя одеж
 const UPPER = ['Верх', 'Верхняя одежда'];
 const MAX_UPPER = 4;
 
-export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onSave, onOpenHistory, initialItemId, initialItemIds, onSelectionCta, visible = true, viewport }: Props) {
+export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardrobe, onOpenHistory, initialItemId, initialItemIds, onSelectionCta, visible = true, viewport }: Props) {
   // Фото для примерки выбирается прямо здесь, без перехода в профиль.
   const { pickPhoto, cropModal } = usePhotoPicker();
   const pickModel = async () => {
@@ -75,17 +71,18 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
   const [selectedIds, setSelectedIds] = useState<string[]>(initialItemIds || (initialItemId ? [initialItemId] : []));
   const [section, setSection] = useState('Все');
   const [search, setSearch] = useState('');
-  const [previewOpen, setPreviewOpen] = useState(Boolean(initialItemId || initialItemIds?.length));
   const selection = useMemo(() => selectedIds.map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[], [items, selectedIds]);
+  const dock = useGenerationDock();
+  const chosen = useRef(selection);
+  chosen.current = selection;
   useEffect(() => {
-    onSelectionCta?.(selection.length ? { count: selection.length, open: () => setPreviewOpen(true) } : null);
-  }, [selection.length, onSelectionCta]);
-  useEffect(() => () => onSelectionCta?.(null), [onSelectionCta]);
+    onSelectionCta(selection.length ? { count: selection.length, open: () => dock.prepare(chosen.current) } : null);
+  }, [selection.length, onSelectionCta, dock.prepare]);
+  useEffect(() => () => onSelectionCta(null), [onSelectionCta]);
+  // Come here with garments (a card, a look, the history): their setup step opens. Nothing starts before its «Примерить».
+  useEffect(() => { if (selection.length && (initialItemId || initialItemIds?.length)) dock.prepare(selection); }, []);
   const visibleItems = items.filter(item => (section === 'Все' || item.section === section)
     && `${item.name} ${item.category} ${item.color}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
-  // The session belongs to these exact photos, including the profile photo.
-  const sessionKey = JSON.stringify([modelUri, selection.map(item => [item.id, item.imageUri, item.section])]);
-
   // Stable while the wardrobe is unchanged, so a tile redraws only when its own state does.
   const toggle = useCallback((item: WardrobeItem) => {
     setSelectedIds(previous => {
@@ -115,13 +112,14 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
 
   return (
     <View style={styles.content}>
-      <FittingStage viewport={viewport} visible={visible && !previewOpen} items={items} modelUri={modelUri} onSave={onSave} onOpenHistory={onOpenHistory} quiet={selection.length > 0}
+      <FittingStage viewport={viewport} visible={visible} items={items} modelUri={modelUri} onOpenHistory={onOpenHistory}
         onPickModel={() => { void pickModel(); }}
-        // «Переодеть»: the look's pieces go back into the picker and the try-on sheet opens on them.
-        onRedo={ids => {
-          const present = ids.filter(id => items.some(item => item.id === id));
+        // «Ещё раз»: the look's pieces go back into the picker and its setup step opens on them, with the choices it had.
+        onRedo={job => {
+          const present = job.itemIds.flatMap(id => items.filter(item => item.id === id));
           if (!present.length) return;
-          setSelectedIds(present); setPreviewOpen(true);
+          setSelectedIds(present.map(item => item.id));
+          dock.prepare(present, { options: job.options, name: job.name === present.map(item => item.name).join(' + ') ? undefined : job.name });
         }} />
       <PhotoAdvice uri={modelUri} />
       <View style={styles.row}>
@@ -159,7 +157,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       {selection.filter(item => UPPER.includes(item.section)).length > 1 && (
         <Text style={styles.layerHint}>{t('До четырёх слоёв верха: они надеваются в естественном порядке. Например, футболка окажется под лонгсливом, а куртка — поверх всего.')}</Text>
       )}
-      {selection.length > 0 && !onSelectionCta && <Pill variant="primary" title={t('К примерке')} icon={ArrowUpRight} onPress={() => setPreviewOpen(true)} />}
       <View style={styles.grid}>
         {visibleItems.map(item => {
           const supported = supportedSections.includes(item.section);
@@ -175,7 +172,6 @@ export function FittingRoom({ items, modelUri, onProfile, onModelChange, onWardr
       </View>
       {!visibleItems.length ? <EmptyState icon={Shirt} title={t(items.length ? 'Ничего не найдено' : 'Гардероб пока пуст')}
         actionLabel={items.length ? undefined : t('Добавить вещи')} onAction={items.length ? undefined : onWardrobe} /> : null}
-      {selection.length > 0 && <FittingSession key={sessionKey} items={selection} modelUri={modelUri} onSave={onSave} visible={previewOpen} onClose={() => setPreviewOpen(false)} />}
       {cropModal}
     </View>
   );
@@ -188,12 +184,10 @@ const shortDateTime = (timestamp: number) =>
  * The fitting room's picture: the person's own photo, or the try-on chosen in «Недавние примерки»
  * (the durable try-on journal), with a glass switch that fades between the two.
  */
-function FittingStage({ viewport, visible, items, modelUri, onSave, onOpenHistory, onPickModel, onRedo, quiet }: {
+function FittingStage({ viewport, visible, items, modelUri, onOpenHistory, onPickModel, onRedo }: {
   viewport?: number; visible: boolean;
-  items: WardrobeItem[]; modelUri?: string; onSave: (look: SavedLook) => void; onOpenHistory: () => void;
-  onPickModel: () => void; onRedo: (ids: string[]) => void;
-  /** Garments are being picked: the floating «К примерке» is then the main action, not «Сохранить». */
-  quiet: boolean;
+  items: WardrobeItem[]; modelUri?: string; onOpenHistory: () => void;
+  onPickModel: () => void; onRedo: (job: TryOnJob) => void;
 }) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -220,7 +214,6 @@ function FittingStage({ viewport, visible, items, modelUri, onSave, onOpenHistor
   useEffect(() => {
     Animated.timing(fade, { toValue: showResult ? 1 : 0, duration: reduced ? 0 : 700, easing: Easing.bezier(0.2, 0.7, 0.2, 1), useNativeDriver: true }).start();
   }, [showResult, reduced, fade]);
-  const [saved, setSaved] = useState<string[]>([]);
   const [viewer, setViewer] = useState(false);
   // A finished try-on brought into the frame has been looked at: it no longer waits in the small window.
   const show = (job: TryOnJob) => {
@@ -243,13 +236,6 @@ function FittingStage({ viewport, visible, items, modelUri, onSave, onOpenHistor
   const fieldOwed = Boolean(current && result && (revealingId === current.id || (revealPlayed !== current.id && revealLedger.owes(current.id, 'full'))));
   const photoHeight = resultPhotoHeight({ available: viewport || estimatedViewport(windowHeight, insets.top), pieces: pieces.length > 0 });
 
-  const saveLook = (job: TryOnJob) => {
-    const done = job.result!;
-    onSave({ id: `job-${job.id}`, name: job.name, itemIds: job.itemIds, createdAt: job.createdAt,
-      tryOnImageUri: done.imageUri, tryOnUpdatedAt: done.updatedAt, tryOnWarning: done.warning, tuckMode: done.tuckMode,
-      tryOnQualityMode: 'quality', tryOnHistory: [done] });
-    setSaved(previous => [...previous, job.id]);
-  };
   return <View style={{ gap: RESULT_GAP }}>
     <View style={[styles.frameShadow, { height: photoHeight }]}>
       <View style={styles.frame}>
@@ -275,12 +261,9 @@ function FittingStage({ viewport, visible, items, modelUri, onSave, onOpenHistor
             {result ? <Image source={{ uri: result.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} /> : null}
           </DevelopingImage>
         </View> : null}
-        {/* A bookmark, not a heart: hearts mean «Избранное» only; this keeps the try-on in «Образы». */}
         <ResultPhotoControls onShare={result && current ? () => sharing.offer({ uri: result.imageUri, items: pieces, title: current.name }) : undefined}
           compare={result && modelUri && !fieldOwed ? { before: !after, onToggle: () => setAfter(value => !value) } : undefined}>
           {modelUri ? <Pill size="sm" icon={Pencil} accessibilityLabel={t('Заменить фото')} onPress={onPickModel} /> : null}
-          {result && current ? <Pill size="sm" icon={saved.includes(current.id) ? BookmarkCheck : Bookmark} accessibilityLabel={t(saved.includes(current.id) ? 'Сохранено в образы' : 'Сохранить в образы')}
-            accessibilityState={{ selected: saved.includes(current.id) }} onPress={() => { if (!saved.includes(current.id)) saveLook(current); }} /> : null}
         </ResultPhotoControls>
         {current && (result || !busy) ? <Glass radius={24} style={styles.caption}>
           <View style={styles.captionInner}>
@@ -301,8 +284,8 @@ function FittingStage({ viewport, visible, items, modelUri, onSave, onOpenHistor
     {busy && current ? <Pill title={t('Открыть генерацию')} onPress={() => dock.open(current.id)} />
       : current && result && !fieldOwed ? <>
         <ResultPieces items={pieces.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
-        <ResultActions gallery={gallery} save={favorite} againDisabled={!pieces.length} onAgain={() => onRedo(current.itemIds)} />
-      </> : current && !result ? <Pill icon={RefreshCw} title={t('Попробовать снова')} disabled={!pieces.length} onPress={() => onRedo(current.itemIds)} /> : null}
+        <ResultActions gallery={gallery} save={favorite} againDisabled={!pieces.length} onAgain={() => onRedo(current)} />
+      </> : current && !result ? <Pill icon={RefreshCw} title={t('Попробовать снова')} disabled={!pieces.length} onPress={() => onRedo(current)} /> : null}
     {error ? <Text style={styles.error}>{t(error)}</Text> : null}
     {recent.length ? <>
       <View style={styles.recentHead}>
@@ -368,43 +351,6 @@ const PickTile = memo(function PickTile({ item, selected, disabled, status, onTo
   );
 });
 
-function FittingSession({ items, modelUri, onSave, visible, onClose }: Pick<Props, 'items' | 'modelUri' | 'onSave'> & { visible: boolean; onClose: () => void }) {
-  const styles = useThemedStyles(makeStyles);
-  const t = useT();
-  const [name, setName] = useState('');
-  const [history, setHistory] = useState<TryOnHistoryItem[]>([]);
-  const [selected, setSelected] = useState<TryOnHistoryItem>();
-  const [saved, setSaved] = useState(false);
-  const latest = selected || history[0];
-  return <StudioSheet visible={visible} title={t('Примерка')} subtitle={items.map(item => item.name).join(' + ')} onClose={onClose}
-    closeLabel={t('Закрыть примерку')} height="92%" scroll={false}>
-    {/* How to wear each garment, then the button: the look itself opens in the generation window. */}
-    {/* Closing the generation window closes this sheet too: the next look is picked on the main screen,
-        with the running one in the small window in the corner. */}
-    <AiTryOnPreview variant="sheet" modelUri={modelUri} items={items} history={history} resultUri={latest?.imageUri} onLeave={onClose}
-      updatedAt={latest?.updatedAt} warningMessage={latest?.warning} qualityMode={latest?.qualityMode} onGenerated={payload => {
-        const entry = { ...payload, id: String(payload.updatedAt) };
-        setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)].slice(0, 8));
-        setSelected(entry);
-        setSaved(false);
-      }} onSelectHistory={entry => {
-        setSelected(entry); setSaved(false);
-        setHistory(previous => [entry, ...previous.filter(item => item.imageUri !== entry.imageUri)]
-          .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8));
-      }}
-      sheetContent={<TextInput style={styles.nameInput} accessibilityLabel={t('Название образа')} placeholder={items.length === 1 ? items[0].name : t('Название образа')} value={name} onChangeText={value => { setName(value); setSaved(false); }} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />}
-      sheetFooter={<>{latest ? <SaveLookButton look={lookWithResult(plainLook(`fitting-${items.map(item => item.id).join('-')}`, name.trim() || items.map(item => item.name).join(' + '), items.map(item => item.id)), latest)} /> : null}<Pill title={t(saved ? 'Сохранено в образы' : 'В образы')} icon={saved ? Check : Save} disabled={saved} onPress={() => {
-        onSave({
-          id: `fitting-${Date.now()}`, name: name.trim() || items.map(item => item.name).join(' + '),
-          itemIds: items.map(item => item.id), createdAt: Date.now(),
-          tryOnImageUri: latest?.imageUri, tryOnWarning: latest?.warning, tryOnUpdatedAt: latest?.updatedAt,
-          tuckMode: latest?.tuckMode, tryOnQualityMode: latest?.qualityMode, tryOnHistory: history
-        });
-        setSaved(true);
-      }} /></>} />
-  </StudioSheet>;
-}
-
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   content: { gap: 16, paddingBottom: 20 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
@@ -429,7 +375,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   thumb: { width: 62, height: 84, borderRadius: 16, overflow: 'hidden', borderWidth: 2, backgroundColor: c.surface },
   thumbState: { borderRadius: 14 },
   thumbCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  nameInput: { ...font('regular'), color: c.text, backgroundColor: c.surface, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   searchBar: { height: 44 },
   searchInner: { flex: 1, flexDirection: 'row', gap: 10, alignItems: 'center', paddingHorizontal: 16 },
   searchInput: { ...font('regular'), flex: 1, minWidth: 0, color: c.text, fontSize: 14, height: '100%' },

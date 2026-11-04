@@ -29,7 +29,9 @@ type Inputs = { modelUri: string; items: WardrobeItem[]; context: string; tuckMo
   // Told the job's id at once, before the photos are sent: the generation window follows it.
   onJob?: (id: string) => void;
   // How each garment is worn, by item id ('auto' choices are left out).
-  options?: GarmentOptions };
+  options?: GarmentOptions;
+  // The name given to the look; without one, its garments name it.
+  name?: string };
 // Preparing and sending the photos never takes this long on a working connection;
 // past it the job says so instead of spinning with no request on the server.
 export const SUBMIT_TIMEOUT_MS = 150000;
@@ -162,9 +164,9 @@ export class TryOnJobStore {
     const sameOptions = (job: TryOnJob) => JSON.stringify(job.options || {}) === JSON.stringify(effectiveOptions(input.items, input.options));
     const retry = this.snapshot.jobs.find(job => job.context === input.context && job.tuckMode === input.tuckMode
       && qualityOf(job) === input.quality && job.status === 'retry' && sameOptions(job));
-    const job: TryOnJob = retry ? { ...retry, sourceUri: input.modelUri } : { id: Crypto.randomUUID(), sourceUri: input.modelUri, context: input.context, itemIds: input.items.map(i => i.id),
+    const job: TryOnJob = retry ? { ...retry, sourceUri: input.modelUri, name: input.name || retry.name } : { id: Crypto.randomUUID(), sourceUri: input.modelUri, context: input.context, itemIds: input.items.map(i => i.id),
       garments: input.items.map(i => ({ id: i.id, name: i.name })),
-      name: input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality,
+      name: input.name || input.items.map(i => i.name).join(' + '), createdAt: Date.now(), status: 'pending', tuckMode: input.tuckMode, quality: input.quality,
       options: effectiveOptions(input.items, input.options) };
     request.onJob?.(job.id);
     if (this.working.has(job.id)) return;

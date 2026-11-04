@@ -5,7 +5,8 @@ import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { decodeGarmentProfile, decodeStyleVec, decodeTraits } from '../domain/garmentTraits';
 export { decodeTraits } from '../domain/garmentTraits';
-import { loadValidated } from './storage';
+import { loadRaw, loadValidated, saveJson } from './storage';
+import { mergeSavedLooks } from '../domain/favorites';
 import { reanchorPhoto, removeUnusedPhotos } from './photos';
 
 export type ProfileState = { displayName: string; authMethod?: string; avatarUri?: string; modelUri?: string; gender?: Gender; beautyAdvice?: boolean };
@@ -130,9 +131,41 @@ export async function loadAccountData(login: string) {
     looks: looks.value || [], saved: saved.value || [], failed };
 }
 
+const SAVED_MERGED = 'savedLooksMerged';
+
+/**
+ * The saved looks move into the favourites, once. Runs before anything is shown or written, and only when both lists were read.
+ * The old list goes last: first the favourites holding it are written and read back, then the mark that this is done; a crash at any
+ * point leaves the old list, and the next launch repeats what is left (mergeSavedLooks finds what is already there).
+ * `pending` is how many looks are still waiting in the old list.
+ */
+export async function migrateSavedLooks(login: string, data: { favorites: GeneratedLook[]; saved: SavedLook[]; failed: Set<string> }) {
+  const unmoved = { favorites: data.favorites, pending: data.saved.length };
+  if (data.failed.has(DATA_KEYS.favorites) || data.failed.has(DATA_KEYS.savedLooks)) return unmoved;
+  const savedKey = accountKey(login, DATA_KEYS.savedLooks);
+  const favoritesKey = accountKey(login, DATA_KEYS.favorites);
+  try {
+    const done = await loadRaw(accountKey(login, SAVED_MERGED));
+    if (done.failed) return unmoved;
+    // Done before: what is left of the old list is only its removal, which must not bring back a look deleted since.
+    if (done.value === '1') { await storage.removeItem(savedKey).catch(() => {}); return { favorites: data.favorites, pending: 0 }; }
+    if (!data.saved.length) return unmoved;
+    const favorites = mergeSavedLooks(data.favorites, data.saved);
+    if (favorites !== data.favorites) await saveJson(favoritesKey, favorites);
+    const written = await loadValidated(favoritesKey, decodeGenerated);
+    if (written.failed || favorites.some(look => !written.value?.some(other => other.id === look.id))) return unmoved;
+    await storage.setItem(accountKey(login, SAVED_MERGED), '1');
+    await storage.removeItem(savedKey).catch(() => {});
+    return { favorites, pending: 0 };
+  } catch (error) {
+    console.warn('Failed to move saved looks', error);
+    return unmoved;
+  }
+}
+
 /** Стирает всё локальное для аккаунта: записи, фото гардероба и кадры примерок. */
 export async function purgeAccountData(login: string) {
-  const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion', 'aiConsent', 'closetSync', 'dismissedLooks', 'favoriteColors', 'dailyLook', 'onboardingSeen'].map(key => accountKey(login, key));
+  const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion', 'aiConsent', 'closetSync', 'dismissedLooks', 'favoriteColors', 'dailyLook', 'onboardingSeen', SAVED_MERGED].map(key => accountKey(login, key));
   await Promise.all(keys.flatMap(key => [storage.removeItem(key).catch(() => {}), AsyncStorage.removeItem(key).catch(() => {})]));
   await removeUnusedPhotos([], login).catch(() => {});
   await removeTryOnFrames(login).catch(() => {});

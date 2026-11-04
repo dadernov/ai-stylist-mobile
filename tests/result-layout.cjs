@@ -18,9 +18,9 @@ const column = (photo, chrome, pieces = true) => chrome + photo + (pieces ? L.PI
 for (const [name, height, top, tabs] of [['SE 2', 667, 20, 100], ['14', 844, 47, 120]]) {
   const available = L.estimatedViewport(height, top, tabs);
   for (const pieces of [true, false]) {
-    const photo = L.resultPhotoHeight({ available, chrome: L.CARD_CHROME, pieces });
+    const photo = L.resultPhotoHeight({ available, pieces });
     assert.ok(photo > L.MIN_PHOTO, `${name}: the room is real, not the minimum (${photo})`);
-    assert.ok(column(photo, L.CARD_CHROME, pieces) <= available, `${name}: a card fits its list`);
+    assert.ok(column(photo, 0, pieces) <= available, `${name}: a result fits its list`);
   }
 }
 assert.equal(L.resultPhotoHeight({ available: 100 }), L.MIN_PHOTO, 'never less than a picture');
@@ -87,7 +87,7 @@ assert.match(developing, /running=\{active && !reduced && developing\}/);
 assert.match(developing, /\[done, active, fogFailed\]/);
 assert.match(developing, /setTimeout\(showNow, REVEAL_WATCHDOG_MS\)/);
 assert.match(read('components/studio/GenerationFog.tsx'), /revealStart\.current = Date\.now\(\)/);
-for (const file of ['components/FittingRoom.tsx', 'components/AiTryOnPreview.tsx']) assert.match(read(file), /revealingId === /, `${file} holds its reveal`);
+for (const file of ['components/FittingRoom.tsx']) assert.match(read(file), /revealingId === /, `${file} holds its reveal`);
 
 // --- one treatment --------------------------------------------------------
 const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)]);

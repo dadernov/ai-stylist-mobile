@@ -1,6 +1,6 @@
 import { forwardRef, ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticEvent, ScrollView, ScrollViewProps,
-  StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Keyboard, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticEvent, ScrollView, ScrollViewProps,
+  StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ArrowUpRight, ChevronDown, RefreshCw, X } from 'lucide-react-native';
@@ -11,7 +11,7 @@ import { GenerationView } from './studio/GenerationView';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook } from '../types/looks';
-import { useSaveLook } from './SaveLook';
+import { SaveLookButton, useSaveLook } from './SaveLook';
 import { DoubleTapArea, HeartBurst, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
 import { RESULT_GAP } from './studio/resultLayout';
 import { tapHaptic } from '../services/haptics';
@@ -31,6 +31,15 @@ export type StageSetup = {
   onGenerate: () => void;
   starting?: boolean;
   error?: string | null;
+  /** What keeps the look from being tried on, or from being tried on whole. */
+  warnings: string[];
+  canGenerate: boolean;
+  /** The look's name, kept with the try-on; the placeholder says what it is called without one. */
+  name: string;
+  namePlaceholder: string;
+  onName: (name: string) => void;
+  /** These pieces as a favourite, to keep them without a try-on. */
+  look: GeneratedLook;
 };
 
 /** One try-on in the window: running, finished or failed. */
@@ -81,7 +90,7 @@ type Props = {
  */
 export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange, onClose, setup, banner }: Props) {
   const t = useT();
-  const { colors: { danger }, isDark } = useTheme();
+  const { colors: { danger, surface }, isDark } = useTheme();
   const reduced = useReducedMotion();
   const ink = isDark ? INK_ON_DARK : INK;
   const { height } = useWindowDimensions();
@@ -162,10 +171,14 @@ export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange
                 <FormScrollView style={{ flex: 1 }} contentContainerStyle={styles.setup} showsVerticalScrollIndicator>
                   <Text style={[styles.setupTitle, { color: ink }]}>{t('Как надеть')}</Text>
                   <TryOnOptions items={setup.items} options={setup.options} onChange={setup.onOptions} disabled={setup.starting} />
+                  <TextInput style={[styles.nameInput, { color: ink, backgroundColor: surface }]} accessibilityLabel={t('Название образа')} placeholder={setup.namePlaceholder} placeholderTextColor={inkSoft(isDark)}
+                    value={setup.name} onChangeText={setup.onName} editable={!setup.starting} multiline scrollEnabled={false} returnKeyType="done" submitBehavior="blurAndSubmit" onSubmitEditing={Keyboard.dismiss} />
+                  {setup.warnings.map(warning => <Text key={warning} style={[styles.note, { color: inkSoft(isDark) }]}>{warning}</Text>)}
                   {setup.error ? <Text style={[styles.note, { color: danger }]}>{setup.error}</Text> : null}
                 </FormScrollView>
                 <View style={styles.actions}>
-                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} onPress={setup.onGenerate} />
+                  <Pill variant="primary" title={t('Примерить')} icon={ArrowUpRight} loading={setup.starting} disabled={!setup.canGenerate} onPress={setup.onGenerate} />
+                  <SaveLookButton look={setup.look} />
                 </View>
               </> : (
                 <View style={{ flex: 1 }} onLayout={measure}>
@@ -273,6 +286,7 @@ const styles = StyleSheet.create({
   note: { ...font('regular'), fontSize: 13, lineHeight: 18 },
   actions: { gap: 10, paddingTop: 12, paddingBottom: 8 },
   setup: { gap: 14, paddingBottom: 16 },
+  nameInput: { ...font('regular'), borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   setupTitle: { ...font('semibold'), fontSize: 15, lineHeight: 20 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

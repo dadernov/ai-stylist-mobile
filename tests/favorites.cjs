@@ -173,16 +173,16 @@ const run = async () => {
 
   // --- the wiring ---------------------------------------------------------
   const read = file => fs.readFileSync(path.join(src, file), 'utf8');
-  for (const file of ['components/GenerationStage.tsx', 'components/GenerationHistory.tsx', 'components/FittingRoom.tsx', 'components/AiTryOnPreview.tsx', 'screens/FavoritesScreen.tsx']) {
+  for (const file of ['components/GenerationStage.tsx', 'components/GenerationHistory.tsx', 'components/FittingRoom.tsx', 'screens/FavoritesScreen.tsx']) {
     assert.match(read(file), /<ResultActions/, `${file} has the three buttons`);
   }
-  for (const file of ['components/GenerationHistory.tsx', 'components/FittingRoom.tsx', 'components/DailyLookHero.tsx', 'screens/RecommendationsScreen.tsx', 'components/onboarding/FirstLook.tsx']) {
+  for (const file of ['components/GenerationHistory.tsx', 'components/GenerationStage.tsx', 'components/DailyLookHero.tsx', 'screens/RecommendationsScreen.tsx', 'components/onboarding/FirstLook.tsx']) {
     assert.match(read(file), /<SaveLookButton/, `${file} has the button`);
   }
   // The window is drawn by the root outlet, above the provider in the tree: without the hand-over the button would throw.
   assert.match(read('components/GenerationDock.tsx'), /<FavoritesProvider value=\{favorites\}><GenerationStage/);
   // A look without a try-on can be saved on its card; on the favourites screen the heart asks first, and trash and heart agree.
-  assert.match(read('components/AiTryOnPreview.tsx'), /<SaveLookButton look=\{shownLook\}/);
+  assert.match(read('components/GenerationStage.tsx'), /<SaveLookButton look=\{setup\.look\}/);
   assert.match(read('screens/FavoritesScreen.tsx'), /<ResultActions[^>]*onUnsave=\{onRemove\}/);
   assert.match(fs.readFileSync(path.join(src, '../App.tsx'), 'utf8'), /removeFavorite\(prev, id\)/);
   // The burst on a double tap waits for the save; a gallery error is said in the user's language.

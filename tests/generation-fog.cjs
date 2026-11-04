@@ -77,11 +77,10 @@ assert.deepEqual(FOG_SKSL.match(/uniform \w+ (\w+);/g).map(line => line.replace(
 
 // Every window goes through the one view; the old ones are gone.
 const read = file => fs.readFileSync(`${__dirname}/../src/components/${file}`, 'utf8');
-for (const file of ['GenerationStage.tsx', 'AiTryOnPreview.tsx', 'onboarding/FirstLook.tsx']) assert.match(read(file), /<GenerationView/, file);
+for (const file of ['GenerationStage.tsx', 'onboarding/FirstLook.tsx']) assert.match(read(file), /<GenerationView/, file);
 for (const file of ['GenerationDock.tsx', 'FittingRoom.tsx']) assert.match(read(file), /<DevelopingImage[^>]*revealKey=/, file);
 assert.match(read('FittingRoom.tsx'), /<GenerationStatus/);
 assert.ok(!/BusyVeil/.test(read('FittingRoom.tsx')), 'no veil of its own');
 assert.ok(!/blurRadius/.test(read('GenerationDock.tsx')), 'no blur of its own in the corner');
-assert.ok(!/Промежуточный результат/.test(read('AiTryOnPreview.tsx')), 'no intermediate frame of its own');
 assert.match(read('studio/skiaModule.web.ts'), /return null/, 'the web keeps the gradient');
 console.log('PASS: generation fog — tint, reveal, frame governor, owed reveals, one view in every window');

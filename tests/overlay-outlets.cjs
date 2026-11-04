@@ -43,7 +43,7 @@ const blocks = (source, tag) => {
 // The sliding sheets and windows of the try-on and the wardrobe: a try-on, an item's AI
 // analysis and its editor all ask for consent or open the generation window.
 let checked = 0;
-for (const file of ['components/FittingRoom.tsx', 'screens/WardrobeScreen.tsx', 'screens/OutfitBuilderScreen.tsx', 'screens/FavoritesScreen.tsx']) {
+for (const file of ['components/FittingRoom.tsx', 'screens/WardrobeScreen.tsx', 'screens/FavoritesScreen.tsx']) {
   const source = read(file);
   for (const [start, end] of blocks(source, 'Modal')) {
     const block = source.slice(start, end);
@@ -53,7 +53,7 @@ for (const file of ['components/FittingRoom.tsx', 'screens/WardrobeScreen.tsx', 
   }
   checked += blocks(source, 'StudioSheet').length;
 }
-assert.ok(checked >= 6, `the try-on sheets, the three wardrobe sheets and the look editor were found (${checked})`);
+assert.ok(checked >= 4, `the three wardrobe sheets and the favourites sheet were found (${checked})`);
 
 // No window is opened from inside a sheet while it is drawn beside the sheet: a <Modal> outside every
 // <StudioSheet> of its file must not be shown by a setter called from inside one.

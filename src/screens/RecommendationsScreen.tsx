@@ -45,6 +45,8 @@ type Props = {
   initialStyle?: string;
   initialEvent?: string;
   displayName?: string;
+  /** The occasion and style chosen here open the screen next time. */
+  onContext?: (context: { style: string; event: string }) => void;
 };
 type PrecipitationChoice = 'auto' | 'none' | 'rain' | 'snow';
 type T = ReturnType<typeof useT>;
@@ -70,7 +72,7 @@ function describeLook(look: GeneratedLook, ids: string[], index: number, items: 
   return { selection, advice, match, swaps, savedId, palette, tips, title, main };
 }
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName, onContext }: Props) {
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
@@ -80,6 +82,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
   const [style, setStyle] = useState(initialStyle && STYLES.includes(initialStyle) ? initialStyle : 'Кэжуал');
   const [anchorId, setAnchorId] = useState(anchorRequest?.id || 'any');
   useEffect(() => { if (anchorRequest) { setAnchorId(anchorRequest.id); setAt(0); } }, [anchorRequest?.at]);
+  useEffect(() => { onContext?.({ style, event }); }, [style, event]);
   const [weather, setWeather] = useState('');
   const [precipitationChoice, setPrecipitationChoice] = useState<PrecipitationChoice>('auto');
   // Погода подставляется сама, поэтому уточнения живут в листе под кнопкой погоды: образ виден сразу.
@@ -105,7 +108,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
   const temperature = manualTemperature ?? (live ? Math.round(live.temperature) : null);
   const precipitation: Precipitation = precipitationChoice === 'auto' ? live?.precipitation ?? null : precipitationChoice === 'none' ? null : precipitationChoice;
   const gaps = useMemo(() => wardrobeGaps(items, { style, event, temperature, precipitation }, t), [items, style, event, temperature, precipitation, t]);
-  const liveText = live ? t('Сейчас {temp}°C, {description}', { temp: Math.round(live.temperature), description: t(describeWeatherCode(live.code)) }) + (live.city ? `, ${live.city}` : '')
+  const liveText = live ? (live.wind === null ? t('Сейчас {temp}°C, {description}', { temp: Math.round(live.temperature), description: t(describeWeatherCode(live.code)) })
+      : t('Сейчас {temp}°C, {description}, ветер {wind} м/с', { temp: Math.round(live.temperature), description: t(describeWeatherCode(live.code)), wind: Math.round(live.wind) })) + (live.city ? `, ${live.city}` : '')
     : weatherLoading ? t('Определяем погоду…') : weatherError === 'permission' ? t('Разреши доступ к геолокации, чтобы узнать погоду.')
     : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
@@ -239,7 +243,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
   const textFade = { opacity: fade };
 
   return <FormScrollView contentContainerStyle={styles.content} scrollEnabled={!heroSwiping}>
-    <ScreenHeader title={t('Что надеть')} right={<Pill size="sm" icon={WeatherIcon} title={degrees} accessibilityLabel={`${t('Погода и основа образа')}: ${degrees}`} onPress={() => { Keyboard.dismiss(); setTuning(true); }} />} />
+    <ScreenHeader title={t('Что надеть')} />
 
     <DailyLookHero items={items} gender={gender} beautyAdvice={beautyAdvice} favoriteItemIds={favoriteItemIds} dismissed={dismissedAtStart} login={login} displayName={displayName}
       weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} onSwiping={setHeroSwiping} />
@@ -254,6 +258,19 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
         <Text style={[font(style === value ? 'semibold' : 'regular'), styles.word, style === value && { color: c.text }]}>{t(value)}</Text>
       </AppPressable>)}
     </ScrollView>
+    {/* The weather the looks are chosen for; the card opens what can be changed about it. */}
+    <AppPressable accessibilityRole="button" accessibilityLabel={`${t('Погода и основа образа')}: ${degrees}`} onPress={() => { Keyboard.dismiss(); setTuning(true); }} style={{ marginTop: 14 }}>
+      <Glass radius={24}>
+        <View style={styles.weatherCard}>
+          <WeatherIcon size={24} strokeWidth={1.5} color={c.text} />
+          <Text style={[font('semibold'), styles.weatherDegrees]}>{degrees}</Text>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[font('semibold'), styles.link]}>{t('Погода рядом с тобой')}</Text>
+            <Text style={[font('regular'), styles.muted]} numberOfLines={2}>{liveText}</Text>
+          </View>
+        </View>
+      </Glass>
+    </AppPressable>
     {anchor ? <View style={styles.anchor}>
       <Text style={[font('regular'), styles.muted, { flex: 1 }]} numberOfLines={1}>{t('Образы вокруг «{name}»', { name: anchor.name })}</Text>
       <Pill icon={X} size="icon" accessibilityLabel={t('Без привязки к вещи')} onPress={() => { setAnchorId('any'); fresh(); }} />
@@ -410,6 +427,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chipRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16 },
   wordRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingHorizontal: 18 },
   word: { fontSize: 13, lineHeight: 18, color: c.muted },
+  weatherCard: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  weatherDegrees: { color: c.text, fontSize: 20, lineHeight: 26 },
   anchor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   stage: { marginHorizontal: -16, marginTop: 6, alignItems: 'center', justifyContent: 'center' },
   arrow: { position: 'absolute', top: '50%', marginTop: -19 },

@@ -1,4 +1,4 @@
-import { ArrowUpRight, Heart, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
+import { ArrowUpRight, Heart, Palette, Pencil, Scissors, Shirt, Trash2 } from 'lucide-react-native';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SheetStrip } from '../components/ui/FormScrollView';
 import { memo, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
@@ -10,7 +10,9 @@ import { useT } from '../constants/i18n';
 import { GeneratedLook } from '../types/looks';
 import { WardrobeItem } from '../data/mock';
 import { AppPressable } from '../components/AppPressable';
-import { reanchorTryOnUri } from '../components/AiTryOnPreview';
+import { reanchorTryOnUri } from '../services/tryOnPhotos';
+import { bareTwin, piecesChanged } from '../domain/favorites';
+import { LookEditor } from '../components/LookEditor';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
@@ -29,7 +31,10 @@ type FavoritesScreenProps = {
   beautyAdvice: boolean;
   looks: GeneratedLook[];
   items: WardrobeItem[];
+  /** The photo try-ons are made from, for before/after. */
+  modelUri?: string;
   onRemove: (id: string) => void;
+  onEdit: (id: string, change: { title: string; itemIds: string[]; newId: string }) => void;
   onGoToBuilder?: () => void;
   onTryOn?: (itemIds: string[]) => void;
 };
@@ -102,13 +107,14 @@ const FavoriteCard = memo(function FavoriteCard({ look, height, width, index, it
   );
 });
 
-export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn, beautyAdvice }: FavoritesScreenProps) {
+export function FavoritesScreen({ looks, items, modelUri, onRemove, onEdit, onGoToBuilder, onTryOn, beautyAdvice }: FavoritesScreenProps) {
   const Alert = useAppDialog();
   const styles = useThemedStyles(makeStyles);
   const { colors: c } = useTheme();
   const t = useT();
   const [filter, setFilter] = useState<Filter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const itemsById = useMemo(() => Object.fromEntries(items.map(item => [item.id, item])), [items]);
@@ -128,11 +134,30 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
       const joined = looks.some(look => look.id === id && look.joined);
       Alert.alert(t(joined ? 'Убрать примерку?' : 'Удалить образ?'), t(joined ? 'Образ останется в избранном без примерки.' : 'Действие нельзя отменить.'), [
         { text: t('Отмена'), style: 'cancel' },
-        { text: t('Удалить'), style: 'destructive', onPress: () => { setOpenId(null); onRemove(id); } }
+        { text: t('Удалить'), style: 'destructive', onPress: () => { setOpenId(null); setEditing(false); onRemove(id); } }
       ]);
     },
     [looks, onRemove, t]
   );
+
+  const close = () => { setOpenId(null); setEditing(false); };
+  const saveEdit = (look: GeneratedLook, title: string, itemIds: string[]) => {
+    const changed = piecesChanged(look, itemIds);
+    if (!itemIds.length) { Alert.alert(t('Нет вещей'), t('Выбери хотя бы одну вещь.')); return; }
+    if (changed && bareTwin(looks, look.id, itemIds)) { Alert.alert(t('Такой образ уже в избранном'), t('Выбери другие вещи или оставь этот образ как есть.')); return; }
+    const apply = () => {
+      const newId = changed ? `edited-${Date.now()}` : look.id;
+      onEdit(look.id, { title, itemIds: changed ? itemIds : look.itemIds, newId });
+      setOpenId(newId);
+      setEditing(false);
+    };
+    // The picture shows the old pieces: it stays in the history, and leaves this look only when asked.
+    if (changed && look.tryOnImageUri) Alert.alert(t('Изменить состав?'), t('Примерка показывает прежние вещи: она уйдёт из образа, но останется в «Истории».'), [
+      { text: t('Отмена'), style: 'cancel' },
+      { text: t('Изменить'), onPress: apply }
+    ]);
+    else apply();
+  };
 
   const header = (
     <ScreenHeader
@@ -209,10 +234,13 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
       </ScrollView>
       </>}
 
-      <StudioSheet visible={Boolean(current)} title={open ? lookTitle(open, t) : ''} onClose={() => setOpenId(null)} height={openTryOn ? '92%' : undefined} scroll={!openTryOn}>
-        {open && openTryOn ? (
-          <FavoriteResult look={open} uri={openTryOn} items={openItems} meta={meta.join(', ')} beauty={beautyPanel}
-            onPreview={() => setPreviewUri(openTryOn)} onRemove={() => handleRemove(open.id)}
+      <StudioSheet visible={Boolean(current)} title={open ? (editing ? t('Редактировать образ') : lookTitle(open, t)) : ''} onClose={close} height={editing ? '88%' : openTryOn ? '92%' : undefined} scroll={editing || !openTryOn}>
+        {open && editing ? (
+          <LookEditor key={open.id} title={lookTitle(open, t)} itemIds={open.itemIds} items={items} onCancel={() => setEditing(false)}
+            onSave={(title, itemIds) => saveEdit(open, title === lookTitle(open, t) ? open.title : title, itemIds)} />
+        ) : open && openTryOn ? (
+          <FavoriteResult look={open} uri={openTryOn} modelUri={modelUri} items={openItems} meta={meta.join(', ')} beauty={beautyPanel}
+            onPreview={uri => setPreviewUri(uri)} onRemove={() => handleRemove(open.id)} onEdit={() => setEditing(true)}
             onTryOn={onTryOn ? () => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); } : undefined} />
         ) : open ? (
           <>
@@ -240,6 +268,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
                 <Pill variant="primary" icon={ArrowUpRight} title={t('Примерить на себе')}
                   onPress={() => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); }} />
               ) : null}
+              <Pill icon={Pencil} title={t('Изменить')} onPress={() => setEditing(true)} />
               <Pill icon={Trash2} title={t('Удалить')} iconColor={c.danger} onPress={() => handleRemove(open.id)} />
             </View>
           </>
@@ -252,8 +281,8 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
 }
 
 /** A favourite with a try-on: the same photo, thumbnails and three buttons as every result; its advice opens over the photo so nothing scrolls. */
-function FavoriteResult({ look, uri, items, meta, beauty, onPreview, onRemove, onTryOn }: {
-  look: GeneratedLook; uri: string; items: WardrobeItem[]; meta: string; beauty: ReactNode; onPreview: () => void; onRemove: () => void; onTryOn?: () => void;
+function FavoriteResult({ look, uri, modelUri, items, meta, beauty, onPreview, onRemove, onEdit, onTryOn }: {
+  look: GeneratedLook; uri: string; modelUri?: string; items: WardrobeItem[]; meta: string; beauty: ReactNode; onPreview: (uri: string) => void; onRemove: () => void; onEdit: () => void; onTryOn?: () => void;
 }) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
@@ -263,17 +292,21 @@ function FavoriteResult({ look, uri, items, meta, beauty, onPreview, onRemove, o
   const save = useSaveLook(look);
   const sharing = useShareChoice(login);
   const [advice, setAdvice] = useState(false);
+  const [before, setBefore] = useState(false);
+  const shown = before && modelUri ? modelUri : uri;
   return <>
     {meta ? <Text style={[font('regular'), styles.meta]} numberOfLines={1}>{meta}</Text> : null}
     {advice ? <ScrollView style={styles.resultPhoto}>{beauty}</ScrollView> : null}
     {advice ? <Pill size="sm" icon={Palette} title={t('Примерка')} style={{ alignSelf: 'flex-start' }} onPress={() => setAdvice(false)} /> : (
-      <ResultPicture uri={uri} onOpen={onPreview}>
-        <ResultPhotoControls onShare={() => sharing.offer({ uri, items, title: look.title })}>
+      <ResultPicture uri={shown} onOpen={() => onPreview(shown)}>
+        <ResultPhotoControls onShare={() => sharing.offer({ uri, items, title: look.title })} compare={modelUri ? { before, onToggle: () => setBefore(value => !value) } : undefined}>
+          <Pill size="sm" icon={Pencil} accessibilityLabel={t('Изменить')} onPress={onEdit} />
           {beauty ? <Pill size="sm" icon={Palette} accessibilityLabel={t('Макияж и укладка')} onPress={() => setAdvice(true)} /> : null}
           <Pill size="sm" icon={Trash2} iconColor={c.danger} accessibilityLabel={t('Удалить')} onPress={onRemove} />
         </ResultPhotoControls>
       </ResultPicture>
     )}
+    {look.tryOnWarning ? <Text style={[font('regular'), styles.meta]} numberOfLines={2}>{look.tryOnWarning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
     <ResultPieces items={items.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
     <ResultActions gallery={gallery} save={save} onUnsave={onRemove} againDisabled={!onTryOn || !items.length} onAgain={() => onTryOn?.()} />
     {sharing.sheet}

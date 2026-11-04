@@ -5,8 +5,6 @@ export const ACTIONS_HEIGHT = 58;
 export const ACTION_GAP = 8;
 export const RESULT_GAP = 10;
 export const MIN_PHOTO = 130;
-/** A look's glass card around the photo: its padding, the title row and the gaps. */
-export const CARD_CHROME = 12 * 2 + 38 + 8 + 8;
 
 export function resultPhotoHeight({ available, chrome = 0, pieces = true, min = MIN_PHOTO }: { available: number; chrome?: number; pieces?: boolean; min?: number }) {
   const room = available - chrome - (pieces ? PIECE_SIZE + RESULT_GAP : 0) - RESULT_GAP - ACTIONS_HEIGHT;

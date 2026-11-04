@@ -1,4 +1,4 @@
-import { GeneratedLook, TryOnHistoryItem } from '../types/looks';
+import { GeneratedLook, SavedLook, TryOnHistoryItem } from '../types/looks';
 
 // The app's data folder changes between installs and updates on iOS: a stored picture is known by its path inside try-ons/.
 const imageKey = (uri: string) => {
@@ -78,4 +78,54 @@ export const lookWithResult = (look: GeneratedLook, result: Omit<TryOnHistoryIte
 export function lookFromJob(job: { id: string; name: string; itemIds: string[]; result?: TryOnHistoryItem }): GeneratedLook {
   const look = plainLook(`job-${job.id}`, job.name, job.itemIds);
   return job.result ? { ...lookWithResult(look, job.result), tryOnHistory: [job.result] } : look;
+}
+
+/** Another bare favourite already stands for these pieces: the list never holds them twice bare. */
+export const bareTwin = (favorites: GeneratedLook[], id: string, itemIds: string[]) =>
+  favorites.some(favorite => favorite.id !== id && bareInside(favorite) && samePieces(favorite.itemIds, itemIds));
+
+export const piecesChanged = (look: GeneratedLook, itemIds: string[]) => !samePieces(look.itemIds, itemIds);
+
+/**
+ * A new name stays with everything else. New pieces make it another look: the try-on and the advice were about the old ones and leave
+ * (the picture stays in the journal), and it takes `newId`, as the id of an idea stands for that idea's pieces.
+ */
+export function editFavorite(favorites: GeneratedLook[], id: string, change: { title: string; itemIds: string[]; newId: string }): GeneratedLook[] {
+  return favorites.map(favorite => {
+    if (favorite.id !== id) return favorite;
+    if (!piecesChanged(favorite, change.itemIds)) return { ...favorite, title: change.title };
+    const { fitScore, fitReasons, matchPercent, stylingTips, warnings, why, source, ...rest } = withoutTryOn(favorite);
+    return { ...rest, id: change.newId, title: change.title, itemIds: change.itemIds, tuckMode: undefined };
+  });
+}
+
+/** What the retired list of looks kept, as a favourite. Its id comes from the old one, so doing this again finds it. */
+const fromSaved = (look: SavedLook): GeneratedLook => ({
+  ...plainLook(`saved-${look.id}`, look.name, look.itemIds), fitScore: look.fitScore, fitReasons: look.fitReasons, tuckMode: look.tuckMode,
+  tryOnImageUri: look.tryOnImageUri, tryOnWarning: look.tryOnWarning, tryOnQualityMode: look.tryOnQualityMode, tryOnHistory: look.tryOnHistory,
+  tryOnUpdatedAt: look.tryOnUpdatedAt ?? (look.tryOnImageUri ? look.createdAt : undefined)
+});
+
+const moreFrames = (kept?: TryOnHistoryItem[], added?: TryOnHistoryItem[]) => {
+  const frames = [...(kept || [])];
+  for (const frame of added || []) if (!frames.some(other => sameImage(other.imageUri, frame.imageUri))) frames.push(frame);
+  return frames.length ? frames : undefined;
+};
+
+/**
+ * The saved looks joined into the favourites, each once however many times this runs. The same picture, or the same pieces where neither
+ * has a picture, is one look: it keeps the favourite, under the name given in the old list, with both lists' frames. A look with a picture
+ * of its own is its own favourite even beside the same pieces, so no name and no picture is lost. Nothing to add returns the same array.
+ */
+export function mergeSavedLooks(favorites: GeneratedLook[], saved: SavedLook[]): GeneratedLook[] {
+  let merged = favorites;
+  for (const look of saved) {
+    const next = fromSaved(look);
+    if (merged.some(favorite => favorite.id === next.id)) continue;
+    const twin = merged.find(favorite => next.tryOnImageUri ? shows(favorite, next.tryOnImageUri) : !favorite.tryOnImageUri && samePieces(favorite.itemIds, next.itemIds));
+    merged = twin
+      ? merged.map(favorite => favorite === twin ? { ...twin, title: next.title, fitReasons: twin.fitReasons ?? next.fitReasons, tryOnHistory: moreFrames(twin.tryOnHistory, next.tryOnHistory) } : favorite)
+      : [...merged, next];
+  }
+  return merged;
 }

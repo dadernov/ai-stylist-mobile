@@ -11,7 +11,7 @@ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
-import { OutfitBuilderScreen } from './src/screens/OutfitBuilderScreen';
+import { FittingScreen } from './src/screens/FittingScreen';
 import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
@@ -26,11 +26,11 @@ import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
 import { loadJson, loadRaw, saveJson } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
-import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
+import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, migrateSavedLooks, prepareAccountStorage, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { readGarmentProfile, readGarmentStyle, readGarmentTraits } from './src/services/ai';
 import { decodeGarmentProfile } from './src/domain/garmentTraits';
 import { hasAiConsent } from './src/services/aiConsent';
-import { GeneratedLook, SavedLook } from './src/types/looks';
+import { GeneratedLook } from './src/types/looks';
 import { AppPressable } from './src/components/AppPressable';
 import { FadeInView } from './src/components/ui/FadeInView';
 import { Skeleton } from './src/components/ui/Skeleton';
@@ -40,7 +40,7 @@ import { PreferencesScreen } from './src/screens/PreferencesScreen';
 import { TryOnJobsProvider, useTryOnJobs } from './src/components/TryOnJobsContext';
 import { GenerationDockProvider } from './src/components/GenerationDock';
 import { FavoritesProvider } from './src/components/SaveLook';
-import { removeFavorite } from './src/domain/favorites';
+import { editFavorite, removeFavorite } from './src/domain/favorites';
 import { OverlayProvider } from './src/components/OverlayHost';
 import { useClosetSync } from './src/components/useClosetSync';
 import { AppDialogProvider } from './src/components/AppDialog';
@@ -48,7 +48,7 @@ import { FirstLook, useFirstLookGate } from './src/components/onboarding/FirstLo
 import { hasLocalHistory } from './src/components/onboarding/firstLookLogic';
 import { AiConsentProvider, useAiConsent } from './src/components/AiConsentContext';
 
-type TabKey = 'wardrobe' | 'builder' | 'recommendations' | 'favorites' | 'profile';
+type TabKey = 'wardrobe' | 'fitting' | 'recommendations' | 'favorites' | 'profile';
 
 const STORAGE_KEYS = DATA_KEYS;
 const DISMISS_DAYS = 14;
@@ -57,7 +57,7 @@ const PROFILED_SECTIONS = new Set(['Верх', 'Низ', 'Обувь', 'Верх
 
 const TABS: Array<{ key: TabKey; icon: LucideIcon; label: string }> = [
   { key: 'wardrobe', icon: Shirt, label: 'Гардероб' },
-  { key: 'builder', icon: PersonStanding, label: 'Образ' },
+  { key: 'fitting', icon: PersonStanding, label: 'Примерка' },
   { key: 'recommendations', icon: Layers, label: 'Идеи' },
   { key: 'favorites', icon: Heart, label: 'Избранное' },
   { key: 'profile', icon: UserRound, label: 'Профиль' }
@@ -215,7 +215,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const [tryOnItemIds, setTryOnItemIds] = useState<string[] | undefined>();
   // A garment card asks the ideas to be built around that garment.
   const [ideasAnchor, setIdeasAnchor] = useState<{ id: string; at: number } | undefined>();
-  const [builderEntry, setBuilderEntry] = useState<'fitting' | 'builder' | 'history'>('fitting');
+  const [builderEntry, setBuilderEntry] = useState<'fitting' | 'history'>('fitting');
   const [historyItemId, setHistoryItemId] = useState<string>();
   const [wardrobeDetailId, setWardrobeDetailId] = useState<string>();
   const { store: jobsStore, ready: jobsReady } = useTryOnJobs();
@@ -233,19 +233,21 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const unreadableKeys = useRef<Set<string>>(new Set());
   const reportedSaveFailures = useRef<Set<string>>(new Set());
   const [favoriteLooks, setFavoriteLooks] = useState<GeneratedLook[]>([]);
+  // Looks of the retired «Подбор», as they were stored: only their try-ons are of use, to the journal.
   const [lastLooks, setLastLooks] = useState<GeneratedLook[]>([]);
   const [lastContext, setLastContext] = useState<{ style: string; event: string; weather: string }>({
     style: '',
     event: '',
     weather: ''
   });
-  const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
+  // Looks still waiting in the retired list (it could not be moved into the favourites yet): the account is not new.
+  const [savedWaiting, setSavedWaiting] = useState(0);
   // Looks put aside with "Not now": they sink in the ideas for two weeks.
   const [dismissedLooks, setDismissedLooks] = useState<{ core: string; at: number }[]>([]);
   const [isReady, setReady] = useState(false);
   useEffect(() => {
-    if (isReady && jobsReady) void jobsStore.importLooks([...savedLooks, ...favoriteLooks, ...lastLooks], items).catch(() => {});
-  }, [isReady, jobsReady, jobsStore, savedLooks, favoriteLooks, lastLooks, items]);
+    if (isReady && jobsReady) void jobsStore.importLooks([...favoriteLooks, ...lastLooks], items).catch(() => {});
+  }, [isReady, jobsReady, jobsStore, favoriteLooks, lastLooks, items]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -254,6 +256,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   useEffect(() => {
     const hydrate = async () => {
       const data = await loadAccountData(session.login);
+      // Before anything is shown or written: the old list of looks joins the favourites.
+      const moved = await migrateSavedLooks(session.login, data);
       if (!alive.current) return;
       unreadableKeys.current = data.failed;
       const profile = data.profile;
@@ -268,7 +272,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
         const name = suggestItemName(item);
         return name && name !== item.name ? { ...item, name } : item;
       });
-      setItems(cleanedItems); setFavoriteLooks(data.favorites); setLastLooks(data.looks); setSavedLooks(data.saved);
+      setItems(cleanedItems); setFavoriteLooks(moved.favorites); setLastLooks(data.looks); setSavedWaiting(moved.pending);
       if (data.context) setLastContext(data.context);
       const dismissed = await loadJson<{ core: string; at: number }[]>(accountKey(session.login, 'dismissedLooks'));
       if (!alive.current) return;
@@ -276,6 +280,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
         && Number.isFinite(entry.at) && entry.at > Date.now() - DISMISS_DAYS * 86_400_000));
       if (data.failed.size) {
         showToast('Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.');
+      } else if (moved.pending) {
+        showToast('Не удалось перенести образы в избранное. Они целы: попробуем при следующем запуске.');
       }
       setReady(true);
 
@@ -464,14 +470,6 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   }, [isReady, lastContext]);
 
   useEffect(() => {
-    persist(STORAGE_KEYS.lastLooks, lastLooks, 'подобранные образы');
-  }, [isReady, lastLooks]);
-
-  useEffect(() => {
-    persist(STORAGE_KEYS.savedLooks, savedLooks, 'сохранённые образы');
-  }, [isReady, savedLooks]);
-
-  useEffect(() => {
     persist('dismissedLooks', dismissedLooks, 'скрытые образы');
   }, [isReady, dismissedLooks]);
 
@@ -508,7 +506,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const firstLook = useFirstLookGate({
     pending: firstLookPending, ready: isReady && jobsReady, session, onRemember: onFirstLookDone,
     unreadable: unreadableKeys.current.size > 0,
-    local: hasLocalHistory({ items: items.length, photo: Boolean(modelUri || avatarUri), jobs: jobsStore.getSnapshot().jobs.length, looks: favoriteLooks.length + savedLooks.length }),
+    local: hasLocalHistory({ items: items.length, photo: Boolean(modelUri || avatarUri), jobs: jobsStore.getSnapshot().jobs.length, looks: favoriteLooks.length + savedWaiting }),
   });
 
   const favoritesApi = useMemo(() => ({ favorites: favoriteLooks, setFavorites: setFavoriteLooks, login: session.login, notify: showToast }), [favoriteLooks, session.login]);
@@ -517,13 +515,13 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
     const tryOnModelUri = modelUri || avatarUri;
     if (activeTab === 'wardrobe') {
       return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId}
-        onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('builder'); }}
-        onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('builder'); }}
+        onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('fitting'); }}
+        onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('fitting'); }}
         onStyleWith={item => { setIdeasAnchor({ id: item.id, at: Date.now() }); setActiveTab('recommendations'); }} />;
     }
-    if (activeTab === 'builder')
+    if (activeTab === 'fitting')
       return (
-        <OutfitBuilderScreen
+        <FittingScreen
           items={items}
           modelUri={tryOnModelUri}
           initialItemId={tryOnItemId}
@@ -531,37 +529,31 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
           initialTab={builderEntry}
           initialHistoryItemId={historyItemId}
           onOpenItem={id => { setWardrobeDetailId(id); setActiveTab('wardrobe'); }}
-          gender={gender || 'unspecified'}
-          beautyAdvice={beautyAdvice}
           onProfile={() => setActiveTab('profile')}
           onModelChange={uri => {
             setModelUri(uri);
             storeProfilePhoto(uri, stored => setModelUri(current => (current === uri ? stored : current)));
           }}
           onWardrobe={() => { setWardrobeDetailId(undefined); setActiveTab('wardrobe'); }}
-          savedLooks={savedLooks}
-          onSavedLooksChange={setSavedLooks}
-          onLooksGenerated={(looks, context) => {
-            setLastLooks(looks);
-            setLastContext(context);
-            showToast(t('Образы готовы'));
-          }}
         />
       );
     if (activeTab === 'recommendations')
       return <RecommendationsScreen items={items} login={session.login} displayName={displayName} initialStyle={lastContext.style} initialEvent={lastContext.event} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice}
         dismissed={dismissedLooks.map(entry => entry.core)}
+        onContext={({ style, event }) => setLastContext(current => current.style === style && current.event === event ? current : { ...current, style, event })}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
-        onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }} />;
+        onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('fitting'); }} />;
     if (activeTab === 'favorites')
       return (
         <FavoritesScreen
           looks={favoriteLooks}
           beautyAdvice={beautyAdvice}
           items={items}
+          modelUri={tryOnModelUri}
           onRemove={(id) => setFavoriteLooks((prev) => removeFavorite(prev, id))}
-          onGoToBuilder={() => setActiveTab('builder')}
-          onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('builder'); }}
+          onEdit={(id, change) => setFavoriteLooks((prev) => editFavorite(prev, id, change))}
+          onGoToBuilder={() => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setBuilderEntry('fitting'); setActiveTab('fitting'); }}
+          onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('fitting'); }}
         />
       );
     return (

@@ -14,10 +14,12 @@ import { useShareChoice } from './SharePoster';
 import { askReadyNotificationPermission, notifyLookReady } from '../services/readyNotification';
 import { useTryOnJobs } from './TryOnJobsContext';
 import { useAiConsent } from './AiConsentContext';
+import { hasAiConsent } from '../services/aiConsent';
 import { AppPressable } from './AppPressable';
 import { GenerationStage, StagePage } from './GenerationStage';
 import { FavoritesProvider, useFavorites } from './SaveLook';
-import { lookFromJob } from '../domain/favorites';
+import { lookFromJob, plainLook } from '../domain/favorites';
+import { accessorySlot, TRYON_SECTIONS } from '../domain/accessories';
 import { ReadyBanner } from './ReadyBanner';
 import { useOverlay, useOverlayPlace } from './OverlayHost';
 import { DevelopingImage } from './studio/DevelopingImage';
@@ -26,21 +28,17 @@ import { font, glassEdge, glassFill, useReducedMotion } from './studio/studio';
 import { tryOnStatusLabel } from './tryOnStatus';
 
 /** A look about to be tried on: the window first asks how to wear each garment. */
-export type TryOnRequest = { items: WardrobeItem[]; context: string; fresh: boolean; options?: GarmentOptions };
-/**
- * `leave` closes the screen the window was opened over (the try-on sheet), so
- * closing the window lands on the main screen with the small one in the corner.
- */
+type TryOnSetup = { items: WardrobeItem[]; context: string | null; fresh: boolean; options: GarmentOptions; name: string };
 type DockApi = {
-  open: (jobId: string, leave?: () => void) => void;
-  prepare: (request: TryOnRequest) => void;
-  started: (jobId: string, leave?: () => void) => void;
+  open: (jobId: string) => void;
+  /** The setup step for these garments, or the try-on of them already running. Nothing is sent before its «Примерить». */
+  prepare: (items: WardrobeItem[], preset?: { options?: GarmentOptions; name?: string }) => void;
   /** A finished look was looked at elsewhere (the recent try-ons): it leaves the small window. */
   viewed: (jobId: string) => void;
   /** The big window is up: what is under it is out of sight, its fog pauses and its reveal waits. */
   windowUp: boolean;
 };
-const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, started: () => {}, viewed: () => {}, windowUp: false });
+const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, viewed: () => {}, windowUp: false });
 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
@@ -48,7 +46,8 @@ export const useGenerationDock = () => useContext(DockContext);
 const MINI_WIDTH = 112;
 const MINI_HEIGHT = 168;
 const resultOf = (job?: TryOnJob) => job?.status === 'succeeded' && job.result ? reanchorTryOnUri(job.result.imageUri) || job.result.imageUri : null;
-const titleOf = (job: TryOnJob) => job.garments?.map(garment => garment.name).join(' + ') || job.name;
+const garmentsName = (items: { name: string }[]) => items.map(item => item.name).join(' + ');
+const titleOf = (job: TryOnJob) => job.name || garmentsName(job.garments || []);
 
 /**
  * Try-ons live above every screen: "Try on" opens the big window, the cross
@@ -64,7 +63,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   children: ReactNode;
 }) {
   const t = useT();
-  const { jobs, store, login } = useTryOnJobs();
+  const { jobs, store, login, ready: jobsReady, readOnly, error: journalError } = useTryOnJobs();
   const aiConsent = useAiConsent();
   // Try-ons in the dock, the first started first; a finished one stays until it is seen.
   const [docked, setDocked] = useState<string[]>(() => initialDocked ? [initialDocked] : []);
@@ -75,7 +74,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   const [scrollTo, setScrollTo] = useState<{ page: number; at: number } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // The look being prepared in the window, before its try-on exists.
-  const [setup, setSetup] = useState<(TryOnRequest & { options: GarmentOptions }) | null>(null);
+  const [setup, setSetup] = useState<TryOnSetup | null>(null);
   const [starting, setStarting] = useState(false);
   // One window for setup and try-ons: the key changes only when a new window opens.
   const [windowKey, setWindowKey] = useState(0);
@@ -89,12 +88,9 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   }
   // Finished looks the user has looked at in the window: they leave the dock when it closes.
   const seen = useRef(new Set<string>());
-  // Closes the sheet the window was opened over.
-  const leave = useRef<(() => void) | null>(null);
 
   const dock = useCallback((id: string) => setDocked(previous => previous.includes(id) ? previous : [...previous, id]), []);
-  const openWindow = useCallback((page: number | string, from?: () => void) => {
-    if (from) leave.current = from;
+  const openWindow = useCallback((page: number | string) => {
     setSetup(null);
     setActionError(null);
     setInitialPage(typeof page === 'number' ? page : -1);
@@ -103,25 +99,37 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   }, []);
   // The same try-on when its id came only after the app had opened.
   useEffect(() => { if (initialDocked) dock(initialDocked); }, [initialDocked, dock]);
-  const open = useCallback((id: string, from?: () => void) => {
+  const open = useCallback((id: string) => {
     setWindowKey(key => key + 1);
     dock(id);
-    openWindow(id, from);
+    openWindow(id);
   }, [dock, openWindow]);
   // A try-on that just started joins the dock at the end; the window shows the first look, the new one a swipe away.
-  const started = useCallback((id: string, from?: () => void) => {
+  const started = useCallback((id: string) => {
     dock(id);
-    openWindow(0, from);
+    openWindow(0);
   }, [dock, openWindow]);
-  const prepare = useCallback((request: TryOnRequest) => {
-    setWindowKey(key => key + 1);
-    setWindowOpen(false);
-    setActionError(null);
-    setSetup({ ...request, options: request.options || {} });
-  }, []);
+  const prepare = useCallback((garments: WardrobeItem[], preset?: { options?: GarmentOptions; name?: string }) => {
+    void (async () => {
+      // Asked before the window, not from its button: iOS would not show a window opened beside it, and the button would wait for ever.
+      const asked = !(await hasAiConsent(login));
+      if (!(await aiConsent.ensure())) return;
+      // The closing consent window is out of the way first: iOS takes down one modal at a time.
+      if (asked) await new Promise(resolve => setTimeout(resolve, 400));
+      const context = await tryOnContext(modelUri || '', garments).catch(() => null);
+      const known = store.getSnapshot().jobs.filter(job => job.context === context);
+      const running = known.find(job => job.status === 'pending');
+      if (running) { open(running.id); return; }
+      setWindowKey(key => key + 1);
+      setWindowOpen(false);
+      setActionError(null);
+      // Tried on before: the server is asked for a new variant, not the layers it kept.
+      setSetup({ items: garments, context, fresh: known.some(job => job.status === 'succeeded'), options: preset?.options || {}, name: preset?.name || '' });
+    })();
+  }, [modelUri, store, open, aiConsent.ensure, login]);
   const viewed = useCallback((id: string) => { revealLedger.forget(id); setDocked(previous => previous.filter(current => current !== id)); }, []);
   const windowUp = windowOpen || Boolean(setup);
-  const api = useMemo(() => ({ open, prepare, started, viewed, windowUp }), [open, prepare, started, viewed, windowUp]);
+  const api = useMemo(() => ({ open, prepare, viewed, windowUp }), [open, prepare, viewed, windowUp]);
   const byId = new Map(jobs.map(job => [job.id, job]));
   const dockJobs = docked.map(id => byId.get(id)).filter(Boolean) as TryOnJob[];
   // A page asked for by its look (the small window, "Open the generation") becomes a number once the look is docked.
@@ -146,16 +154,12 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   }, [jobs]);
 
   const close = () => {
-    const from = leave.current;
-    leave.current = null;
     setSetup(null);
     setWindowOpen(false);
     // Finished looks the user has seen leave the dock; running ones and those not seen yet stay there.
     const done = new Set([...seen.current].filter(id => byId.get(id)?.status !== 'pending'));
     seen.current.clear();
     setDocked(previous => previous.filter(id => !done.has(id)));
-    // The sheet closes once the window is gone: iOS takes down one modal at a time.
-    if (from) setTimeout(from, 80);
   };
   const dismiss = (id: string) => setDocked(previous => previous.filter(current => current !== id));
   const focus = (id: string) => {
@@ -176,11 +180,11 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
     if (job.status !== 'pending') dismiss(job.id);
     setActionError(null);
     // A finished look asks for a new variant; a failed one is simply sent again.
-    setSetup({ items: garments, context, fresh: job.status === 'succeeded', options: job.options || {} });
+    setSetup({ items: garments, context, fresh: job.status === 'succeeded', options: job.options || {}, name: job.name === garmentsName(garments) ? '' : job.name });
   };
 
   const generate = async () => {
-    if (!setup || !modelUri || starting) return;
+    if (!setup || !setup.context || !modelUri || starting) return;
     if (!(await aiConsent.ensure())) return;
     void askReadyNotificationPermission(t('Готовые образы'));
     setStarting(true);
@@ -190,7 +194,7 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
     try {
       // The window stays and turns into the try-ons the moment the job exists.
       await store.start({ modelUri, items: setup.items, context: setup.context, tuckMode, quality: 'quality', fresh: setup.fresh,
-        options: setup.options, onJob: id => started(id) });
+        options: setup.options, name: setup.name.trim() || undefined, onJob: id => started(id) });
     } catch (error: any) {
       setActionError(error?.message ? t(String(error.message)) : t('Не удалось сгенерировать примерку'));
     } finally {
@@ -229,15 +233,29 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   ) : null;
   // The window opens over the sheet the try-on was started from (OverlayHost):
   // drawn at the app root it would never show on iOS while that sheet is up.
+  const setupName = setup ? garmentsName(setup.items) : '';
+  const fits = (item: WardrobeItem) => Boolean(item.imageUri) && TRYON_SECTIONS.includes(item.section) && (item.section !== 'Аксессуары' || Boolean(accessorySlot(item)));
   const stage = setup ? (
-    <GenerationStage
+    <FavoritesProvider value={favorites}><GenerationStage
       key={windowKey}
       pages={[]}
       onClose={close}
       banner={banner}
-      setup={{ title: setup.items.map(item => item.name).join(' + '), items: setup.items, options: setup.options, starting, error: actionError,
+      setup={{ title: setupName, items: setup.items, options: setup.options, starting, error: actionError || (journalError ? t(journalError) : null),
+        // What stands in the way is said here: the button below stays dim until it is solved.
+        warnings: [
+          !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
+          !setup.items.some(fits) ? t('Выбери вещь с фото для примерки.') : null,
+          setup.items.some(item => !item.imageUri) ? t('Вещи без фото не участвуют в примерке.') : null,
+          setup.items.some(item => item.imageUri && !fits(item)) ? t('Эту вещь пока нельзя примерить.') : null
+        ].filter(Boolean) as string[],
+        canGenerate: Boolean(modelUri && setup.context && jobsReady && !readOnly && setup.items.some(fits)),
+        name: setup.name, namePlaceholder: setup.items.length === 1 ? setup.items[0].name : t('Название образа'),
+        onName: name => setSetup(current => current && { ...current, name }),
+        // Saved before any try-on: the pieces alone, under the name given here.
+        look: plainLook(`fitting-${setup.items.map(item => item.id).join('-')}`, setup.name.trim() || setupName, setup.items.map(item => item.id)),
         onOptions: options => setSetup(current => current && { ...current, options }), onGenerate: () => { void generate(); } }}
-    />
+    /></FavoritesProvider>
   ) : windowOpen && dockJobs.length ? (
     <FavoritesProvider value={favorites}><GenerationStage
       key={windowKey}
