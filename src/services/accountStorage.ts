@@ -170,7 +170,7 @@ export const isPurged = (login: string) => purged.has(login);
 /** Стирает всё локальное для аккаунта: записи, фото гардероба и кадры примерок. */
 export async function purgeAccountData(login: string) {
   purged.add(login);
-  const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion', 'aiConsent', 'closetSync', 'dismissedLooks', 'favoriteColors', 'dailyLook', 'onboardingSeen', SAVED_MERGED].map(key => accountKey(login, key));
+  const keys = [...Object.values(DATA_KEYS), 'tryOnJobs', 'storageVersion', 'aiConsent', 'closetSync', 'dismissedLooks', 'favoriteColors', 'dailyLook', 'onboardingSeen', 'lookVotes', 'morningLook', 'addQueue', SAVED_MERGED].map(key => accountKey(login, key));
   await Promise.all(keys.flatMap(key => [storage.removeItem(key).catch(() => {}), AsyncStorage.removeItem(key).catch(() => {})]));
   await removeUnusedPhotos([], login).catch(() => {});
   await removeTryOnFrames(login).catch(() => {});

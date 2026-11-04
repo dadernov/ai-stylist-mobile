@@ -7,22 +7,23 @@ import { WardrobeItem } from '../data/mock';
 import { useT } from '../constants/i18n';
 import { ThemeColors } from '../constants/theme';
 import { useThemedStyles } from '../constants/ThemeContext';
-import { DailyLookRecord, dayPart, decodeDailyLook, greetingName, localDay, pickDailyLook, skipDailyLook } from '../domain/dailyLook';
+import { DAILY_EVENT, DAILY_STYLE, DailyLookRecord, dayPart, decodeDailyLook, greetingName, localDay, pickDailyLook, skipDailyLook } from '../domain/dailyLook';
 import { buildLooks, lookCore, Precipitation } from '../domain/outfits';
 import { accountKey } from '../services/accountStorage';
 import { loadValidated, saveJson } from '../services/storage';
 import { describeWeatherCode, Weather } from '../services/weather';
 import { GeneratedLook } from '../types/looks';
 import { Gender } from '../types/profile';
+import { LookTaste, LookVote, lookExact } from '../domain/lookTaste';
+import { LookVoteButtons, VoteHandler, VoteNote } from './LookVote';
 import { Glass, Pill } from './studio/Glass';
 import { GarmentImage } from './studio/Garment';
 import { gridCount, gridLook, gridStageHeight } from './studio/lookLayout';
 import { font, useReducedMotion } from './studio/studio';
 import { useFavoriteColors } from './useFavoriteColors';
 
-// The everyday base of the hero: the choices on the screen below do not change the look of the day.
-const HERO_STYLE = 'Кэжуал';
-const HERO_EVENT = 'Прогулка';
+const HERO_STYLE = DAILY_STYLE;
+const HERO_EVENT = DAILY_EVENT;
 const SWIPE = 90;
 // Location can wait on an unanswered permission prompt; the look of the day does not wait for ever.
 const WEATHER_PATIENCE = 8000;
@@ -36,6 +37,8 @@ type Props = {
   weather: Weather | null; weatherSettled: boolean; precipitation: Precipitation;
   about: (look: GeneratedLook) => DailyAbout;
   onTryOn: (ids: string[]) => void;
+  /** Thumbs: `taste` as it was when the screen opened orders the picks, `votes` are live. */
+  taste?: LookTaste; votes: LookVote[]; onVote: VoteHandler;
   /** Swiped away: goes to the same «not now» store as the button in a look's details. */
   onSkip: (core: string) => void;
   /** A sideways drag of the card began or ended: the page holds its vertical scroll meanwhile. */
@@ -46,7 +49,7 @@ type Props = {
  * «Что надеть сегодня»: one look for today, on the wardrobe's own rules and the weather. It never
  * generates anything: a try-on costs real money, so this only opens the fitting room, on the tap.
  */
-export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, dismissed, login, displayName, weather, weatherSettled, precipitation, about, onTryOn, onSkip, onSwiping }: Props) {
+export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, dismissed, login, displayName, weather, weatherSettled, precipitation, about, onTryOn, taste, votes, onVote, onSkip, onSwiping }: Props) {
   const t = useT();
   const styles = useThemedStyles(makeStyles);
   const reduced = useReducedMotion();
@@ -73,8 +76,8 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   const temperature = weather ? Math.round(weather.temperature) : null;
   const favoriteColors = useFavoriteColors(login);
   const candidates = useMemo(() => buildLooks(items, HERO_STYLE, HERO_EVENT, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    favoriteItemIds, precipitation, wind: weather?.wind ?? null, dismissed, favoriteColors
-  }), [items, temperature, gender, beautyAdvice, favoriteItemIds, precipitation, weather?.wind, dismissed, favoriteColors]);
+    favoriteItemIds, precipitation, wind: weather?.wind ?? null, dismissed, favoriteColors, taste
+  }), [items, temperature, gender, beautyAdvice, favoriteItemIds, precipitation, weather?.wind, dismissed, favoriteColors, taste]);
   // Picked once the weather is known or given up on, so the day's look is not locked in on no weather.
   useEffect(() => {
     // The colour answer counts too: the day's look is not locked in before it is read.
@@ -90,6 +93,23 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
   // A swipe to the right saves as the button below does, and never takes a saved look away.
   const swipeSave = useSaveLook(info?.look, { onAdded: () => info?.told('favorite') });
   const selection = info?.selection;
+
+  // A look disliked here or on the stage below leaves the hero for the next one. Not through «не сегодня»: it does not go into the hidden list.
+  const exact = selection ? lookExact(selection) : '';
+  const disliked = Boolean(exact) && votes.some(entry => entry.vote === 'dislike' && entry.exact === exact);
+  useEffect(() => {
+    if (disliked && current && selection) remember(skipDailyLook(current, lookCore(selection)));
+  }, [disliked, current?.lookId]);
+  const [note, setNote] = useState<{ id: number; text: string; undo: () => void } | null>(null);
+  const vote: VoteHandler = (pieces, kind) => {
+    const before = record;
+    onVote(pieces, kind);
+    if (!kind) { setNote(null); return; }
+    setNote({ id: Date.now(), text: t(kind === 'like' ? 'Учту' : 'Учту, этот образ больше не покажу'), undo: () => {
+      onVote(pieces, null);
+      if (kind === 'dislike' && before) remember(before);
+    } });
+  };
 
   const swipe = useRef(new Animated.Value(0)).current;
   const back = () => { if (reduced) swipe.setValue(0); else Animated.spring(swipe, { toValue: 0, damping: 16, stiffness: 180, useNativeDriver: true }).start(); };
@@ -160,7 +180,8 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
     // Too few things: the state below already explains it. All skipped: a word here, the ideas below still work.
     if (!record?.skipped.length || record.day !== day) return null;
     return <View style={styles.wrap}>{header}
-      <Glass radius={28}><Text style={[font('regular'), styles.muted, styles.note]}>{t('На сегодня идеи закончились. Ниже есть ещё варианты.')}</Text></Glass></View>;
+      <Glass radius={28}><Text style={[font('regular'), styles.muted, styles.note]}>{t('На сегодня идеи закончились. Ниже есть ещё варианты.')}</Text></Glass>
+      <VoteNote note={note} onUndo={() => { note?.undo(); setNote(null); }} /></View>;
   }
 
   return <View style={styles.wrap}>
@@ -180,8 +201,12 @@ export function DailyLookHero({ items, gender, beautyAdvice, favoriteItemIds, di
         </View>
       </Glass>
     </Animated.View>
-    <Text style={[font('semibold'), styles.lookTitle]} numberOfLines={2}>{info.title}</Text>
-    <Text style={[font('regular'), styles.hint]}>{t('Вправо — нравится, влево — не сегодня')}</Text>
+    <View style={styles.titleRow}>
+      <Text style={[font('semibold'), styles.lookTitle, { flex: 1 }]} numberOfLines={2}>{info.title}</Text>
+      <LookVoteButtons selection={info.selection} votes={votes} onVote={vote} />
+    </View>
+    <VoteNote note={note} onUndo={() => { note?.undo(); setNote(null); }} />
+    <Text style={[font('regular'), styles.hint]}>{t('Вправо — в избранное, влево — не сегодня')}</Text>
     {/* The same choices as buttons: a swipe is not the only way to them. */}
     <View style={styles.actions}>
       <Pill variant="primary" icon={PersonStanding} title={t('Примерить')} style={{ flex: 1 }} onPress={tryOn} />
@@ -197,6 +222,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   title: { color: c.text, fontSize: 24, lineHeight: 29, letterSpacing: -0.6 },
   muted: { color: c.muted, fontSize: 13, lineHeight: 19 },
   note: { padding: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lookTitle: { color: c.text, fontSize: 17, lineHeight: 22, letterSpacing: -0.3 },
   hint: { color: c.muted, fontSize: 12, lineHeight: 16, marginTop: -6 },
   actions: { flexDirection: 'row', gap: 8 },

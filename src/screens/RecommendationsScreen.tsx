@@ -32,6 +32,8 @@ import { LookAction, sendLookFeedback } from '../services/ai';
 import { hasAiConsent } from '../services/aiConsent';
 import { DailyLookHero } from '../components/DailyLookHero';
 import { lookName } from '../domain/lookName';
+import { buildTaste, LookVote, lookExact, stylistAvoid } from '../domain/lookTaste';
+import { LookVoteButtons, VoteHandler, VoteNote } from '../components/LookVote';
 
 type Props = {
   items: WardrobeItem[]; gender: Gender; beautyAdvice: boolean;
@@ -40,6 +42,8 @@ type Props = {
   anchorRequest?: { id: string; at: number };
   // Looks put aside with "Not now" in the last weeks sink in the ideas.
   dismissed?: string[]; onDismiss?: (core: string) => void;
+  // Thumbs on looks: a small nudge from the next visit; a disliked look leaves at once.
+  votes?: LookVote[]; onVote?: VoteHandler;
   // The account the stylist model is asked for; without it only the rule-based ideas are shown.
   login?: string;
   initialStyle?: string;
@@ -72,7 +76,7 @@ function describeLook(look: GeneratedLook, ids: string[], index: number, items: 
   return { selection, advice, match, swaps, savedId, palette, tips, title, main };
 }
 
-export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName, onContext }: Props) {
+export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, onWardrobe, anchorRequest, dismissed, onDismiss, login, initialStyle, initialEvent, displayName, onContext, votes = [], onVote }: Props) {
   const t = useT();
   const { lang } = useLanguage();
   const styles = useThemedStyles(makeStyles);
@@ -100,6 +104,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
   const [favoriteItemIds] = useState(() => [...new Set(favorites.flatMap(look => look.itemIds))]);
   // Read once: a look hidden now leaves the screen at once, and sinks from the next visit.
   const [dismissedAtStart] = useState(() => dismissed || []);
+  // The same for the thumbs: the order does not move under the finger, and the stylist is not asked again on each tap.
+  const [taste] = useState(() => buildTaste(votes, Date.now()));
+  const [avoidAtStart] = useState(() => stylistAvoid(votes, dismissed || []));
   const favoriteColors = useFavoriteColors(login);
   // A sideways swipe of the hero's card holds the page still.
   const [heroSwiping, setHeroSwiping] = useState(false);
@@ -114,11 +121,11 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
     : weatherError === 'location' ? t('Не удалось определить, где ты. Включи геолокацию или попробуй позже.') : t('Погода недоступна');
   const anchor = items.find(item => item.id === anchorId);
   const ruleLooks = useMemo(() => buildLooks(items, style, event, temperature === null ? '' : `${temperature}°C`, temperature, gender, beautyAdvice, {
-    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart, favoriteColors
-  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart, favoriteColors]);
+    anchorId: anchor?.id, favoriteItemIds, precipitation, wind: manualTemperature === null ? live?.wind ?? null : null, dismissed: dismissedAtStart, favoriteColors, taste
+  }), [items, style, event, temperature, gender, beautyAdvice, anchor?.id, favoriteItemIds, precipitation, live, manualTemperature, dismissedAtStart, favoriteColors, taste]);
   // The stylist model's looks come first; the rule-based ones fill the list after them, and stand
   // in alone while it is off, or when it failed.
-  const stylist = useStylistLooks(items, { style, event, gender, temperature, precipitation, anchorId: anchor?.id, avoid: dismissedAtStart.slice(0, 20),
+  const stylist = useStylistLooks(items, { style, event, gender, temperature, precipitation, anchorId: anchor?.id, avoid: avoidAtStart,
     language: lang, count: 4 }, login);
   const looks = useMemo(() => {
     const known = new Map(items.map(item => [item.id, item]));
@@ -136,7 +143,9 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
     return [...fromStylist, ...rest].slice(0, Math.max(ruleLooks.length, fromStylist.length));
   }, [stylist.looks, ruleLooks, items, dismissedAtStart]);
   const thinking = stylist.status === 'loading';
-  const visible = thinking ? [] : looks.filter(look => !hidden.includes(look.id));
+  const dislikedNow = useMemo(() => new Set(votes.filter(entry => entry.vote === 'dislike').map(entry => entry.exact)), [votes]);
+  const exactOf = (other: GeneratedLook) => lookExact((swapped[other.id] || other.itemIds).map(id => items.find(item => item.id === id)).filter(Boolean) as WardrobeItem[]);
+  const visible = thinking ? [] : looks.filter(look => !hidden.includes(look.id) && !dislikedNow.has(exactOf(look)));
   const index = Math.min(at, Math.max(0, visible.length - 1));
   const look = visible[index] as GeneratedLook | undefined;
   const ids = look ? swapped[look.id] || look.itemIds : [];
@@ -173,6 +182,14 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
     setDetailsOpen(false);
     setHidden(previous => [...previous, ...same]);
     onDismiss?.(core);
+  };
+
+  // A thumb: the look stays or leaves, the word stays a moment with its way back.
+  const [voteNote, setVoteNote] = useState<{ id: number; text: string; undo: () => void } | null>(null);
+  const vote: VoteHandler = (pieces, kind) => {
+    onVote?.(pieces, kind);
+    if (!kind) { setVoteNote(null); return; }
+    setVoteNote({ id: Date.now(), text: t(kind === 'like' ? 'Учту' : 'Учту, этот образ больше не покажу'), undo: () => onVote?.(pieces, null) });
   };
 
   // Changing the look: the composition slides out to one side and the next comes in from the other, as in the wardrobe.
@@ -246,7 +263,7 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
     <ScreenHeader title={t('Идеи')} />
 
     <DailyLookHero items={items} gender={gender} beautyAdvice={beautyAdvice} favoriteItemIds={favoriteItemIds} dismissed={dismissedAtStart} login={login} displayName={displayName}
-      weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} onSkip={skipDaily} onSwiping={setHeroSwiping} />
+      weather={live} weatherSettled={Boolean((live && !weatherLoading) || weatherError)} precipitation={heroPrecipitation} about={dailyAbout} onTryOn={onTryOn} taste={taste} votes={votes} onVote={onVote || (() => {})} onSkip={skipDaily} onSwiping={setHeroSwiping} />
 
     {/* Occasion, then the style as quieter words */}
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.chipRow} keyboardShouldPersistTaps="handled">
@@ -316,7 +333,10 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
       </View> : null}
 
       <Animated.View style={textFade}>
-        <Text style={[font('semibold'), styles.lookTitle]} numberOfLines={2}>{about.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={[font('semibold'), styles.lookTitle, { flex: 1 }]} numberOfLines={2}>{about.title}</Text>
+          {onVote ? <LookVoteButtons selection={about.selection} votes={votes} onVote={vote} /> : null}
+        </View>
         <Text style={[font('regular'), styles.why]} numberOfLines={3}>{why}</Text>
         <AppPressable accessibilityRole="button" onPress={() => setDetailsOpen(true)} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 6 }}>
           <Text style={[font('semibold'), styles.link]}>{t('Подробнее')}</Text>
@@ -328,6 +348,8 @@ export function RecommendationsScreen({ items, gender, beautyAdvice, onTryOn, on
       </View>
       {toSave ? <SaveLookButton look={toSave} onAdded={() => told('favorite')} /> : null}
     </> : null}
+
+    {voteNote ? <View style={{ marginTop: 8 }}><VoteNote note={voteNote} onUndo={() => { voteNote.undo(); setVoteNote(null); }} /></View> : null}
 
     {gaps.length && items.length ? <Glass radius={24} style={styles.gaps}>
       <View style={styles.gapsInner}>
@@ -435,6 +457,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   pager: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4, marginBottom: 10 },
   page: { minWidth: 28, height: 28, paddingHorizontal: 8, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   pageNumber: { fontSize: 12, lineHeight: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   lookTitle: { color: c.text, fontSize: 26, lineHeight: 30, letterSpacing: -0.7 },
   why: { color: c.muted, fontSize: 14, lineHeight: 20, marginTop: 6 },
   link: { color: c.text, fontSize: 13, lineHeight: 18 },

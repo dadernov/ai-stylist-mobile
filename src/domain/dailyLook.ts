@@ -1,6 +1,10 @@
 import { WardrobeItem } from '../data/mock';
 import { lookCore } from './outfits';
 
+// The everyday base of the look of the day: the choices on the Ideas screen do not change it.
+export const DAILY_STYLE = 'Кэжуал';
+export const DAILY_EVENT = 'Прогулка';
+
 /** The hero's choice for one local day: the same look all day, whatever the weather does meanwhile. */
 export type DailyLookRecord = { day: string; lookId: string; itemIds: string[]; temperature: number | null; skipped: string[] };
 export type DayPart = 'morning' | 'day' | 'evening' | 'night';

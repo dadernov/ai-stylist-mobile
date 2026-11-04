@@ -20,6 +20,11 @@ import { ReactNode, useCallback, useMemo, useRef, useState, useEffect } from 're
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { usePhotoPicker } from '../components/usePhotoPicker';
+import * as ImagePicker from 'expo-image-picker';
+import { AddQueueStrip } from '../components/studio/AddQueueStrip';
+import type { AddQueueControl } from '../components/useAddQueue';
+import { MAX_BATCH, roomInQueue } from '../domain/addQueue';
+import { hasAiConsent } from '../services/aiConsent';
 import { PhotoSourcePicker, PhotoSource } from '../components/PhotoSourcePicker';
 import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
@@ -46,12 +51,14 @@ import { StudioBackdrop, useStudioTint } from '../components/studio/StudioBackdr
 import { font, INK, INK_FAINT, INK_ON_DARK, inkSoft, isCutout, studioTint, useReducedMotion } from '../components/studio/studio';
 import { StudioSheet } from '../components/studio/StudioSheet';
 import { decodeTraits } from '../domain/garmentTraits';
-import { ImagePlus, Shirt, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
+import { Check, ImagePlus, Shirt, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
 import { ProductHelp } from '../components/ProductHelp';
 
 type WardrobeScreenProps = {
+  addQueue: AddQueueControl;
+  login: string;
   items: WardrobeItem[];
   onItemsChange: (items: WardrobeItem[]) => void;
   onTryOn: (item: WardrobeItem) => void;
@@ -259,9 +266,9 @@ function AtelierInput({ value, onChangeText, placeholder }: AtelierInputProps) {
 }
 
 // Clothes crease; shoes, bags and accessories do not, and are not smoothed.
-const FLAT_SECTIONS = ['Верх', 'Низ', 'Верхняя одежда'];
+export const FLAT_SECTIONS = ['Верх', 'Низ', 'Верхняя одежда'];
 
-export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, onStyleWith, initialDetailId }: WardrobeScreenProps) {
+export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, onStyleWith, initialDetailId, addQueue, login }: WardrobeScreenProps) {
   const Alert = useAppDialog();
   const aiConsent = useAiConsent();
   const styles = useThemedStyles(makeStyles);
@@ -395,6 +402,24 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   const openPhotoSources = () => { if (!isPicking) { Keyboard.dismiss(); setPhotoSourceOpen(true); } };
   const showHelp = !helpOpen && !detailId && !isModalVisible && !isEditModalVisible && !isPicking && !photoSourceOpen && !searchFocused && !Alert.visible;
 
+  // Several photos at once: the consent first, nothing is uploaded without it; then the queue above the screens does the rest.
+  const handleAddMany = async () => {
+    const room = roomInQueue(addQueue.queue);
+    if (!room) { Alert.alert(t('Очередь заполнена'), t('За раз можно добавить до {count} фото. Подожди, пока эти обработаются.', { count: MAX_BATCH })); return; }
+    const asked = !(await hasAiConsent(login));
+    if (!(await aiConsent.ensure())) { Alert.alert(t('Нужно согласие'), t('Без него не получится распознать вещи. Одну вещь можно добавить и заполнить вручную.')); return; }
+    // iOS presents the gallery only after the consent window has gone.
+    if (asked) await new Promise(resolve => setTimeout(resolve, 450));
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: room, quality: 1,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible });
+      if (result.canceled || !result.assets.length) return;
+      const dropped = await addQueue.add(result.assets.map(asset => asset.uri));
+      if (dropped) Alert.alert(t('Взяли не все фото'), t('Не вошло в очередь: {count}. За раз можно добавить до {max} фото.', { count: dropped, max: MAX_BATCH }));
+    } catch { Alert.alert(t('Не удалось открыть фото'), t('Попробуй выбрать изображение ещё раз.')); }
+  };
+  const retryConsent = async () => { if (await aiConsent.ensure()) addQueue.retryConsent(); };
+
   const lastSource = useRef<PhotoSource>('gallery');
   const handleAddItem = async (source: PhotoSource) => {
     lastSource.current = source;
@@ -456,7 +481,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       profile,
       styleVec
     };
-    onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem } : item) : [newItem, ...items]);
+    onItemsChange(draftExistingId ? items.map(item => item.id === draftExistingId ? { ...item, ...newItem, needsReview: undefined } : item) : [newItem, ...items]);
     forgetFlat(newItem.id);
     // The category the photo was saved under, right or corrected, teaches the recognition (no photo is sent).
     if (analysis?.analysisId && draftCategory) sendCategoryFeedback(analysis.analysisId, draftCategory);
@@ -619,7 +644,8 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
               section: editSection,
               size: editSize,
               store: editStore,
-              material: editMaterial
+              material: editMaterial,
+              needsReview: undefined
             }
           : item
       )
@@ -705,7 +731,9 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
   return (
     <View style={styles.container}>
       {!isModalVisible && cropModal}
-      <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} />
+      <PhotoSourcePicker visible={photoSourceOpen} onClose={() => setPhotoSourceOpen(false)} onSelect={source => void handleAddItem(source)} onSelectMany={() => void handleAddMany()} />
+      <AddQueueStrip queue={addQueue.queue} onCancel={addQueue.cancel} onRetry={addQueue.retry} onClose={addQueue.close} onConsent={() => void retryConsent()}
+        onOpen={id => { if (items.some(item => item.id === id)) setDetailId(id); }} />
       {items.length ? (
         // The wardrobe as a studio: one piece at a time in the key light (components/studio/WardrobeStudio).
         <WardrobeStudio items={items} sections={sectionOptions} onOpen={item => setDetailId(item.id)} onAdd={openPhotoSources} paused={Boolean(detailId)}
@@ -804,6 +832,15 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
             <Pill icon={X} size="icon" style={styles.detailClose} onPress={closeDetail} accessibilityLabel={t('Закрыть')} />
           </LinearGradient>
           <Text style={[font('semibold'), styles.detailTitle, { color: ink }]}>{detail.name}</Text>
+          {detail.needsReview ? <Glass radius={20}>
+            <View style={{ padding: 14, gap: 10 }}>
+              <Text style={[font('regular'), styles.note]}>{t('Мы не уверены, что распознали вещь верно. Проверь категорию ниже.')}</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pill size="sm" icon={Check} title={t('Всё верно')} onPress={() => onItemsChange(items.map(item => item.id === detail.id ? { ...item, needsReview: undefined } : item))} />
+                <Pill size="sm" icon={Pencil} title={t('Изменить')} onPress={() => { setDetailId(null); handleEditItem(detail); }} />
+              </View>
+            </View>
+          </Glass> : null}
           {detail.imageUri && ['Верх', 'Низ', 'Обувь', 'Верхняя одежда'].includes(detail.section)
             ? <Pill variant="primary" title={t('Примерить')} icon={PersonStanding} onPress={() => { setDetailId(null); onTryOn(detail); }} /> : null}
           {onStyleWith ? <Pill title={t('С чем носить')} icon={Layers} onPress={() => { setDetailId(null); onStyleWith(detail); }} /> : null}

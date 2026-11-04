@@ -4,11 +4,15 @@ import { Gender } from '../types/profile';
 import { pickBeauty } from '../constants/beauty';
 import { isLegwear } from './legwear';
 
+import { LookTaste, lookExact, tasteForOrder, tasteOfItem, tasteOfPairs } from './lookTaste';
+
 export type Precipitation = 'rain' | 'snow' | null;
 export type OutfitContext = { style: string; event: string; temperature: number | null; gender?: Gender; precipitation?: Precipitation; wind?: number | null };
 export type RecommendationOptions = { anchorId?: string; excludedIds?: string[]; favoriteItemIds?: string[]; precipitation?: Precipitation; wind?: number | null; t?: Translator; now?: number;
   // Cores (lookCore) of looks the user put aside with "Not now": they sink, not vanish.
   dismissed?: string[];
+  // Thumbs on looks (domain/lookTaste): a small, capped nudge; a disliked look itself is never offered again.
+  taste?: LookTaste;
   // The answer to «Какие цвета тебе по душе?» from the first minute: matching pieces rise, the others are not punished.
   favoriteColors?: FavoriteColors | null };
 export type FavoriteColors = 'neutral' | 'dark' | 'pastel' | 'bright';
@@ -637,7 +641,7 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
   };
   const now = options.now ?? Date.now();
   const preference = (item: WardrobeItem) => itemScore(item, context) + (options.favoriteItemIds?.includes(item.id) ? 2 : 0)
-    + (options.favoriteColors && matchesFavoriteColors(item, options.favoriteColors) ? 2 : 0) + noveltyBonus(item, now);
+    + (options.favoriteColors && matchesFavoriteColors(item, options.favoriteColors) ? 2 : 0) + noveltyBonus(item, now) + tasteOfItem(options.taste, item);
   const choose = (section: string, limit: number) => {
     if (anchor?.section === section && !tightsAnchor) return [anchor];
     if (anchor && isOnePiece(anchor) && section === 'Низ') return [];
@@ -668,8 +672,9 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
     for (const shoe of optional(shoes)) for (const layer of anchor?.section === 'Верхняя одежда' ? outer : [null, ...outer]) {
       const selection = [top, mid, bottom, shoe, layer].filter(Boolean) as WardrobeItem[];
       if (!selection.length) continue;
+      if (options.taste?.disliked.has(lookExact(selection))) continue;
       if (tightsAnchor && !selection.some(item => SKIRTS.has(item.category))) continue;
-      let score = selection.reduce((total, item) => total + preference(item), 0) + paletteScore(selection);
+      let score = selection.reduce((total, item) => total + preference(item), 0) + paletteScore(selection) + tasteOfPairs(options.taste, selection);
       if (top) score += 12;
       if (top && mid) {
         // Two tops warm like one warmer top: the pair belongs to a cool day, the colder
@@ -745,9 +750,12 @@ export function buildLooks(items: WardrobeItem[], style: string, event: string, 
       itemIds: selection.map(item => item.id), weather, style, event, temperature,
       fitReasons: advice.reasons, stylingTips: advice.tips, warnings: advice.warnings,
       tuckMode: advice.tuckMode, makeup: beauty.makeup, hair: beauty.hair,
-      matchPercent: match.percent, fitScore: match.percent
+      matchPercent: match.percent, fitScore: match.percent,
+      // Taste orders only what fits: a look off the weather or the occasion gets no lift from it.
+      tasteLift: match.criteria.some(({ key, status }) => (key === 'weather' || key === 'occasion') && status === 'bad') ? Math.min(0, tasteForOrder(options.taste, selection)) : tasteForOrder(options.taste, selection)
     };
-  }).sort((a, b) => Number(sunk(a)) - Number(sunk(b)) || b.matchPercent - a.matchPercent)
+  }).sort((a, b) => Number(sunk(a)) - Number(sunk(b)) || (b.matchPercent + b.tasteLift) - (a.matchPercent + a.tasteLift))
+    .map(({ tasteLift: _lift, ...look }) => look)
     .filter((look, index, all) => index === 0 || look.matchPercent >= Math.max(45, all[0].matchPercent - 30));
 }
 

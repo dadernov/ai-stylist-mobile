@@ -11,6 +11,8 @@ import { FadeInView } from '../components/ui/FadeInView';
 import { Gender } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
 import { ChoiceSheet, SettingsPanel, SettingsRow } from '../components/SettingsRows';
+import { MorningLookSettings } from '../components/MorningLookSettings';
+import { MorningControl } from '../components/useMorningLook';
 import { PhotoAdvice } from '../components/PhotoAdvice';
 import { PhotoGuide } from '../components/PhotoGuide';
 import { ProductHelp } from '../components/ProductHelp';
@@ -34,6 +36,7 @@ type ProfileScreenProps = {
   beautyAdvice: boolean;
   onGenderChange: (gender: Gender) => void;
   onBeautyChange: (enabled: boolean) => void;
+  morning: MorningControl;
 };
 
 export function ProfileScreen({
@@ -51,7 +54,8 @@ export function ProfileScreen({
   gender,
   beautyAdvice,
   onGenderChange,
-  onBeautyChange
+  onBeautyChange,
+  morning
 }: ProfileScreenProps) {
   const t = useT();
   const { mode, setMode, colors: c, isDark } = useTheme();
@@ -137,6 +141,7 @@ export function ProfileScreen({
         <FadeInView delay={120}>
           <SettingsPanel>
             <StylePreferencesFields bare gender={gender} beautyAdvice={beautyAdvice} onGenderChange={onGenderChange} onBeautyChange={onBeautyChange} />
+            <MorningLookSettings morning={morning} />
             <SettingsRow title={t('Язык')} value={LANGUAGES.find(item => item.code === lang)?.label} onPress={() => setLanguageOpen(true)} />
             <SettingsRow title={t('Тема оформления')} value={t(mode === 'dark' ? 'Тёмная' : 'Светлая')} onPress={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
             <SettingsRow title={t('Политика конфиденциальности')} hint={t('Какие данные обрабатываются и где')} onPress={onOpenPrivacy} />

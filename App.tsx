@@ -11,6 +11,11 @@ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
+import { queuedPhotos, useAddQueue } from './src/components/useAddQueue';
+import { useMorningLook } from './src/components/useMorningLook';
+import { cancelMorningNotifications } from './src/services/morningNotifications';
+import { applyVote, decodeLookVotes, LookVote } from './src/domain/lookTaste';
+import storage from './src/services/keyValueStorage';
 import { FittingScreen } from './src/screens/FittingScreen';
 import { RecommendationsScreen } from './src/screens/RecommendationsScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
@@ -24,7 +29,7 @@ import { LanguageProvider, localeFor, translate, useLanguage, useT } from './src
 import { LanguageChooser } from './src/components/LanguageChooser';
 import { isAutoItemName, suggestItemName } from './src/domain/itemName';
 import { WardrobeItem } from './src/data/mock';
-import { loadJson, loadRaw, saveJson } from './src/services/storage';
+import { loadJson, loadRaw, saveJson, loadValidated } from './src/services/storage';
 import { persistPhoto, accountPhotoDirectory, removeUnusedPhotos } from './src/services/photos';
 import { accountKey, DATA_KEYS, decodeTraits, loadAccountData, migrateSavedLooks, prepareAccountStorage, settleFavoriteLinks, purgeAccountData, startWithoutLegacy, ProfileState } from './src/services/accountStorage';
 import { readGarmentProfile, readGarmentStyle, readGarmentTraits } from './src/services/ai';
@@ -163,11 +168,20 @@ function SessionGate() {
     }).catch(() => {});
     return () => { active = false; };
   }, [session?.token]);
+  // However the session ended (sign-out, deletion, an expired token): this account's mornings stop on this phone.
+  const hadSession = useRef(false);
+  useEffect(() => {
+    if (session) hadSession.current = true;
+    else if (hadSession.current) { hadSession.current = false; void cancelMorningNotifications(); }
+  }, [session]);
   const logout = async () => {
     try {
+      const leaving = session?.login;
       await signOut(session);
       setError('');
       setSession(null);
+      // The batch under way ends with the session: it does not start up by itself at the next sign-in.
+      if (leaving) { await new Promise(resolve => setTimeout(resolve, 100)); await storage.removeItem(accountKey(leaving, 'addQueue')).catch(() => {}); }
     } catch { setError(t('Не удалось завершить выход. Попробуй ещё раз.')); }
   };
   const removeAccount = async () => {
@@ -248,6 +262,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const [savedWaiting, setSavedWaiting] = useState(0);
   // Looks put aside with "Not now": they sink in the ideas for two weeks.
   const [dismissedLooks, setDismissedLooks] = useState<{ core: string; at: number }[]>([]);
+  const [lookVotes, setLookVotes] = useState<LookVote[]>([]);
   const [isReady, setReady] = useState(false);
   useEffect(() => {
     if (isReady && jobsReady) void jobsStore.importLooks([...favoriteLooks, ...lastLooks], items).catch(() => {});
@@ -283,6 +298,9 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
       if (!alive.current) return;
       if (Array.isArray(dismissed.value)) setDismissedLooks(dismissed.value.filter(entry => entry && typeof entry.core === 'string'
         && Number.isFinite(entry.at) && entry.at > Date.now() - DISMISS_DAYS * 86_400_000));
+      const votes = await loadValidated(accountKey(session.login, 'lookVotes'), decodeLookVotes);
+      if (!alive.current) return;
+      if (votes.failed) unreadableKeys.current.add('lookVotes'); else setLookVotes(votes.value || []);
       if (data.failed.size) {
         showToast('Часть сохранённых данных не читается. Она сохранена как есть и не перезаписывается.');
       } else if (moved.pending) {
@@ -302,7 +320,8 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
       let sources: string[] | null = [];
       try { sources = (JSON.parse(journal.value || '[]') as { sourceUri?: string }[]).flatMap(job => job.sourceUri ? [job.sourceUri] : []); } catch { sources = null; }
       if (!data.failed.size && !journal.failed && sources) {
-        removeUnusedPhotos([...referenced, ...sources], session.login).catch((error) => console.warn('Failed to clean photo folder', error));
+        const queued = await queuedPhotos(session.login);
+        if (!queued.failed) removeUnusedPhotos([...referenced, ...sources, ...queued.photos], session.login).catch((error) => console.warn('Failed to clean photo folder', error));
       }
 
       // Перенос для тех, кто уже пользуется приложением: их фото лежат в
@@ -483,6 +502,16 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   }, [isReady, dismissedLooks]);
 
   useEffect(() => {
+    persist('lookVotes', lookVotes, 'оценки образов');
+  }, [isReady, lookVotes]);
+
+  const addQueue = useAddQueue({ login: session.login, ready: isReady, setItems, name: key => translate(key) });
+  const favoriteItemIds = useMemo(() => [...new Set(favoriteLooks.flatMap(look => look.itemIds))], [favoriteLooks]);
+  const dismissedCores = useMemo(() => dismissedLooks.map(entry => entry.core), [dismissedLooks]);
+  const morning = useMorningLook({ login: session.login, displayName, ready: isReady, items, gender: gender || 'unspecified', beautyAdvice,
+    favoriteItemIds, dismissed: dismissedCores, votes: lookVotes, onOpenIdeas: () => setActiveTab('recommendations') });
+
+  useEffect(() => {
     return () => {
       if (toastTimeout.current) clearTimeout(toastTimeout.current);
     };
@@ -523,7 +552,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
   const screen = (() => {
     const tryOnModelUri = modelUri || avatarUri;
     if (activeTab === 'wardrobe') {
-      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId}
+      return <WardrobeScreen items={items} onItemsChange={handleItemsChange} initialDetailId={wardrobeDetailId} addQueue={addQueue} login={session.login}
         onOpenHistory={item => { setTryOnItemId(undefined); setTryOnItemIds(undefined); setHistoryItemId(item.id); setBuilderEntry('history'); setActiveTab('fitting'); }}
         onTryOn={item => { setTryOnItemIds(undefined); setTryOnItemId(item.id); setBuilderEntry('fitting'); setActiveTab('fitting'); }}
         onStyleWith={item => { setIdeasAnchor({ id: item.id, at: Date.now() }); setActiveTab('recommendations'); }} />;
@@ -548,7 +577,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
       );
     if (activeTab === 'recommendations')
       return <RecommendationsScreen items={items} login={session.login} displayName={displayName} initialStyle={lastContext.style} initialEvent={lastContext.event} anchorRequest={ideasAnchor} gender={gender || 'unspecified'} beautyAdvice={beautyAdvice}
-        dismissed={dismissedLooks.map(entry => entry.core)}
+        dismissed={dismissedCores} votes={lookVotes} onVote={(selection, vote) => setLookVotes(previous => applyVote(previous, selection, vote, Date.now()))}
         onContext={({ style, event }) => setLastContext(current => current.style === style && current.event === event ? current : { ...current, style, event })}
         onDismiss={core => setDismissedLooks(previous => [{ core, at: Date.now() }, ...previous.filter(entry => entry.core !== core)].slice(0, 60))}
         onWardrobe={() => setActiveTab('wardrobe')} onTryOn={ids => { setTryOnItemId(undefined); setTryOnItemIds(ids); setBuilderEntry('fitting'); setActiveTab('fitting'); }} />;
@@ -575,6 +604,7 @@ function AppContent({ session, firstLookPending, onFirstLookDone, onLogout, onDe
         favoritesCount={favoriteLooks.length}
         gender={gender || 'unspecified'}
         beautyAdvice={beautyAdvice}
+        morning={morning}
         onGenderChange={setGender}
         onBeautyChange={setBeautyAdvice}
         onAvatarChange={changeAvatar}

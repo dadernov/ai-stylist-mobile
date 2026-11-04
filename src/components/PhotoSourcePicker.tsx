@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { Camera, ChevronRight, ImagePlus, X } from 'lucide-react-native';
+import { Camera, ChevronRight, ImagePlus, Images, X } from 'lucide-react-native';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
@@ -12,24 +12,27 @@ import { font, hairline, INK, INK_ON_DARK, sheetFill } from './studio/studio';
 export type PhotoSource = 'gallery' | 'camera';
 
 /** Where the photo comes from: a small studio card over the blurred screen, two rows on hairlines. */
-export function PhotoSourcePicker({ visible, onClose, onSelect }: {
+export function PhotoSourcePicker({ visible, onClose, onSelect, onSelectMany }: {
   visible: boolean; onClose: () => void; onSelect: (source: PhotoSource) => void;
+  /** Offers several photos at once; without it the card stays as it was. */
+  onSelectMany?: () => void;
 }) {
   const { colors: c, isDark } = useTheme();
   const t = useT();
-  const pending = useRef<PhotoSource | null>(null);
-  const choose = (source: PhotoSource) => {
+  const pending = useRef<PhotoSource | 'many' | null>(null);
+  const run = (source: PhotoSource | 'many') => { if (source === 'many') onSelectMany?.(); else onSelect(source); };
+  const choose = (source: PhotoSource | 'many') => {
     if (pending.current) return;
     onClose();
     // iOS cannot present the camera until this sheet has dismissed. Web needs the click gesture.
     if (Platform.OS === 'ios') pending.current = source;
-    else onSelect(source);
+    else run(source);
   };
   const ink = isDark ? INK_ON_DARK : INK;
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} onDismiss={() => {
     const source = pending.current;
     pending.current = null;
-    if (source) onSelect(source);
+    if (source) run(source);
   }}>
     <SafeAreaProvider>
       <AppPressable feedback={false} accessibilityLabel={t('Закрыть выбор фото')} onPress={onClose} style={StyleSheet.absoluteFill}>
@@ -41,7 +44,7 @@ export function PhotoSourcePicker({ visible, onClose, onSelect }: {
             <Text accessibilityRole="header" style={[font('semibold'), styles.title, { color: ink }]}>{t('Добавить фото')}</Text>
             <Pill icon={X} size="icon" accessibilityLabel={t('Закрыть выбор фото')} onPress={onClose} />
           </View>
-          {([{ source: 'gallery', title: 'Из галереи', icon: ImagePlus }, { source: 'camera', title: 'Снять фото', icon: Camera }] as const).map(({ source, title, icon: Icon }) => (
+          {([{ source: 'gallery', title: 'Из галереи', icon: ImagePlus }, ...(onSelectMany ? [{ source: 'many', title: 'Несколько из галереи', icon: Images }] as const : []), { source: 'camera', title: 'Снять фото', icon: Camera }] as const).map(({ source, title, icon: Icon }) => (
             <AppPressable key={source} accessibilityRole="button" accessibilityLabel={t(title)} haptics onPress={() => choose(source)}
               style={[styles.option, { borderTopColor: hairline(isDark) }]}>
               <Icon size={22} color={ink} strokeWidth={1.6} />
