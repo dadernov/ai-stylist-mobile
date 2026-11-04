@@ -2,12 +2,12 @@
 and the QA garments."""
 import csv, io, os, random, sys
 from collections import defaultdict
-sys.path.insert(0, '/root/ai-stylist-mobile/ai-server'); sys.path.insert(0, '/root/claude-scratch-archive/stylist')
-os.environ['AI_CATEGORY_HEAD'] = '/root/claude-scratch-archive/catdata/category_head.npz'
+sys.path.insert(0, '/root/ai-stylist-mobile/ai-server'); sys.path.insert(0, '/root/ai-stylist-keep/stylist')
+os.environ['AI_CATEGORY_HEAD'] = '/root/ai-stylist-keep/catdata/category_head.npz'
 from PIL import Image, ImageOps
 from rembg import remove, new_session
 import clothing_analysis as ca
-sys.path.insert(0, '/root/claude-scratch-archive/catdata')
+sys.path.insert(0, '/root/ai-stylist-keep/catdata')
 from train import GROUPS
 from wardrobe import W
 
@@ -15,7 +15,7 @@ session = new_session('u2net', providers=['CPUExecutionProvider'])
 clf = ca.ClothingClassifier()
 head = clf.head
 assert head is not None
-rows = [r for r in csv.DictReader(open('/root/claude-scratch-archive/catdata/grigorev/images.csv')) if r['label'] in GROUPS]
+rows = [r for r in csv.DictReader(open('/root/ai-stylist-keep/catdata/grigorev/images.csv')) if r['label'] in GROUPS]
 senders = sorted({r['sender_id'] for r in rows})
 test = set(senders[::2])
 rows = [r for r in rows if r['sender_id'] in test]
@@ -23,8 +23,8 @@ random.Random(3).shuffle(rows)
 by = defaultdict(list)
 for r in rows:
     if len(by[r['label']]) < 30: by[r['label']].append(r)
-cases = [(f"/root/claude-scratch-archive/catdata/grigorev/images/{r['image']}.jpg", GROUPS[r['label']], r['label']) for v in by.values() for r in v]
-cases += [(next(p for p in [f'/root/claude-scratch-archive/qa/items/{n}.jpg', f'/root/claude-scratch-archive/qa/items/{n}.png'] if os.path.exists(p)), {c}, 'QA')
+cases = [(f"/root/ai-stylist-keep/catdata/grigorev/images/{r['image']}.jpg", GROUPS[r['label']], r['label']) for v in by.values() for r in v]
+cases += [(next(p for p in [f'/root/ai-stylist-keep/qa/items/{n}.jpg', f'/root/ai-stylist-keep/qa/items/{n}.png'] if os.path.exists(p)), {c}, 'QA')
           for n, (s, c, _) in W.items() if n != 'corduroy_tan']
 score = defaultdict(lambda: [0, 0, 0, 0, 0])
 for path, good, label in cases:
