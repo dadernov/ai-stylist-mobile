@@ -37,14 +37,12 @@ export function useSaveLook(look: GeneratedLook | null | undefined, options?: { 
   const working = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const toggle = async () => {
-    if (!look || working.current) return;
+  // A failure belongs to the look it happened to.
+  useEffect(() => { setFailed(false); }, [look?.id, look?.tryOnImageUri]);
+  /** Saves; a look already saved stays as it is (a double tap on the photo never unsaves). */
+  const save = async () => {
+    if (!look || working.current || saved) return;
     setFailed(false);
-    if (saved) {
-      setFavorites(previous => removeLook(previous, look));
-      notify(t('Убрано из избранного'));
-      return;
-    }
     working.current = true;
     setBusy(true);
     try {
@@ -60,7 +58,14 @@ export function useSaveLook(look: GeneratedLook | null | undefined, options?: { 
       if (mounted.current) setBusy(false);
     }
   };
-  return { saved, busy, failed, toggle };
+  const toggle = async () => {
+    if (!look || working.current) return;
+    if (!saved) return save();
+    setFailed(false);
+    setFavorites(previous => removeLook(previous, look));
+    notify(t('Убрано из избранного'));
+  };
+  return { saved, busy, failed, save, toggle };
 }
 
 /** «Сохранить в избранное», «В избранном» once saved. `compact` is for a narrow card. A failure is said under it: a toast can't show over a window on iOS. */

@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react-native';
 import { Gender, StylePreferences } from '../types/profile';
 import { StylePreferencesFields } from '../components/StylePreferencesFields';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { Pill } from '../components/studio/Glass';
 import { useT } from '../constants/i18n';
 import { StudioBackdrop } from '../components/studio/StudioBackdrop';
 
@@ -17,7 +17,7 @@ export function PreferencesScreen({ onComplete }: { onComplete: (preferences: St
     <View style={styles.content}>
       <ScreenHeader title={t('Твои предпочтения')} />
       <StylePreferencesFields gender={gender} beautyAdvice={beautyAdvice} onGenderChange={setGender} onBeautyChange={setBeautyAdvice} />
-      <PrimaryButton title={t('Продолжить')} icon={ArrowRight} disabled={!gender} onPress={() => gender && onComplete({ gender, beautyAdvice })} />
+      <Pill variant="primary" title={t('Продолжить')} icon={ArrowRight} disabled={!gender} onPress={() => gender && onComplete({ gender, beautyAdvice })} />
     </View>
   </ScrollView></StudioBackdrop>;
 }

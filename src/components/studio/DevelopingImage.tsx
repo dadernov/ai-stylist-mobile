@@ -3,7 +3,7 @@ import { Animated, Easing, Image, LayoutChangeEvent, StyleSheet, View } from 're
 import { LinearGradient } from 'expo-linear-gradient';
 import { useReducedMotion } from './studio';
 import { FogBoundary, GenerationFog } from './GenerationFog';
-import { fogPalette, fogSeed, RevealSurface, revealLedger } from './generationFog';
+import { fogPalette, fogSeed, PREFETCH_LIMIT_MS, REVEAL_WATCHDOG_MS, RevealSurface, revealLedger } from './generationFog';
 import { loadFog } from './skiaModule';
 
 type Props = {
@@ -39,8 +39,6 @@ const GLINT_MS = 700;
 // The automatic peek at the source photo: there, a look, and back, about 1.5 s in all.
 const WIPE_MS = 520;
 const WIPE_HOLD_MS = 460;
-// A remote look is fetched before the fog closes over the photo; a slow network does not hold the reveal for long.
-const PREFETCH_LIMIT_MS = 4000;
 
 /**
  * The one picture of a try-on being made, in every window: the photo dissolved under a volume of drifting light (GenerationFog),
@@ -79,6 +77,8 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
   // The fog has closed over the photo: only the fog and the look under it are left.
   const [covered, setCovered] = useState(false);
   const useFog = Boolean(fog) && !reduced;
+  // Neither running nor finished (a failed try-on, one waiting for a retry): just the photo, still and sharp.
+  const inFog = developing || done;
   const seed = useMemo(() => fogSeed(revealKey), [revealKey]);
   const tintKey = (items || []).map(item => `${item.color}|${(item.tags || []).join()}`).join(';');
   const tints = useMemo(() => fogPalette(items || [], isDark), [tintKey, isDark]);
@@ -119,7 +119,15 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
       Animated.timing(haze, { toValue: 1, duration: 350, easing: Easing.out(Easing.quad), useNativeDriver: false }),
       Animated.timing(sweep, { toValue: 1, duration: REVEAL_MS, delay: 120, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
     ]).start(({ finished }) => { if (finished) setRevealed(true); });
-  }, [done, active]);
+  }, [done, active, fogFailed]);
+
+  // Whatever happens to the fog, a finished look on screen does not stay behind it.
+  const showNow = () => { haze.stopAnimation(); sweep.stopAnimation(); haze.setValue(1); sweep.setValue(1); setRevealed(true); };
+  useEffect(() => {
+    if (!done || !active || revealed) return;
+    const watchdog = setTimeout(showNow, REVEAL_WATCHDOG_MS);
+    return () => clearTimeout(watchdog);
+  }, [done, active, revealed]);
 
   useEffect(() => { if (revealed) revealEnd.current?.(); }, [revealed]);
 
@@ -158,13 +166,13 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
   const shiftY = drift.interpolate({ inputRange: [0, 0.5, 1], outputRange: [30, -30, 30] });
   // The sharp band of the stand-in: grows from the top, with a feathered lower edge.
   const clip = sweep.interpolate({ inputRange: [0, 1], outputRange: [0, tall + FEATHER] });
-  const photo = photoUri ? <Image source={{ uri: photoUri }} blurRadius={28} style={[StyleSheet.absoluteFill, { opacity: 0.85 }]} resizeMode="cover" /> : null;
+  const photo = photoUri ? <Image source={{ uri: photoUri }} blurRadius={inFog ? 28 : 0} style={[StyleSheet.absoluteFill, { opacity: inFog ? 0.85 : 1 }]} resizeMode="cover" /> : null;
   // Reduced motion keeps the still fog with the crossfade; once revealed nothing of the fog is left.
-  const showFog = Boolean(fog) && !revealed && wide > 0;
+  const showFog = Boolean(fog) && inFog && !revealed && wide > 0;
   const fogLayer = showFog && fog ? (
-    <FogBoundary onError={() => setFogFailed(true)}>
+    <FogBoundary onError={() => { setFogFailed(true); if (done) showNow(); }}>
       <GenerationFog fog={fog} width={wide} height={tall} seed={seed} tints={tints} isDark={isDark}
-        running={active && !reduced} revealing={fogRevealing}
+        running={active && !reduced && developing} revealing={fogRevealing}
         onCovered={() => setCovered(true)} onRevealed={() => setRevealed(true)} />
     </FogBoundary>
   ) : null;
@@ -177,7 +185,7 @@ export function DevelopingImage({ photoUri, resultUri, developing, isDark, child
       ) : null}
       {/* The developing field: the photo dissolved into colour, light drifting over it. */}
       {useFog && done && (covered || revealed) ? null : photo}
-      {!fog && !revealed ? (
+      {!fog && inFog && !revealed ? (
         <Animated.View pointerEvents="none" style={[styles.field, { opacity: reduced ? 0.7 : breathe.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
           transform: [{ translateX: shiftX }, { translateY: shiftY }] }]}>
           <LinearGradient colors={[glow, tint, glow, tint]} locations={[0, 0.35, 0.65, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />

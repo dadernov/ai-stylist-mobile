@@ -10,7 +10,6 @@ import { TryOnJob, tryOnContext } from '../services/tryOnJobs';
 import { TuckMode } from '../services/ai';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
-import { saveTryOnToGallery } from '../services/tryOnExport';
 import { useShareChoice } from './SharePoster';
 import { askReadyNotificationPermission, notifyLookReady } from '../services/readyNotification';
 import { useTryOnJobs } from './TryOnJobsContext';
@@ -46,7 +45,6 @@ const DockContext = createContext<DockApi>({ open: () => {}, prepare: () => {}, 
 /** Opens a try-on in the big generation window, or a new one at its setup step; closing leaves a running try-on in the dock. */
 export const useGenerationDock = () => useContext(DockContext);
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 const MINI_WIDTH = 112;
 const MINI_HEIGHT = 168;
 const resultOf = (job?: TryOnJob) => job?.status === 'succeeded' && job.result ? reanchorTryOnUri(job.result.imageUri) || job.result.imageUri : null;
@@ -75,7 +73,6 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
   const [initialPage, setInitialPage] = useState(0);
   const [visibleId, setVisibleId] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<{ page: number; at: number } | null>(null);
-  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [actionError, setActionError] = useState<string | null>(null);
   // The look being prepared in the window, before its try-on exists.
   const [setup, setSetup] = useState<(TryOnRequest & { options: GarmentOptions }) | null>(null);
@@ -201,19 +198,6 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
     }
   };
 
-  const save = async (job: TryOnJob) => {
-    const uri = resultOf(job);
-    if (!uri) return;
-    setSaveStates(states => ({ ...states, [job.id]: 'saving' }));
-    try {
-      await saveTryOnToGallery(uri, login);
-      setSaveStates(states => ({ ...states, [job.id]: 'saved' }));
-    } catch (error: any) {
-      setSaveStates(states => ({ ...states, [job.id]: 'error' }));
-      setActionError(error?.message ? t(String(error.message)) : t('Не удалось сохранить в галерею'));
-    }
-  };
-
   const sharing = useShareChoice(login);
   // The root outlet draws the window above the favourites' provider: they are handed on to it.
   const favorites = useFavorites();
@@ -236,8 +220,6 @@ export function GenerationDockProvider({ items, modelUri, bottom, initialDocked,
       error: (job.id === visibleId && actionError) || (failed ? t(job.error || 'Не удалось сгенерировать примерку') : null),
       warning: job.result?.warning ? job.result.warning.split(' · ').map(part => t(part)).join(' · ') : null,
       favorite: job.result && job.status !== 'pending' ? lookFromJob(job) : null,
-      saveState: saveStates[job.id] || 'idle',
-      onSave: () => { void save(job); },
       onShare: () => { const uri = resultOf(job); if (uri) sharing.offer({ uri, title: titleOf(job), items: job.itemIds.flatMap(id => items.filter(item => item.id === id)) }); },
       onRegenerate: () => { void again(job); },
     };

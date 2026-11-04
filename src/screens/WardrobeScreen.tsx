@@ -48,7 +48,6 @@ import { decodeTraits } from '../domain/garmentTraits';
 import { ImagePlus, Shirt, Pencil, Plus, Search, Trash2, X, ScanLine, CircleHelp, History, ChevronRight, Layers, PersonStanding, SwitchCamera, Wand2, Undo2 } from 'lucide-react-native';
 import { useTryOnJobs } from '../components/TryOnJobsContext';
 import { GarmentTile } from '../components/GarmentTile';
-import { IconButton } from '../components/ui/IconButton';
 import { ProductHelp } from '../components/ProductHelp';
 
 type WardrobeScreenProps = {
@@ -63,17 +62,6 @@ type WardrobeScreenProps = {
 
 const sectionOptions = ['Верх', 'Низ', 'Обувь', 'Сумки', 'Аксессуары', 'Верхняя одежда'];
 const categoryFilters = ['Все', ...sectionOptions];
-
-// Эмодзи-иконки фильтров (не переводятся).
-const filterIcons: Record<string, string> = {
-  Все: '✨',
-  Верх: '👕',
-  Низ: '👖',
-  Обувь: '👟',
-  Сумки: '👜',
-  Аксессуары: '🧣',
-  'Верхняя одежда': '🧥'
-};
 
 const categoryOptions = [
   'Футболка',
@@ -727,7 +715,7 @@ export function WardrobeScreen({ items, onItemsChange, onTryOn, onOpenHistory, o
       <View style={styles.collectionHeader}>
         <View style={{ flex: 1 }}><ScreenHeader title={t('Гардероб')} /></View>
         <View style={styles.helpSlot}>
-          {showHelp && <IconButton icon={CircleHelp} label={t('Открыть справку')} variant="quiet" onPress={() => { Keyboard.dismiss(); setHelpOpen(true); }} />}
+          {showHelp && <Pill size="icon" icon={CircleHelp} accessibilityLabel={t('Открыть справку')} onPress={() => { Keyboard.dismiss(); setHelpOpen(true); }} />}
         </View>
         <AppPressable accessibilityRole="button" accessibilityLabel={t('Добавить вещь')} disabled={isPicking || photoSourceOpen} haptics style={styles.addButton} onPress={openPhotoSources}>
           <Plus size={23} strokeWidth={1.6} color={colors.buttonPrimaryText} />

@@ -3,7 +3,7 @@ import { Animated, LayoutChangeEvent, Modal, NativeScrollEvent, NativeSyntheticE
   StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { ArrowUpRight, Check, ChevronDown, Download, RefreshCw, Share2, X } from 'lucide-react-native';
+import { ArrowUpRight, ChevronDown, RefreshCw, X } from 'lucide-react-native';
 import { SHADOWS } from '../constants/theme';
 import { useTheme } from '../constants/ThemeContext';
 import { useT } from '../constants/i18n';
@@ -11,7 +11,10 @@ import { GenerationView } from './studio/GenerationView';
 import { TryOnOptions } from './TryOnOptions';
 import { WardrobeItem } from '../data/mock';
 import { GeneratedLook } from '../types/looks';
-import { SaveLookButton } from './SaveLook';
+import { useSaveLook } from './SaveLook';
+import { DoubleTapArea, HeartBurst, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
+import { RESULT_GAP } from './studio/resultLayout';
+import { tapHaptic } from '../services/haptics';
 import { GarmentOptions } from '../domain/garmentOptions';
 import { ZoomableImage } from './ui/ZoomableImage';
 import { FormScrollView } from './ui/FormScrollView';
@@ -51,8 +54,6 @@ export type StagePage = {
   warning?: string | null;
   /** The finished look as a favourite. */
   favorite?: GeneratedLook | null;
-  saveState: 'idle' | 'saving' | 'saved' | 'error';
-  onSave: () => void;
   onShare: () => void;
   onRegenerate: () => void;
 };
@@ -200,12 +201,21 @@ const Pager = forwardRef<ScrollView, ScrollViewProps>(function Pager(props, ref)
 function PageView({ page, width, active, onDone }: { page: StagePage; width: number; active: boolean; onDone: () => void }) {
   const t = useT();
   const { colors: { danger }, isDark } = useTheme();
-  const { key, busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, saveState, onSave, onShare, onRegenerate } = page;
+  const { key, busy, busyLabel, stage, items, sourceUri, photoUri, resultUri, error, warning, onShare, onRegenerate } = page;
   const done = Boolean(resultUri) && !busy;
+  const gallery = useGallerySave(done ? resultUri : null);
+  const save = useSaveLook(done ? page.favorite : null);
 
   // Before/after of the finished look: a new result starts on the result.
   const [showBefore, setShowBefore] = useState(false);
   useEffect(() => { setShowBefore(false); }, [resultUri]);
+  // The photo answers only to a double tap: it saves the look, and a second one changes nothing.
+  const [burst, setBurst] = useState(0);
+  const doubleTap = () => {
+    if (!done || !page.favorite) return;
+    setBurst(shot => shot + 1);
+    if (save.saved) tapHaptic(); else void save.save();
+  };
 
   // The measured pager page (the sheet inside its padding), not the window: the frame never overflows its page.
   const frameWidth = Math.min(width, 480);
@@ -214,32 +224,28 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
     <View style={{ flex: 1 }}>
       <GenerationView jobKey={key} busy={busy} label={busyLabel} stage={stage} items={items} sourceUri={sourceUri} photoUri={photoUri} resultUri={resultUri} active={active}
         showBefore={showBefore} frameStyle={[styles.frame, { width: frameWidth }]} note={t('Обычно это около минуты. Можно свернуть окно: примерка не остановится.')}
-        renderResult={fit => <ZoomableImage uri={resultUri!} resizeMode={fit} accessibilityLabel={t('Результат')} />}
-        overlay={done && sourceUri ? (
-          <Pill size="sm" title={t(showBefore ? 'После' : 'До')} accessibilityLabel={t(showBefore ? 'Показать результат' : 'Показать исходное фото')}
-            accessibilityState={{ selected: showBefore }} onPress={() => setShowBefore(value => !value)} style={styles.compare} />
-        ) : null} />
+        renderResult={fit => <DoubleTapArea enabled={done} onDoubleTap={doubleTap}><ZoomableImage uri={resultUri!} resizeMode={fit} accessibilityLabel={t('Результат')} /></DoubleTapArea>}
+        overlay={done ? <>
+          <HeartBurst shot={burst} />
+          <ResultPhotoControls onShare={onShare} compare={sourceUri ? { before: showBefore, onToggle: () => setShowBefore(value => !value) } : undefined} />
+        </> : null} />
 
-      {!busy ? (
+      {!busy && (error || (warning && done)) ? (
         <View style={styles.status}>
-          {error ? <Text style={[styles.note, { color: danger }]}>{error}</Text> : null}
-          {warning && done ? <Text style={[styles.note, { color: inkSoft(isDark) }]}>{warning}</Text> : null}
+          {error ? <Text style={[styles.note, { color: danger }]} numberOfLines={3}>{error}</Text> : null}
+          {warning && done ? <Text style={[styles.note, { color: inkSoft(isDark) }]} numberOfLines={2}>{warning}</Text> : null}
         </View>
       ) : null}
 
-      {!busy ? (
+      {done ? (
+        <View style={styles.result}>
+          <ResultPieces items={items.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
+          <ResultActions gallery={gallery} save={save} onAgain={onRegenerate} />
+        </View>
+      ) : !busy ? (
         <View style={styles.actions}>
-          {done && page.favorite ? <SaveLookButton look={page.favorite} /> : null}
-          {done ? (
-            <View style={styles.row}>
-              <Pill variant="primary" style={{ flex: 1 }} onPress={onSave} loading={saveState === 'saving'}
-                icon={saveState === 'saved' ? Check : Download}
-                title={t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею' : 'Сохранить в галерею')} />
-              <Pill size="icon" icon={Share2} accessibilityLabel={t('Поделиться')} onPress={onShare} />
-            </View>
-          ) : null}
           <View style={styles.row}>
-            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t(done ? 'Ещё вариант' : 'Попробовать снова')} onPress={onRegenerate} />
+            <Pill style={{ flex: 1 }} icon={RefreshCw} title={t('Попробовать снова')} onPress={onRegenerate} />
             <Pill style={{ flex: 1 }} title={t('Готово')} onPress={onDone} />
           </View>
         </View>
@@ -249,7 +255,6 @@ function PageView({ page, width, active, onDone }: { page: StagePage; width: num
 }
 
 const styles = StyleSheet.create({
-  compare: { position: 'absolute', right: 12, bottom: 12 },
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: { height: '94%', width: '100%', maxWidth: 600, alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 20, overflow: 'hidden' },
   grab: { alignSelf: 'stretch', paddingTop: 10, paddingBottom: 14 },
@@ -260,8 +265,9 @@ const styles = StyleSheet.create({
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: -4, marginBottom: 10 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
-  frame: { flex: 1, minHeight: 200, alignSelf: 'center' },
-  status: { paddingTop: 14, gap: 10, minHeight: 20 },
+  frame: { flex: 1, minHeight: 150, alignSelf: 'center' },
+  status: { paddingTop: 8, gap: 4 },
+  result: { gap: RESULT_GAP, paddingTop: RESULT_GAP, paddingBottom: 8 },
   note: { ...font('regular'), fontSize: 13, lineHeight: 18 },
   actions: { gap: 10, paddingTop: 12, paddingBottom: 8 },
   setup: { gap: 14, paddingBottom: 16 },

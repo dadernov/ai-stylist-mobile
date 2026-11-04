@@ -42,6 +42,10 @@ const smooth = (x: number) => { const t = Math.min(1, Math.max(0, x)); return t 
 export const REVEAL_COVER_MS = 420;
 export const REVEAL_OPEN_MS = 1250;
 export const REVEAL_TOTAL_MS = REVEAL_COVER_MS + REVEAL_OPEN_MS;
+/** How long a slow network may hold the reveal back. */
+export const PREFETCH_LIMIT_MS = 2000;
+/** A finished look on screen stands revealed by now, whatever the fog does. */
+export const REVEAL_WATCHDOG_MS = 4000;
 
 /** Where the reveal is `ms` after its start: the fog thickens until nothing shows, then parts from the top. */
 export function revealAt(ms: number) {

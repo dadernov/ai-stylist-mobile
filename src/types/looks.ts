@@ -25,6 +25,8 @@ export type GeneratedLook = {
   tryOnUpdatedAt?: number;
   tryOnQualityMode?: 'fast' | 'quality';
   tryOnHistory?: TryOnHistoryItem[];
+  /** This try-on joined a favourite saved without one; what to give back when it is unsaved. */
+  joined?: { tuckMode?: 'auto' | 'tucked' | 'untucked' };
 };
 
 export type SavedLook = {

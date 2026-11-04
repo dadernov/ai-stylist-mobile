@@ -1,4 +1,5 @@
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { WardrobeItem } from '../data/mock';
 import { ThemeColors } from '../constants/theme';
@@ -9,7 +10,6 @@ import { localeFor, useT } from '../constants/i18n';
 import { AppPressable } from './AppPressable';
 import { TryOnQualityMode, TuckMode } from '../services/ai';
 import { cacheTryOnImage, isRemoteUri, reanchorTryOnUri } from '../services/tryOnPhotos';
-import { saveTryOnToGallery } from '../services/tryOnExport';
 import { useShareChoice } from './SharePoster';
 import { askReadyNotificationPermission } from '../services/readyNotification';
 import { tryOnContext } from '../services/tryOnJobs';
@@ -24,15 +24,15 @@ import { GarmentOptions } from '../domain/garmentOptions';
 export { reanchorTryOnUri } from '../services/tryOnPhotos';
 import { GeneratedLook, TryOnHistoryItem } from '../types/looks';
 import { lookWithResult } from '../domain/favorites';
-import { SaveLookButton } from './SaveLook';
-import { Check, Download, X, Share2 } from 'lucide-react-native';
+import { useSaveLook } from './SaveLook';
+import { PhotoViewer, ResultActions, ResultPhotoControls, ResultPieces, useGallerySave } from './ResultKit';
+import { CARD_CHROME, estimatedViewport, RESULT_GAP, RESULT_RADIUS, resultPhotoHeight } from './studio/resultLayout';
 import { useTheme } from '../constants/ThemeContext';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame, FittedImage } from './ui/FittedFrame';
 import { GenerationView } from './studio/GenerationView';
 import { revealLedger } from './studio/generationFog';
 import { pictureFit } from './studio/imageFit';
-import { ZoomableImage } from './ui/ZoomableImage';
 import { useSheetGestureBlock } from './studio/SheetHandle';
 
 type AiTryOnPreviewProps = {
@@ -56,6 +56,14 @@ type AiTryOnPreviewProps = {
   onSelectHistory?: (payload: TryOnHistoryItem) => void;
   /** Closes the sheet this preview sits in: closing the generation window then lands on the main screen. */
   onLeave?: () => void;
+  /** Card only: the look's pieces drawn large, until there is a try-on to show; then they are thumbnails under it. */
+  preview?: ReactNode;
+  /** Card only: more about the look, always under the buttons. */
+  details?: ReactNode;
+  /** The card is on screen: otherwise its fog stands still and a finished look's reveal waits. */
+  visible?: boolean;
+  /** The height of the list the card scrolls in: photo, thumbnails and buttons fit it whole. */
+  viewport?: number;
   onGenerated?: (payload: {
     imageUri: string;
     warning?: string;
@@ -96,7 +104,11 @@ export function AiTryOnPreview({
   sheetFooter,
   onGenerated,
   onSelectHistory,
-  onLeave
+  onLeave,
+  preview,
+  details,
+  visible = true,
+  viewport
 }: AiTryOnPreviewProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
@@ -128,8 +140,6 @@ export function AiTryOnPreview({
   const [resultImageLoading, setResultImageLoading] = useState(false);
   const [resultImageError, setResultImageError] = useState<string | null>(null);
   const [brokenHistoryUris, setBrokenHistoryUris] = useState<Record<string, boolean>>({});
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   // How each garment is worn (tucked, buttoned), by item id; the base top's tuck
   // also goes as the look's tuck mode, as before these options existed.
   const baseTop = items.find(item => item.section === 'Верх' && item.imageUri);
@@ -165,8 +175,19 @@ export function AiTryOnPreview({
   // The newest finished look of this card, until its reveal has played here.
   const finishedJob = matchingJobs.find(job => job.status === 'succeeded' && job.result);
   const [revealPlayed, setRevealPlayed] = useState<string>();
-  const owedJob = !pendingJob && finishedJob && revealPlayed !== finishedJob.id && revealLedger.owes(finishedJob.id, 'full') ? finishedJob : undefined;
+  // The ledger settles as the reveal starts: from then on this keeps the fog on the card until it has played.
+  const [revealingId, setRevealingId] = useState<string>();
+  const owedJob = !pendingJob && finishedJob && (revealingId === finishedJob.id || (revealPlayed !== finishedJob.id && revealLedger.owes(finishedJob.id, 'full'))) ? finishedJob : undefined;
   const liveJob = pendingJob || owedJob;
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const photoHeight = resultPhotoHeight({ available: viewport || estimatedViewport(windowHeight, insets.top), chrome: CARD_CHROME, pieces: items.length > 0 });
+  // The card's look with the try-on on show; while a reveal plays there is nothing to save yet.
+  const shownLook = favoriteLook && resultUri ? lookWithResult(favoriteLook, { imageUri: resultUri, warning: warning || undefined,
+    updatedAt: suppliedHistory.find(item => item.imageUri === resultUri)?.updatedAt || controlledUpdatedAt || Date.now(), tuckMode: effectiveTuckMode }) : favoriteLook;
+  const favorite = useSaveLook(shownLook);
+  const gallery = useGallerySave(resultUri);
+  const startAgain = () => { if (context) dock.prepare({ items, context, fresh: true, options: garmentOptions }); };
   const readinessWarnings = [
     !modelUri ? t('Добавь фото в полный рост в профиле.') : null,
     !topGarment && !outerGarment && !bottomGarment && !shoesGarment && !accessory ? t('Выбери вещь с фото для примерки.') : null,
@@ -181,25 +202,9 @@ export function AiTryOnPreview({
     setResultImageLoading(false);
   }, [controlledResultUri]);
 
-  useEffect(() => { setSaveState('idle'); setSaveMessage(null); }, [resultUri]);
-
   // Поделиться — сразу в мессенджер или сторис, без сохранения в галерею.
   const sharing = useShareChoice(login);
   const shareResult = () => { if (resultUri) sharing.offer({ uri: resultUri, items, title: items.map(item => item.name).join(' + ') }); };
-
-  const saveToGallery = async () => {
-    if (!resultUri || saveState === 'saving' || isBusy) return;
-    setSaveState('saving'); setSaveMessage(null);
-    try {
-      // One way to the gallery for the whole app (tryOnExport): the full-size file, never a preview.
-      await saveTryOnToGallery(resultUri, login);
-      if (!mounted.current) return;
-      setSaveState('saved'); setSaveMessage(t(isDraft ? 'Черновик сохранён в галерею' : 'Сохранено в галерею в полном качестве'));
-    } catch (e: any) {
-      if (!mounted.current) return;
-      setSaveState('error'); setSaveMessage(e?.message || t('Не удалось сохранить в галерею'));
-    }
-  };
 
   useEffect(() => {
     setWarning(warningMessage || null);
@@ -256,7 +261,8 @@ export function AiTryOnPreview({
     const latest = matchingJobs.find(job => job.status === 'succeeded' && job.result);
     if (!latest?.result || seenJobs.current.has(latest.id)) return;
     seenJobs.current.add(latest.id);
-    if (controlledResultUri && latest.createdAt < mountedAt.current) return;
+    // An older look already on the card stays, unless this one still owes its reveal here: what the fog parts on must then be what stays.
+    if (controlledResultUri && latest.createdAt < mountedAt.current && !revealLedger.owes(latest.id, 'full')) return;
     const result = latest.result;
     setResultUri(result.imageUri); setResultQuality(result.qualityMode || 'quality');
     setWarning(result.warning || null); setShowOriginal(false);
@@ -326,7 +332,7 @@ export function AiTryOnPreview({
   const buttonContent = (ink: string) => (
     <View style={[styles.buttonInner, variant !== 'sheet' && { height: 50 }]}>
       {isBusy ? <ActivityIndicator size="small" color={ink} /> : null}
-      <Text style={[styles.buttonText, { color: ink }]} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Перегенерировать')}</Text>
+      <Text style={[styles.buttonText, { color: ink }]} numberOfLines={1}>{pendingJob ? t('Открыть генерацию') : isBusy ? busyLabel : !resultUri ? t('Примерить') : t('Примерить снова')}</Text>
     </View>
   );
   const mainButton = <>
@@ -360,16 +366,7 @@ export function AiTryOnPreview({
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {journalError || matchingJobs[0]?.error ? <Text style={styles.error}>{t(journalError || matchingJobs[0].error || '')}</Text> : null}
   </>;
-  const previewModal = <>
-      <Modal transparent animationType="fade" visible={isPreviewOpen} onRequestClose={() => setPreviewOpen(false)}>
-        <View style={styles.previewBackdrop}>
-          {previewUri ? <ZoomableImage uri={previewUri} style={styles.previewImageFull} /> : null}
-          <AppPressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewOpen(false)}>
-            <Glass style={styles.previewCloseGlass}><View style={styles.center}><X size={22} color={isDark ? '#FFFFFF' : INK} /></View></Glass>
-          </AppPressable>
-        </View>
-      </Modal>
-  </>;
+  const previewModal = <PhotoViewer uri={isPreviewOpen ? previewUri : null} onClose={() => setPreviewOpen(false)} />;
 
   if (variant === 'sheet') {
     // The sheet asks how to wear the look and leaves the look itself to the
@@ -393,22 +390,20 @@ export function AiTryOnPreview({
     );
   }
 
+  const hasResult = Boolean(resultUri) && !liveJob;
+  const framed = Boolean(liveJob || resultUri || (showSourcePhoto && modelUri));
+  const photoStyle = { width: '100%' as const, height: photoHeight };
   return (
     <View style={styles.wrap}>
-      {resultUri && modelUri && !liveJob && <Glass><View style={styles.comparison} accessibilityRole="tablist">
-        {[false, true].map(original => <AppPressable key={String(original)} haptics accessibilityRole="tab" accessibilityState={{ selected: showOriginal === original }}
-          style={[styles.compareTab, showOriginal === original && styles.compareTabActive]} onPress={() => setShowOriginal(original)}>
-          <Text style={[styles.compareTitle, showOriginal === original && styles.compareTitleActive]}>{t(original ? 'Исходное фото' : 'Результат')}</Text>
-        </AppPressable>)}
-      </View></Glass>}
+      {!framed ? preview : null}
       {liveJob ? (
         <GenerationView jobKey={liveJob.id} busy={Boolean(pendingJob)} label={busyLabel} stage={progress?.stage} items={items} sourceUri={liveJob.sourceUri || modelUri}
-          photoUri={progress?.previewUrl || modelUri || null} resultUri={pendingJob ? null : reanchorTryOnUri(liveJob.result?.imageUri) || null} radius={28} frameStyle={styles.image}
-          active={!dock.windowUp} onRevealEnd={() => setRevealPlayed(liveJob.id)}
+          photoUri={progress?.previewUrl || modelUri || null} resultUri={pendingJob ? null : reanchorTryOnUri(liveJob.result?.imageUri) || null} radius={RESULT_RADIUS} frameStyle={photoStyle}
+          active={visible && !dock.windowUp} onRevealEnd={() => { setRevealPlayed(liveJob.id); setRevealingId(undefined); }} onRevealStart={() => setRevealingId(liveJob.id)}
           renderResult={fit => <Image source={{ uri: reanchorTryOnUri(liveJob.result?.imageUri) || undefined }} resizeMode={fit} style={StyleSheet.absoluteFill} />} />
       ) : resultUri ? (
-        <FittedFrame aspect={framedAspect} radius={28} style={styles.image}>
-        <AppPressable style={StyleSheet.absoluteFill} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
+        <FittedFrame aspect={framedAspect} radius={RESULT_RADIUS} style={photoStyle}>
+        <AppPressable style={StyleSheet.absoluteFill} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть во весь экран')} onPress={() => { setPreviewUri(showOriginal && modelUri ? modelUri : resultUri); setPreviewOpen(true); }}>
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
             style={StyleSheet.absoluteFill}
@@ -444,36 +439,22 @@ export function AiTryOnPreview({
             </View>
           ) : null}
         </AppPressable>
+        <ResultPhotoControls onShare={shareResult} compare={modelUri ? { before: showOriginal, onToggle: () => setShowOriginal(value => !value) } : undefined} />
         </FittedFrame>
       ) : null}
-      {!resultUri && !liveJob && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={28} style={styles.image} accessibilityLabel={t('Фото для примерки')} />}
-      {resultUri && !isBusy && !owedJob ? (<View style={styles.resultActions}>
-        <AppPressable haptics style={{ flex: 1, borderRadius: 999 }} onPress={saveToGallery} disabled={saveState === 'saving'}
-          accessibilityRole="button" accessibilityState={{ disabled: saveState === 'saving', busy: saveState === 'saving' }}>
-          <Glass><View style={styles.secondaryButton}>
-          {saveState === 'saving' ? <ActivityIndicator size="small" color={colors.text} />
-            : saveState === 'saved' ? <Check size={17} strokeWidth={1.8} color={colors.text} /> : <Download size={17} strokeWidth={1.6} color={colors.text} />}
-          <Text style={styles.secondaryButtonText}>{t(saveState === 'saving' ? 'Сохраняем…' : saveState === 'saved' ? 'Сохранено в галерею'
-            : isDraft ? 'Сохранить черновик в галерею' : 'Сохранить в галерею')}</Text>
-          </View></Glass>
-        </AppPressable>
-        <AppPressable haptics style={styles.shareButton} onPress={shareResult} accessibilityRole="button" accessibilityLabel={t('Поделиться')}>
-          <Glass style={styles.shareButton}><View style={styles.center}><Share2 size={17} strokeWidth={1.6} color={colors.text} /></View></Glass>
-        </AppPressable>
-        {sharing.sheet}
-      </View>) : null}
-      {saveMessage ? <Text style={saveState === 'error' ? styles.error : styles.hint}>{saveMessage}</Text> : null}
+      {!resultUri && !liveJob && showSourcePhoto && modelUri && <FittedImage uri={modelUri} radius={RESULT_RADIUS} style={photoStyle} accessibilityLabel={t('Фото для примерки')} />}
+      {hasResult && !isBusy ? <>
+        <ResultPieces items={items.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
+        <ResultActions gallery={gallery} save={favorite} againDisabled={!canGenerate} onAgain={startAgain} />
+      </> : null}
+      {sharing.sheet}
       {errorsBlock}
       {warning ? <Text style={styles.hint}>{warning.split(' · ').map(part => t(part)).join(' · ')}</Text> : null}
       {warningsBlock}
+      {details}
       {historyBlock}
-      {favoriteLook && !isBusy ? <SaveLookButton look={resultUri ? lookWithResult(favoriteLook, { imageUri: resultUri, warning: warning || undefined,
-        updatedAt: history.find(item => item.imageUri === resultUri)?.updatedAt || controlledUpdatedAt || Date.now(), tuckMode: effectiveTuckMode }) : favoriteLook} /> : null}
-      {mainButton}
-      {/* One button: every try-on is the full-quality look (one call, one price).
-          Drafts made earlier stay labelled in the history. */}
-
-
+      {/* With a result «Ещё раз» is the button; before it, and while a try-on runs, this one. Every try-on is the full-quality look (one call, one price). */}
+      {!hasResult && !owedJob ? mainButton : null}
       {previewModal}
     </View>
   );
@@ -484,10 +465,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   sheetContent: { gap: 14, paddingBottom: 16 },
   sheetTitle: { ...font('semibold'), color: c.text, fontSize: 15, lineHeight: 20 },
   sheetFooter: { gap: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
-  wrap: { gap: 14, marginTop: 6, marginBottom: 4 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  // The look on the person: a rounded print, like the fitting room's frame.
-  image: { width: '100%', height: 420 },
+  wrap: { gap: RESULT_GAP },
   imageOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.72)', justifyContent: 'center', alignItems: 'center', padding: 18 },
   imageErrorText: { ...font('semibold'), color: INK, fontSize: 13, lineHeight: 18, textAlign: 'center' },
   // The main action: the studio's black pill.
@@ -497,19 +475,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   buttonText: { ...font('semibold'), fontSize: 16, flexShrink: 1 },
   error: { ...font('regular'), color: c.danger, fontSize: 13, lineHeight: 18 },
   hint: { ...font('regular'), color: c.muted, fontSize: 12, lineHeight: 17 },
-  intermediateBadge: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 12, height: 30, justifyContent: 'center' },
+  intermediateBadge: { position: 'absolute', bottom: 10, left: 10, paddingHorizontal: 12, height: 30, justifyContent: 'center' },
   intermediateBadgeText: { ...font('semibold'), color: c.text, fontSize: 12 },
-  resultActions: { flexDirection: 'row', gap: 8 },
-  shareButton: { width: 46, height: 46, borderRadius: 23 },
-  secondaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, paddingHorizontal: 16 },
-  secondaryButtonText: { ...font('semibold'), color: c.text, fontSize: 14, flexShrink: 1 },
   qualityCard: { paddingVertical: 4, gap: 6 },
   qualityText: { ...font('regular'), color: c.muted, fontSize: 13, lineHeight: 18 },
-  compareTitle: { ...font('semibold'), color: c.text, fontSize: 13, opacity: 0.78 },
-  compareTitleActive: { color: c.background, opacity: 1 },
-  comparison: { flexDirection: 'row', padding: 3 },
-  compareTab: { flex: 1, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
-  compareTabActive: { backgroundColor: c.text },
   historyWrap: { gap: 10 },
   historyRow: { gap: 10, paddingRight: 4 },
   historyCard: { width: 62, gap: 4 },
@@ -518,8 +487,4 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   historyImageError: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.surface, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
   historyImageErrorText: { ...font('medium'), color: c.muted, fontSize: 9, textAlign: 'center' },
   historyText: { ...font('regular'), color: c.muted, fontSize: 10, textAlign: 'center' },
-  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
-  previewImageFull: { width: '100%', height: '86%', flex: 0 },
-  previewClose: { alignSelf: 'center', marginTop: 12, borderRadius: 22 },
-  previewCloseGlass: { width: 44, height: 44 }
 });

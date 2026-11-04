@@ -47,7 +47,8 @@ export function GenerationFog({ fog, width, height, seed, tints, isDark, running
   }, [animate]);
 
   if (!revealing) { revealStart.current = null; covered.current = false; }
-  else if (revealStart.current === null) revealStart.current = now;
+  // From the wall clock: a fog that stood still has a stale `now`, and the reveal would start already finished.
+  else if (revealStart.current === null) revealStart.current = Date.now();
   const reveal = revealStart.current === null ? { cover: 0, open: 0, covered: false, finished: false } : revealAt(now - revealStart.current);
   useEffect(() => {
     if (reveal.covered && !covered.current) { covered.current = true; callbacks.current.onCovered(); }

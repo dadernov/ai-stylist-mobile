@@ -9,7 +9,6 @@ import { useAppDialog } from '../components/AppDialog';
 import { FormScrollView } from '../components/ui/FormScrollView';
 import { AppPressable } from '../components/AppPressable';
 import { ScreenHeader } from '../components/ui/ScreenHeader';
-import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { ProgressGlow } from '../components/ui/ProgressGlow';
 import { EmptyState } from '../components/ui/EmptyState';
 import { FadeInView } from '../components/ui/FadeInView';
@@ -26,9 +25,11 @@ import { buildLooks, evaluateLook, EVENTS, STYLES } from '../domain/outfits';
 import { describeWeatherCode } from '../services/weather';
 import { useWeather } from '../components/useWeather';
 import { MatchSummary } from '../components/MatchSummary';
-import { ArrowUpRight, ChevronDown, ChevronUp, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Layers, LucideIcon, Sun } from 'lucide-react-native';
+import { ArrowUpRight, ChevronDown, ChevronUp, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Layers, LucideIcon, Sun, Trash2 } from 'lucide-react-native';
 import { Gender } from '../types/profile';
 
+// The floating «К примерке» and the air around it.
+const FLOATING_CTA_ROOM = 50 + 12 + 8;
 const stylePresets = STYLES;
 const events = EVENTS;
 
@@ -77,6 +78,29 @@ const mergeTryOnHistory = (nextItem: TryOnHistoryItem, history: TryOnHistoryItem
 
 
 
+type TryOnPayload = { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode };
+
+/** A look of either list with a new try-on on show and the frame at the head of its history. */
+const withTryOn = <T extends GeneratedLook | SavedLook>(look: T, payload: TryOnPayload): T => {
+  const historyItem: TryOnHistoryItem = {
+    id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
+    imageUri: payload.imageUri,
+    updatedAt: payload.updatedAt,
+    tuckMode: payload.tuckMode,
+    qualityMode: payload.qualityMode
+  };
+  if (payload.warning) historyItem.warning = payload.warning;
+  return {
+    ...look,
+    tuckMode: payload.tuckMode,
+    tryOnImageUri: payload.imageUri,
+    tryOnWarning: payload.warning,
+    tryOnUpdatedAt: payload.updatedAt,
+    tryOnQualityMode: payload.qualityMode,
+    tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
+  };
+};
+
 // Чистая функция без зависимостей от состояния экрана — вынесена из компонента,
 // чтобы карточка сохранённого лука могла мемоизироваться (см. SavedLookCard).
 const savedLookToGeneratedLook = (look: SavedLook): GeneratedLook => ({
@@ -115,7 +139,7 @@ const renderFitReasons = (
   if (!reasons?.length) return null;
   return (
     <View style={styles.reasonBlock}>
-      <Text style={styles.reasonTitle}>{t('Почему этот лук подходит')}</Text>
+      <Text style={styles.reasonTitle}>{t('Почему этот образ подходит')}</Text>
       {reasons.map((reason, index) => (
         <Text key={`${reason}-${index}`} style={styles.reasonText}>
           • {reason}
@@ -125,27 +149,14 @@ const renderFitReasons = (
   );
 };
 
-/** A quiet action on a look: a small glass pill; `danger` for the one that deletes. */
-function CardAction({ label, onPress, disabled, danger }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <AppPressable haptics disabled={disabled} onPress={onPress} accessibilityRole="button" accessibilityState={{ disabled }}
-      style={{ borderRadius: 999, opacity: disabled ? 0.5 : 1 }}>
-      <Glass>
-        <View style={{ height: 34, paddingHorizontal: 14, justifyContent: 'center' }}>
-          <Text style={[font('semibold'), { fontSize: 13, color: danger ? colors.danger : colors.text }]}>{label}</Text>
-        </View>
-      </Glass>
-    </AppPressable>
-  );
-}
-
 type GeneratedLookCardProps = {
   beautyAdvice: boolean;
   look: GeneratedLook;
   index: number;
   modelUri?: string;
   itemsById: Record<string, WardrobeItem>;
+  visible: boolean;
+  viewport?: number;
   onSaveToLooks: (look: GeneratedLook) => void;
   onTryOnGenerated: (
     lookId: string,
@@ -163,6 +174,8 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
   index,
   modelUri,
   itemsById,
+  visible,
+  viewport,
   onSaveToLooks,
   onTryOnGenerated
 }: GeneratedLookCardProps) {
@@ -182,39 +195,45 @@ const GeneratedLookCard = memo(function GeneratedLookCard({
       <Glass radius={28} style={styles.lookCard}>
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
-            <Text style={styles.lookTitle}>{look.title}</Text>
+            <Text style={styles.lookTitle} numberOfLines={look.tryOnImageUri ? 1 : undefined}>{look.title}</Text>
             {/* With a match summary below, the percent would show twice. */}
-            {match ? null : renderFitBadge(look.matchPercent, styles)}
+            {match || look.tryOnImageUri ? null : renderFitBadge(look.matchPercent, styles)}
           </View>
           <View style={styles.lookActions}>
-            <CardAction label={t('В луки')} onPress={() => onSaveToLooks(look)} />
+            <Pill size="sm" title={t('В образы')} onPress={() => onSaveToLooks(look)} />
           </View>
         </View>
-        {look.weather ? <Text style={styles.lookWeather}>{look.weather}</Text> : null}
-        <LookPreview items={lookItems} />
-        {match ? <MatchSummary {...match} detailed={details} /> : null}
-        <AppPressable style={styles.detailsToggle} accessibilityRole="button" accessibilityState={{ expanded: details }} onPress={() => setDetails(open => !open)}>
-          <Text style={styles.detailsToggleText}>{t(details ? 'Свернуть' : 'Почему сочетается')}</Text>
-          {details ? <ChevronUp size={16} color={colors.text} /> : <ChevronDown size={16} color={colors.text} />}
-        </AppPressable>
-        {details ? <>
-          {renderFitReasons(look.fitReasons, styles, t)}
-          {look.stylingTips?.length ? <View style={styles.beautyBlock}>
-            <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
-            {look.stylingTips.map(tip => <Text key={tip} style={styles.beautyText}>{tip}</Text>)}
-          </View> : null}
-          {look.warnings?.map(warning => <Text key={warning} style={styles.beautyText}>{warning}</Text>)}
-          {beautyAdvice && (look.makeup || look.hair) ? <View style={styles.beautyBlock}>
-            <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
-            <Text style={styles.beautyText}>{t(look.makeup)}</Text>
-            <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
-            <Text style={styles.beautyText}>{t(look.hair)}</Text>
-          </View> : null}
-        </> : null}
         <AiTryOnPreview
           modelUri={modelUri}
           items={lookItems}
           favoriteLook={look}
+          visible={visible}
+          viewport={viewport}
+          preview={<>
+            {look.weather ? <Text style={styles.lookWeather}>{look.weather}</Text> : null}
+            <LookPreview items={lookItems} />
+          </>}
+          details={<>
+            {match ? <MatchSummary {...match} detailed={details} /> : null}
+            <AppPressable style={styles.detailsToggle} accessibilityRole="button" accessibilityState={{ expanded: details }} onPress={() => setDetails(open => !open)}>
+              <Text style={styles.detailsToggleText}>{t(details ? 'Свернуть' : 'Почему сочетается')}</Text>
+              {details ? <ChevronUp size={16} color={colors.text} /> : <ChevronDown size={16} color={colors.text} />}
+            </AppPressable>
+            {details ? <>
+              {renderFitReasons(look.fitReasons, styles, t)}
+              {look.stylingTips?.length ? <View style={styles.beautyBlock}>
+                <Text style={styles.beautyTitle}>{t('Как носить')}</Text>
+                {look.stylingTips.map(tip => <Text key={tip} style={styles.beautyText}>{tip}</Text>)}
+              </View> : null}
+              {look.warnings?.map(warning => <Text key={warning} style={styles.beautyText}>{warning}</Text>)}
+              {beautyAdvice && (look.makeup || look.hair) ? <View style={styles.beautyBlock}>
+                <Text style={styles.beautyTitle}>{t('Макияж')}</Text>
+                <Text style={styles.beautyText}>{t(look.makeup)}</Text>
+                <Text style={styles.beautyTitle}>{t('Укладка')}</Text>
+                <Text style={styles.beautyText}>{t(look.hair)}</Text>
+              </View> : null}
+            </> : null}
+          </>}
           tuckMode={look.tuckMode}
           resultUri={look.tryOnImageUri}
           warningMessage={look.tryOnWarning}
@@ -234,6 +253,8 @@ type SavedLookCardProps = {
   index: number;
   modelUri?: string;
   itemsById: Record<string, WardrobeItem>;
+  visible: boolean;
+  viewport?: number;
   onEdit: (look: SavedLook) => void;
   onDelete: (id: string) => void;
   onTryOnGenerated: (
@@ -247,12 +268,15 @@ const SavedLookCard = memo(function SavedLookCard({
   index,
   modelUri,
   itemsById,
+  visible,
+  viewport,
   onEdit,
   onDelete,
   onTryOnGenerated
 }: SavedLookCardProps) {
   const styles = useThemedStyles(makeStyles);
   const t = useT();
+  const { colors } = useTheme();
   const lookItems = useMemo(
     () => Array.from(new Set(look.itemIds)).map((id) => itemsById[id]).filter(Boolean) as WardrobeItem[],
     [look.itemIds, itemsById]
@@ -262,17 +286,20 @@ const SavedLookCard = memo(function SavedLookCard({
       <Glass radius={28} style={styles.lookCard}>
         <View style={styles.lookHeader}>
           <View style={styles.lookTitleWrap}>
-            <Text style={styles.lookTitle}>{look.name}</Text>
+            <Text style={styles.lookTitle} numberOfLines={look.tryOnImageUri ? 1 : undefined}>{look.name}</Text>
           </View>
           <View style={styles.lookActions}>
-            <CardAction label={t('Изменить')} onPress={() => onEdit(look)} />
-            <CardAction label={t('Удалить')} danger onPress={() => onDelete(look.id)} />
+            <Pill size="sm" title={t('Изменить')} onPress={() => onEdit(look)} />
+            <Pill size="sm" icon={Trash2} iconColor={colors.danger} accessibilityLabel={t('Удалить')} onPress={() => onDelete(look.id)} />
           </View>
         </View>
-        <LookPreview items={lookItems} />
         <AiTryOnPreview
           modelUri={modelUri}
           items={lookItems}
+          visible={visible}
+          viewport={viewport}
+          preview={<LookPreview items={lookItems} />}
+          details={renderFitReasons(look.fitReasons, styles, t)}
           favoriteLook={savedLookToGeneratedLook(look)}
           tuckMode={look.tuckMode}
           resultUri={look.tryOnImageUri}
@@ -283,7 +310,6 @@ const SavedLookCard = memo(function SavedLookCard({
           onGenerated={(payload) => onTryOnGenerated(look.id, payload)}
           onSelectHistory={payload => onTryOnGenerated(look.id, { ...payload, tuckMode: payload.tuckMode || 'auto', qualityMode: payload.qualityMode || 'quality' })}
         />
-        {renderFitReasons(look.fitReasons, styles, t)}
       </Glass>
     </FadeInView>
   );
@@ -315,6 +341,8 @@ export function OutfitBuilderScreen({
   const [repeatSelection, setRepeatSelection] = useState<{ ids: string[]; key: number }>();
   // "Try on" for the garments picked in the fitting room, pinned above the tab bar.
   const [fittingCta, setFittingCta] = useState<{ count: number; open: () => void } | null>(null);
+  // The list's own height, measured: a result, its thumbnails and its buttons fit it whole.
+  const [viewport, setViewport] = useState(0);
   const [activeStyle, setActiveStyle] = useState(stylePresets[0]);
   const [activeEvent, setActiveEvent] = useState(events[2]);
   const { weather: liveWeather, error: weatherError, loading: weatherLoading, reload: loadWeather } = useWeather(activeTab === 'builder');
@@ -388,7 +416,7 @@ export function OutfitBuilderScreen({
       });
       setIsGenerating(false);
       if (!generated.length) {
-        Alert.alert(t('Не удалось собрать лук'), t('Добавь больше вещей разных категорий.'));
+        Alert.alert(t('Не удалось собрать образ'), t('Добавь больше вещей разных категорий.'));
         return;
       }
       setLooks(generated);
@@ -398,7 +426,7 @@ export function OutfitBuilderScreen({
 
   const handleSaveGeneratedLook = useCallback(
     (look: GeneratedLook) => {
-      const name = (look.title && look.title.split(' + ').map(part => t(part)).join(' + ')) || t('Лук {n}', { n: savedLooks.length + 1 });
+      const name = (look.title && look.title.split(' + ').map(part => t(part)).join(' + ')) || t('Образ {n}', { n: savedLooks.length + 1 });
       const newLook: SavedLook = {
         id: Date.now().toString(),
         name,
@@ -420,64 +448,12 @@ export function OutfitBuilderScreen({
   );
 
   const updateSavedLookTryOn = useCallback(
-    (
-      lookId: string,
-      payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
-    ) => {
-      onSavedLooksChange(
-        savedLooks.map((look) => {
-          if (look.id !== lookId) return look;
-          const historyItem: TryOnHistoryItem = {
-            id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
-            imageUri: payload.imageUri,
-            updatedAt: payload.updatedAt,
-            tuckMode: payload.tuckMode,
-            qualityMode: payload.qualityMode
-          };
-          if (payload.warning) historyItem.warning = payload.warning;
-          return {
-            ...look,
-            tuckMode: payload.tuckMode,
-            tryOnImageUri: payload.imageUri,
-            tryOnWarning: payload.warning,
-            tryOnUpdatedAt: payload.updatedAt,
-            tryOnQualityMode: payload.qualityMode,
-            tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
-          };
-        })
-      );
-    },
+    (lookId: string, payload: TryOnPayload) => onSavedLooksChange(savedLooks.map(look => look.id === lookId ? withTryOn(look, payload) : look)),
     [savedLooks, onSavedLooksChange]
   );
 
   const updateGeneratedLookTryOn = useCallback(
-    (
-      lookId: string,
-      payload: { imageUri: string; warning?: string; updatedAt: number; tuckMode: TuckMode; qualityMode: TryOnQualityMode }
-    ) => {
-      setLooks((prev) =>
-        prev.map((look) => {
-          if (look.id !== lookId) return look;
-          const historyItem: TryOnHistoryItem = {
-            id: `${payload.updatedAt}-${payload.tuckMode}-${payload.qualityMode}`,
-            imageUri: payload.imageUri,
-            updatedAt: payload.updatedAt,
-            tuckMode: payload.tuckMode,
-            qualityMode: payload.qualityMode
-          };
-          if (payload.warning) historyItem.warning = payload.warning;
-          return {
-            ...look,
-            tuckMode: payload.tuckMode,
-            tryOnImageUri: payload.imageUri,
-            tryOnWarning: payload.warning,
-            tryOnUpdatedAt: payload.updatedAt,
-            tryOnQualityMode: payload.qualityMode,
-            tryOnHistory: mergeTryOnHistory(historyItem, look.tryOnHistory)
-          };
-        })
-      );
-    },
+    (lookId: string, payload: TryOnPayload) => setLooks(prev => prev.map(look => look.id === lookId ? withTryOn(look, payload) : look)),
     []
   );
 
@@ -528,7 +504,7 @@ export function OutfitBuilderScreen({
 
   const handleDeleteLook = useCallback(
     (id: string) => {
-      Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+      Alert.alert(t('Удалить образ?'), t('Действие нельзя отменить.'), [
         { text: t('Отмена'), style: 'cancel' },
         {
           text: t('Удалить'),
@@ -638,10 +614,10 @@ export function OutfitBuilderScreen({
       {activeTab === 'history' && <GenerationHistory items={items} itemId={historyItemId}
         onFilter={setHistoryItemId} onOpenItem={onOpenItem}
         onTryOn={ids => { setRepeatSelection(previous => ({ ids, key: (previous?.key || 0) + 1 })); setActiveTab('fitting'); }} />}
-      <FormScrollView style={activeTab === 'history' && { display: 'none' }}
+      <FormScrollView style={activeTab === 'history' && { display: 'none' }} onLayout={event => setViewport(event.nativeEvent.layout.height)}
         contentContainerStyle={[styles.pageContent, activeTab === 'fitting' && fittingCta ? { paddingBottom: 96 } : null]}>
         <View style={activeTab !== 'fitting' && { display: 'none' }}>
-          <FittingRoom key={repeatSelection?.key || 0} visible={activeTab === 'fitting'} items={items} modelUri={modelUri}
+          <FittingRoom key={repeatSelection?.key || 0} visible={activeTab === 'fitting'} viewport={viewport ? viewport - (fittingCta ? FLOATING_CTA_ROOM : 0) : undefined} items={items} modelUri={modelUri}
             initialItemId={repeatSelection ? undefined : initialItemId} initialItemIds={repeatSelection?.ids || initialItemIds} onProfile={onProfile} onModelChange={onModelChange} onWardrobe={onWardrobe}
             onOpenHistory={() => { setHistoryItemId(undefined); setActiveTab('history'); }}
             onSelectionCta={setFittingCta}
@@ -700,11 +676,10 @@ export function OutfitBuilderScreen({
               </View>
             </Glass>
 
-            <PrimaryButton
+            <Pill
+              variant="primary"
               title={t('Сгенерировать образы')}
               onPress={handleGenerateLooks}
-              variant="gold"
-              size="lg"
               loading={isGenerating}
               style={styles.generateButton}
             />
@@ -726,6 +701,8 @@ export function OutfitBuilderScreen({
                   beautyAdvice={beautyAdvice}
                   modelUri={modelUri}
                   itemsById={itemsById}
+                  visible={activeTab === 'builder'}
+                  viewport={viewport || undefined}
                   onSaveToLooks={handleSaveGeneratedLook}
                   onTryOnGenerated={updateGeneratedLookTryOn}
                 />
@@ -750,6 +727,8 @@ export function OutfitBuilderScreen({
                 index={index}
                 modelUri={modelUri}
                 itemsById={itemsById}
+                visible={activeTab === 'looks'}
+                viewport={viewport || undefined}
                 onEdit={openEditLook}
                 onDelete={handleDeleteLook}
                 onTryOnGenerated={updateSavedLookTryOn}
@@ -760,11 +739,11 @@ export function OutfitBuilderScreen({
       </FormScrollView>
       {activeTab === 'fitting' && fittingCta ? (
         <View style={styles.floatingCta} pointerEvents="box-none">
-          <PrimaryButton title={t('К примерке ({count})', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} size="lg" />
+          <Pill variant="primary" title={t('К примерке ({count})', { count: fittingCta.count })} icon={ArrowUpRight} onPress={fittingCta.open} />
         </View>
       ) : null}
 
-      <StudioSheet visible={isEditModalVisible} title={t('Редактировать лук')} onClose={() => setEditModalVisible(false)} height="88%">
+      <StudioSheet visible={isEditModalVisible} title={t('Редактировать образ')} onClose={() => setEditModalVisible(false)} height="88%">
         <Text style={styles.modalLabel}>{t('Название')}</Text>
         <TextInput
           style={styles.modalInput}
@@ -837,10 +816,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   selectorLabel: { ...font('medium'), marginTop: 6, color: c.text, fontSize: 12 },
   selectorLabelActive: { ...font('semibold') },
   looksWrap: { gap: SPACING.md, paddingBottom: 20 },
-  lookCard: { padding: SPACING.lg, gap: 8 },
-  lookHeader: { gap: 10 },
-  lookTitleWrap: { flex: 1, gap: 6, alignItems: 'flex-start' },
-  lookTitle: { ...font('semibold'), fontSize: 22, lineHeight: 28, letterSpacing: -0.6, color: c.text },
+  lookCard: { padding: SPACING.md, gap: 8 },
+  lookHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 38 },
+  lookTitleWrap: { flex: 1, minWidth: 0, gap: 6, alignItems: 'flex-start' },
+  lookTitle: { ...font('semibold'), fontSize: 17, lineHeight: 22, letterSpacing: -0.3, color: c.text },
   fitBadge: { backgroundColor: c.surface, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   fitBadgeText: { ...font('semibold'), color: c.text, fontSize: 12 },
   lookActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

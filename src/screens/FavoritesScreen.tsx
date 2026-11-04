@@ -1,7 +1,7 @@
 import { ArrowUpRight, Heart, Palette, Scissors, Shirt, Trash2 } from 'lucide-react-native';
-import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SheetStrip } from '../components/ui/FormScrollView';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppDialog } from '../components/AppDialog';
 import { ThemeColors } from '../constants/theme';
@@ -20,7 +20,9 @@ import { gridCount, gridLook } from '../components/studio/lookLayout';
 import { FittedImage } from '../components/ui/FittedFrame';
 import { useImageAspect } from '../components/studio/useImageAspect';
 import { StudioSheet } from '../components/studio/StudioSheet';
-import { SheetGestureBlock } from '../components/studio/SheetHandle';
+import { PhotoViewer, ResultActions, ResultPhotoControls, ResultPicture, ResultPieces, useGallerySave } from '../components/ResultKit';
+import { useSaveLook, useFavorites } from '../components/SaveLook';
+import { useShareChoice } from '../components/SharePoster';
 import { font, INK_FAINT, studioTint } from '../components/studio/studio';
 
 type FavoritesScreenProps = {
@@ -122,7 +124,7 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
 
   const handleRemove = useCallback(
     (id: string) => {
-      Alert.alert(t('Удалить лук?'), t('Действие нельзя отменить.'), [
+      Alert.alert(t('Удалить образ?'), t('Действие нельзя отменить.'), [
         { text: t('Отмена'), style: 'cancel' },
         { text: t('Удалить'), style: 'destructive', onPress: () => { setOpenId(null); onRemove(id); } }
       ]);
@@ -142,6 +144,30 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
   const meta = open
     ? [t(open.event), t(open.style).toLocaleLowerCase(), open.weather, open.tryOnUpdatedAt ? formatDate(open.tryOnUpdatedAt) : ''].filter(Boolean)
     : [];
+
+  const beautyPanel = open && beautyAdvice && (open.makeup || open.hair) ? (
+    <View style={styles.beauty}>
+      {open.makeup ? (
+        <View style={styles.beautyRow}>
+          <Palette size={19} strokeWidth={1.6} color={c.muted} />
+          <View style={styles.beautyBody}>
+            <Text style={[font('semibold'), styles.beautyTitle]}>{t('Макияж')}</Text>
+            <Text style={[font('regular'), styles.beautyText]}>{t(open.makeup)}</Text>
+          </View>
+        </View>
+      ) : null}
+      {open.makeup && open.hair ? <View style={styles.hairline} /> : null}
+      {open.hair ? (
+        <View style={styles.beautyRow}>
+          <Scissors size={19} strokeWidth={1.6} color={c.muted} />
+          <View style={styles.beautyBody}>
+            <Text style={[font('semibold'), styles.beautyTitle]}>{t('Укладка')}</Text>
+            <Text style={[font('regular'), styles.beautyText]}>{t(open.hair)}</Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  ) : null;
 
   return (
     <View style={styles.container}>
@@ -181,18 +207,16 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
       </ScrollView>
       </>}
 
-      <StudioSheet visible={Boolean(current)} title={open ? lookTitle(open, t) : ''} onClose={() => setOpenId(null)}>
-        {open ? (
+      <StudioSheet visible={Boolean(current)} title={open ? lookTitle(open, t) : ''} onClose={() => setOpenId(null)} height={openTryOn ? '92%' : undefined} scroll={!openTryOn}>
+        {open && openTryOn ? (
+          <FavoriteResult look={open} uri={openTryOn} items={openItems} meta={meta.join(', ')} beauty={beautyPanel}
+            onPreview={() => setPreviewUri(openTryOn)} onRemove={() => handleRemove(open.id)}
+            onTryOn={onTryOn ? () => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); } : undefined} />
+        ) : open ? (
           <>
             <Text style={[font('regular'), styles.meta]}>{meta.join(', ')}</Text>
 
-            {openTryOn ? (
-              <AppPressable accessibilityRole="button" accessibilityLabel={t('Примерка')} onPress={() => setPreviewUri(openTryOn)}>
-                <FittedImage uri={openTryOn} radius={24} style={styles.pictureImage} />
-              </AppPressable>
-            ) : !onTryOn ? (
-              <Text style={[font('regular'), styles.meta]}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text>
-            ) : null}
+            {!onTryOn ? <Text style={[font('regular'), styles.meta]}>{t('Сначала сгенерируй образ в «Конструкторе», затем добавь в избранное.')}</Text> : null}
 
             {openItems.length ? (
               <SheetStrip showsHorizontalScrollIndicator={false} style={styles.bleed} contentContainerStyle={styles.pieces}>
@@ -207,33 +231,11 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
               </SheetStrip>
             ) : null}
 
-            {beautyAdvice && (open.makeup || open.hair) ? (
-              <View style={styles.beauty}>
-                {open.makeup ? (
-                  <View style={styles.beautyRow}>
-                    <Palette size={19} strokeWidth={1.6} color={c.muted} />
-                    <View style={styles.beautyBody}>
-                      <Text style={[font('semibold'), styles.beautyTitle]}>{t('Макияж')}</Text>
-                      <Text style={[font('regular'), styles.beautyText]}>{t(open.makeup)}</Text>
-                    </View>
-                  </View>
-                ) : null}
-                {open.makeup && open.hair ? <View style={styles.hairline} /> : null}
-                {open.hair ? (
-                  <View style={styles.beautyRow}>
-                    <Scissors size={19} strokeWidth={1.6} color={c.muted} />
-                    <View style={styles.beautyBody}>
-                      <Text style={[font('semibold'), styles.beautyTitle]}>{t('Укладка')}</Text>
-                      <Text style={[font('regular'), styles.beautyText]}>{t(open.hair)}</Text>
-                    </View>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
+            {beautyPanel}
 
             <View style={styles.actions}>
               {onTryOn ? (
-                <Pill variant="primary" icon={ArrowUpRight} title={t(openTryOn ? 'Примерить снова' : 'Примерить на себе')}
+                <Pill variant="primary" icon={ArrowUpRight} title={t('Примерить на себе')}
                   onPress={() => { setOpenId(null); onTryOn(open.itemIds.filter(id => itemsById[id])); }} />
               ) : null}
               <Pill icon={Trash2} title={t('Удалить')} iconColor={c.danger} onPress={() => handleRemove(open.id)} />
@@ -241,19 +243,43 @@ export function FavoritesScreen({ looks, items, onRemove, onGoToBuilder, onTryOn
           </>
         ) : null}
         {/* The try-on full screen opens from inside the sheet: on iOS a window opened beside an open sheet never shows. */}
-        <SheetGestureBlock active={Boolean(previewUri)} />
-        <Modal transparent animationType="fade" visible={Boolean(previewUri)} onRequestClose={() => setPreviewUri(null)}>
-          <View style={styles.previewBackdrop}>
-            {previewUri ? <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" /> : null}
-            <Pill title={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewUri(null)} />
-          </View>
-        </Modal>
+        <PhotoViewer inSheet uri={previewUri} onClose={() => setPreviewUri(null)} />
       </StudioSheet>
     </View>
   );
 }
 
+/** A favourite with a try-on: the same photo, thumbnails and three buttons as every result; its advice opens over the photo so nothing scrolls. */
+function FavoriteResult({ look, uri, items, meta, beauty, onPreview, onRemove, onTryOn }: {
+  look: GeneratedLook; uri: string; items: WardrobeItem[]; meta: string; beauty: ReactNode; onPreview: () => void; onRemove: () => void; onTryOn?: () => void;
+}) {
+  const t = useT();
+  const styles = useThemedStyles(makeStyles);
+  const { colors: c } = useTheme();
+  const { login } = useFavorites();
+  const gallery = useGallerySave(uri);
+  const save = useSaveLook(look);
+  const sharing = useShareChoice(login);
+  const [advice, setAdvice] = useState(false);
+  return <>
+    {meta ? <Text style={[font('regular'), styles.meta]} numberOfLines={1}>{meta}</Text> : null}
+    {advice ? <ScrollView style={styles.resultPhoto}>{beauty}</ScrollView> : null}
+    {advice ? <Pill size="sm" icon={Palette} title={t('Примерка')} style={{ alignSelf: 'flex-start' }} onPress={() => setAdvice(false)} /> : (
+      <ResultPicture uri={uri} onOpen={onPreview}>
+        <ResultPhotoControls onShare={() => sharing.offer({ uri, items, title: look.title })}>
+          {beauty ? <Pill size="sm" icon={Palette} accessibilityLabel={t('Макияж и укладка')} onPress={() => setAdvice(true)} /> : null}
+          <Pill size="sm" icon={Trash2} iconColor={c.danger} accessibilityLabel={t('Удалить')} onPress={onRemove} />
+        </ResultPhotoControls>
+      </ResultPicture>
+    )}
+    <ResultPieces items={items.map(item => ({ id: item.id, name: item.name, imageUri: item.imageUri }))} />
+    <ResultActions gallery={gallery} save={save} againDisabled={!onTryOn || !items.length} onAgain={() => onTryOn?.()} />
+    {sharing.sheet}
+  </>;
+}
+
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  resultPhoto: { flex: 1, minHeight: 150 },
   container: { flex: 1 },
   count: { fontSize: 13, color: c.muted },
   filters: { flexDirection: 'row', gap: 16, marginBottom: 14 },
@@ -276,7 +302,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   captionTitle: { fontSize: 13, lineHeight: 17, color: c.text },
   captionEvent: { fontSize: 11, lineHeight: 15 },
   meta: { fontSize: 13, lineHeight: 19, color: c.muted },
-  pictureImage: { width: '100%', height: 360 },
   bleed: { marginHorizontal: -20 },
   pieces: { gap: 12, paddingHorizontal: 20 },
   piece: { width: 96, gap: 6 },
@@ -289,8 +314,5 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   beautyTitle: { fontSize: 14, lineHeight: 20, color: c.text },
   beautyText: { fontSize: 13, lineHeight: 19, color: c.muted },
   hairline: { height: StyleSheet.hairlineWidth * 2, backgroundColor: c.border, marginLeft: 33 },
-  actions: { gap: 10, marginTop: 4 },
-  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 16 },
-  previewImage: { width: '100%', height: '86%' },
-  previewClose: { alignSelf: 'center', marginTop: 12 }
+  actions: { gap: 10, marginTop: 4 }
 });

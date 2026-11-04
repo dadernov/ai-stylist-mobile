@@ -9,6 +9,7 @@ import { FittedFrame } from '../ui/FittedFrame';
 import { DevelopingImage } from './DevelopingImage';
 import { font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio';
 import { useFrameAspect } from './useImageAspect';
+import { RESULT_RADIUS } from './resultLayout';
 
 type StatusProps = {
   /** What the try-on is doing, in words (tryOnStatusLabel). */
@@ -117,6 +118,7 @@ type Props = {
   /** Over the frame (the before/after pill). */
   overlay?: ReactNode;
   note?: string;
+  onRevealStart?: () => void;
   onRevealEnd?: () => void;
 };
 
@@ -124,7 +126,7 @@ type Props = {
  * THE generation view: every window a try-on is watched in shows this, big or small, staying or coming back.
  * The frame of fog over the photo, the look coming through it, and the status under it while it runs.
  */
-export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, photoUri, resultUri, active = true, radius = 30, frameStyle, showBefore = false, renderResult, overlay, note, onRevealEnd }: Props) {
+export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, photoUri, resultUri, active = true, radius = RESULT_RADIUS, frameStyle, showBefore = false, renderResult, overlay, note, onRevealStart, onRevealEnd }: Props) {
   const { isDark } = useTheme();
   const done = Boolean(resultUri) && !busy;
   // The frame is the picture's own rect: in the source photo's shape from the start, the result's once it is known.
@@ -133,7 +135,7 @@ export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, p
     <>
       <FittedFrame aspect={aspect} radius={radius} holdHeight={!done || settling} style={frameStyle} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
         <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy || settling} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
-          revealKey={jobKey} items={items} onRevealStart={successHaptic} onRevealEnd={onRevealEnd}>
+          revealKey={jobKey} items={items} onRevealStart={() => { successHaptic(); onRevealStart?.(); }} onRevealEnd={onRevealEnd}>
           {resultUri ? renderResult(fit) : null}
         </DevelopingImage>
         {overlay}

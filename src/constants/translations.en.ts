@@ -1019,4 +1019,12 @@ export const en: Record<string, string> = {
   "В галерею": "To gallery",
   "Не удалось сохранить образ. Проверь интернет и место на устройстве.": "Could not save the look. Check your connection and free space on the device.",
   "Не удалось открыть меню «Поделиться». Попробуй ещё раз или обнови приложение.": "Couldn't open the share menu. Try again or update the app.",
+  "Ещё раз": "Again",
+  "Сохранён": "Saved",
+  "В образы": "To looks",
+  "Образ {n}": "Look {n}",
+  "Не удалось собрать образ": "Could not put a look together",
+  "Почему этот образ подходит": "Why this look works",
+  "Редактировать образ": "Edit look",
+  "Удалить образ?": "Delete this look?",
 };

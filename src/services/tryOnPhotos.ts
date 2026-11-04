@@ -54,5 +54,26 @@ export async function durableLook<T extends { id: string; tryOnImageUri?: string
   const tryOnHistory = look.tryOnHistory?.filter(frame => !isRemoteUri(frame.imageUri) && !isDataUri(frame.imageUri));
   if (!source) return { ...look, tryOnHistory };
   const tryOnImageUri = await keepTryOnImage(source, `favorite-${look.id}-${look.tryOnUpdatedAt || Date.now()}`, login);
-  return { ...look, tryOnImageUri, tryOnHistory, tryOnSourceUri: isRemoteUri(source) ? source : look.tryOnSourceUri };
+  // Always where it came from, so the look on screen still holding that uri reads as saved. A data uri is megabytes in the record: its picture is then known only by the kept file.
+  return { ...look, tryOnImageUri, tryOnHistory, tryOnSourceUri: isDataUri(source) ? look.tryOnSourceUri : source };
+}
+
+const COPY_GRACE_S = 60;
+
+/**
+ * Deletes the `favorite-*` copies no look refers to any more. `keep`: every look that may show one. A copy younger than a minute
+ * is left alone: it may be a save still on its way into the list.
+ */
+export async function removeUnusedFavoriteCopies(keep: { tryOnImageUri?: string; tryOnSourceUri?: string; tryOnHistory?: { imageUri: string }[] }[], login: string, nowSeconds = Date.now() / 1000) {
+  if (!FileSystem.documentDirectory) return;
+  const dir = ROOT + encodeURIComponent(login) + '/';
+  const used = new Set(keep.flatMap(look => [look.tryOnImageUri, look.tryOnSourceUri, ...(look.tryOnHistory || []).map(frame => frame.imageUri)])
+    .filter((uri): uri is string => Boolean(uri)).map(uri => uri.slice(uri.lastIndexOf('/') + 1)));
+  const names = await FileSystem.readDirectoryAsync(dir).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!name.startsWith('favorite-') || used.has(name)) continue;
+    const info = await FileSystem.getInfoAsync(dir + name).catch(() => null);
+    if (!info?.exists || (info.modificationTime && nowSeconds - info.modificationTime < COPY_GRACE_S)) continue;
+    await FileSystem.deleteAsync(dir + name, { idempotent: true }).catch(() => {});
+  }
 }

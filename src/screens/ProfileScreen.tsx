@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PhotoViewer } from '../components/ResultKit';
 import { PersonStanding } from 'lucide-react-native';
 import { usePhotoPicker } from '../components/usePhotoPicker';
 import { useTheme } from '../constants/ThemeContext';
@@ -78,17 +79,7 @@ export function ProfileScreen({
     <View style={styles.container}>
       <ScreenHeader title={t('Профиль')} />
 
-      {previewUri ? (
-        <Modal transparent animationType="fade" visible onRequestClose={() => setPreviewUri(null)}>
-          <View style={styles.previewBackdrop}>
-            <Image source={{ uri: previewUri }} style={styles.previewImageFull} resizeMode="contain" />
-            {/* The preview is black in either theme, so its button is fixed light-on-dark. */}
-            <AppPressable haptics accessibilityRole="button" accessibilityLabel={t('Закрыть')} style={styles.previewClose} onPress={() => setPreviewUri(null)}>
-              <Text style={[font('semibold'), { fontSize: 15, color: '#FFFFFF' }]}>{t('Закрыть')}</Text>
-            </AppPressable>
-          </View>
-        </Modal>
-      ) : null}
+      <PhotoViewer uri={previewUri} onClose={() => setPreviewUri(null)} />
       <ChoiceSheet visible={languageOpen} title={t('Язык')} options={LANGUAGES.map(item => ({ value: item.code, label: item.label }))} value={lang}
         onChoose={code => { setLang(code); setLanguageOpen(false); }} onClose={() => setLanguageOpen(false)} />
       {helpOpen ? <ProductHelp onClose={() => setHelpOpen(false)} /> : null}

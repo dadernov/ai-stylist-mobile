@@ -96,7 +96,8 @@ const commonLook = (entry: unknown) => {
     tuckMode: (['auto', 'tucked', 'untucked'].includes(look.tuckMode) ? look.tuckMode : undefined) as SavedLook['tuckMode'],
     tryOnImageUri: optionalString(look.tryOnImageUri), tryOnWarning: optionalString(look.tryOnWarning),
     tryOnUpdatedAt: look.tryOnUpdatedAt === undefined ? undefined : number(look.tryOnUpdatedAt),
-    tryOnQualityMode: 'quality' as const, tryOnHistory: history(look.tryOnHistory) };
+    tryOnQualityMode: 'quality' as const, tryOnHistory: history(look.tryOnHistory),
+    joined: look.joined && typeof look.joined === 'object' ? { tuckMode: (['auto', 'tucked', 'untucked'].includes(look.joined.tuckMode) ? look.joined.tuckMode : undefined) as SavedLook['tuckMode'] } : undefined };
 };
 export const decodeGenerated = (value: unknown): GeneratedLook[] => array(value, entry => {
   const look = commonLook(entry);
