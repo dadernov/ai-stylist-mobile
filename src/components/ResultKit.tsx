@@ -14,7 +14,7 @@ import { pictureFit } from './studio/imageFit';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame } from './ui/FittedFrame';
 import { SheetGestureBlock } from './studio/SheetHandle';
-import { font, glassEdge, glassFill, INK, INK_ON_DARK, isCutout, useReducedMotion } from './studio/studio';
+import { font, glassEdge, glassFill, INK, INK_ON_DARK, useReducedMotion } from './studio/studio';
 import { SheetStrip } from './ui/FormScrollView';
 import { ZoomableImage } from './ui/ZoomableImage';
 
@@ -95,7 +95,7 @@ export function ResultPieces({ items, onPress }: { items: { id: string; name: st
       {items.map(item => {
         const body = (
           <View style={[styles.piece, { backgroundColor: glassFill(isDark), borderColor: glassEdge(isDark) }]}>
-            {item.imageUri ? <Image source={{ uri: item.imageUri }} resizeMode={isCutout(item.imageUri) ? 'contain' : 'cover'} style={StyleSheet.absoluteFill} accessibilityLabel={item.name} />
+            {item.imageUri ? <Image source={{ uri: item.imageUri }} resizeMode="contain" style={StyleSheet.absoluteFill} accessibilityLabel={item.name} />
               : <View style={styles.pieceEmpty} accessibilityLabel={item.name}><Shirt size={18} strokeWidth={1.4} color={colors.muted} /></View>}
           </View>
         );

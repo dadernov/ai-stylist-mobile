@@ -1065,7 +1065,7 @@ function DraftPhoto({ uri, maxWidth, maxHeight, float }: { uri: string; maxWidth
   const cutout = isCutout(uri);
   return (
     <View style={{ alignItems: 'center' }}>
-      <Animated.Image source={{ uri }} resizeMode={cutout ? 'contain' : 'cover'}
+      <Animated.Image source={{ uri }} resizeMode="contain"
         style={{ width, height: width / ratio, borderRadius: cutout ? 0 : 28, transform: [{ translateY: float }] }} />
       <View style={{ marginTop: -10 }}><FloorShadow width={width * 0.7} opacity={0.22} /></View>
     </View>

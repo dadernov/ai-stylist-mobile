@@ -534,7 +534,7 @@ export function OutfitBuilderScreen({
           </Text>
         </View>
         {selected?.imageUri ? (
-          <Image source={{ uri: selected.imageUri }} style={styles.slotPreview} resizeMode="cover" />
+          <Image source={{ uri: selected.imageUri }} style={styles.slotPreview} resizeMode="contain" />
         ) : null}
       </View>
       {list.length ? (
@@ -549,7 +549,7 @@ export function OutfitBuilderScreen({
                 onPress={() => onSelect(active ? null : item)}
               >
                 {item.imageUri ? (
-                  <Image source={{ uri: item.imageUri }} style={styles.selectorImage} resizeMode="cover" />
+                  <Image source={{ uri: item.imageUri }} style={styles.selectorImage} resizeMode="contain" />
                 ) : null}
                 <Text style={[styles.selectorLabel, active && styles.selectorLabelActive]} numberOfLines={1}>
                   {item.name}

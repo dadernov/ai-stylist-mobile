@@ -24,11 +24,12 @@ import { PhotoAdvice } from '../PhotoAdvice';
 import { tryOnStatusLabel } from '../tryOnStatus';
 import { StudioBackdrop } from '../studio/StudioBackdrop';
 import { GenerationView } from '../studio/GenerationView';
-import { REVEAL_TOTAL_MS } from '../studio/generationFog';
+import { REVEAL_TOTAL_MS } from '../studio/generationReveal';
+import { FittedImage } from '../ui/FittedFrame';
 import { ChoicePill, Glass, Pill } from '../studio/Glass';
 import { SaveLookButton } from '../SaveLook';
 import { lookFromJob } from '../../domain/favorites';
-import { font, INK, INK_ON_DARK, inkSoft, isCutout, useReducedMotion } from '../studio/studio';
+import { font, INK, INK_ON_DARK, inkSoft, useReducedMotion } from '../studio/studio';
 import { canTryOn, firstLookDecision, FirstLookStep, magicView, nextStep, QUESTIONS, QuestionId } from './firstLookLogic';
 
 export type FirstLookExit = 'wardrobe' | 'recommendations';
@@ -129,7 +130,7 @@ function YouStep({ modelUri, onPhoto, onNext }: { modelUri?: string; onPhoto: (u
   };
   return <>
     <Heading title={t('Начнём с тебя')} text={t('Нужно фото в полный рост: на нём ты будешь примерять вещи. Подойдёт и снимок из галереи.')} />
-    {modelUri ? <Image source={{ uri: modelUri }} resizeMode="cover" style={styles.preview} accessibilityLabel={t('Твоё фото')} /> : <PhotoGuide />}
+    {modelUri ? <FittedImage uri={modelUri} radius={24} style={styles.preview} accessibilityLabel={t('Твоё фото')} /> : <PhotoGuide />}
     {adviceAllowed ? <PhotoAdvice uri={modelUri} /> : null}
     {modelUri ? <Pill variant="primary" title={t('Дальше')} haptics={false} onPress={onNext} /> : null}
     <SourceButtons onPick={source => void pick(source)} disabled={isPicking} secondary={Boolean(modelUri)} />
@@ -204,7 +205,7 @@ function GarmentStep({ hasPhoto, garment, onAddItem, onNext, onSkip }: {
   return <>
     <Heading title={t('Теперь одна вещь')} text={hasPhoto ? t('Сфоткай что-нибудь рядом с тобой: футболку, джинсы, кроссовки. Мы вырежем фон и сразу примерим на тебя.')
       : t('Сфоткай что-нибудь рядом с тобой: футболку, джинсы, кроссовки. Мы вырежем фон и положим вещь в гардероб.')} />
-    {garment?.imageUri ? <Image source={{ uri: garment.imageUri }} resizeMode={isCutout(garment.imageUri) ? 'contain' : 'cover'} style={styles.garment} accessibilityLabel={garment.name} /> : null}
+    {garment?.imageUri ? <Image source={{ uri: garment.imageUri }} resizeMode="contain" style={styles.garment} accessibilityLabel={garment.name} /> : null}
     {busy ? <Pill loading title={t('Разглядываем вещь…')} haptics={false} /> : null}
     {note ? <Note>{note}</Note> : null}
     {review ? <Glass radius={24}><View style={styles.card}>
@@ -263,7 +264,7 @@ function MagicStep({ login, modelUri, garment, onPreference, onDone, onLateJob }
   const resultUri = job?.result?.imageUri || null;
   useEffect(() => {
     if (view !== 'ready') { setRevealed(false); return; }
-    // The look comes through the fog first; with reduced motion it simply crossfades.
+    // The look sharpens out of its blur first; with reduced motion it simply crossfades.
     const timer = setTimeout(() => setRevealed(true), reduced ? 0 : REVEAL_TOTAL_MS + 100);
     return () => clearTimeout(timer);
   }, [view, reduced]);
@@ -322,7 +323,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, lineHeight: 34, letterSpacing: -0.6 },
   text: { fontSize: 15, lineHeight: 22 },
   actions: { gap: 10 },
-  preview: { width: '60%', aspectRatio: 3 / 4, alignSelf: 'center', borderRadius: 24 },
+  preview: { width: '60%', aspectRatio: 3 / 4, alignSelf: 'center' },
   garment: { width: 140, height: 140, alignSelf: 'center', borderRadius: 20 },
   frame: { width: '100%', aspectRatio: 3 / 4 },
   card: { gap: 12, padding: 16 },

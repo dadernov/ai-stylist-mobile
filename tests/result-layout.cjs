@@ -1,4 +1,4 @@
-// One layout for every finished try-on: it fits without scrolling, its labels fit in every language; the double tap on the photo; the fog's guards.
+// One layout for every finished try-on: it fits without scrolling, its labels fit in every language; the double tap on the photo; the reveal's guards.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,7 +9,7 @@ const src = path.join(__dirname, '../src');
 const read = file => fs.readFileSync(path.join(src, file), 'utf8');
 const L = require(path.join(src, 'components/studio/resultLayout.ts'));
 const { createDoubleTap, DOUBLE_TAP_MS, TAP_MAX_MS, TAP_SLOP } = require(path.join(src, 'components/studio/doubleTap.ts'));
-const { PREFETCH_LIMIT_MS, REVEAL_TOTAL_MS, REVEAL_WATCHDOG_MS } = require(path.join(src, 'components/studio/generationFog.ts'));
+const { PREFETCH_LIMIT_MS, REVEAL_TOTAL_MS, REVEAL_WATCHDOG_MS } = require(path.join(src, 'components/studio/generationReveal.ts'));
 const { en } = require(path.join(src, 'constants/translations.en.ts'));
 const { zh } = require(path.join(src, 'constants/translations.ts'));
 
@@ -80,13 +80,12 @@ assert.ok(!/AppPressable/.test(stage.slice(stage.indexOf('function PageView'))),
 assert.match(read('components/SaveLook.tsx'), /if \(!look \|\| working\.current \|\| saved\) return false;/);
 assert.match(read('components/GenerationDock.tsx'), /onPress=\{\(\) => onOpen\(job\.id\)\}/, 'the small window still opens on a tap');
 
-// --- the fog's guards -----------------------------------------------------
+// --- the reveal's guards --------------------------------------------------
 assert.ok(PREFETCH_LIMIT_MS + REVEAL_TOTAL_MS < REVEAL_WATCHDOG_MS, 'a slow network still plays the whole reveal before the watchdog');
 const developing = read('components/studio/DevelopingImage.tsx');
 assert.match(developing, /running=\{active && !reduced && developing\}/);
-assert.match(developing, /\[done, active, fogFailed\]/);
+assert.match(developing, /\[done, active\]/);
 assert.match(developing, /setTimeout\(showNow, REVEAL_WATCHDOG_MS\)/);
-assert.match(read('components/studio/GenerationFog.tsx'), /revealStart\.current = Date\.now\(\)/);
 for (const file of ['components/FittingRoom.tsx', 'components/AiTryOnPreview.tsx']) assert.match(read(file), /revealingId === /, `${file} holds its reveal`);
 
 // --- one treatment --------------------------------------------------------
@@ -97,4 +96,4 @@ for (const file of walk(src).filter(name => /\.tsx$/.test(name))) {
   assert.ok(!/saveTryOnToGallery\(/.test(source) || /ResultKit/.test(file), `${file}: one way to the gallery`);
   assert.ok(!/\bt\('[^']*[Лл]ук[ а-я?{]/.test(source), `${file}: «образ», not «лук»`);
 }
-console.log('PASS: result layout — fits without scrolling, labels fit, double tap, fog guards, one treatment');
+console.log('PASS: result layout — fits without scrolling, labels fit, double tap, reveal guards, one treatment');

@@ -6,6 +6,7 @@ import { useT } from '../constants/i18n';
 import { useTheme } from '../constants/ThemeContext';
 import { SHADOWS } from '../constants/theme';
 import { AppPressable } from './AppPressable';
+import { FittedImage } from './ui/FittedFrame';
 import { font, glassEdge, INK, INK_ON_DARK, inkSoft, sheetFill, useReducedMotion } from './studio/studio';
 
 const SHOWN_MS = 3500;
@@ -47,7 +48,7 @@ export function ReadyBanner({ title, imageUri, onPress, onHide }: {
           onPress={() => { onPress(); hide(); }}>
           <View style={[styles.card, { backgroundColor: sheetFill(isDark), borderColor: glassEdge(isDark) }]}>
             <View style={styles.banner}>
-              {imageUri ? <Image source={{ uri: imageUri }} style={styles.thumb} resizeMode="cover" /> : null}
+              {imageUri ? <FittedImage uri={imageUri} radius={10} style={styles.thumb} /> : null}
               <View style={styles.texts}>
                 <Text style={[styles.title, { color: isDark ? INK_ON_DARK : INK }]} numberOfLines={1}>{t('Образ готов')}</Text>
                 <Text style={[styles.subtitle, { color: inkSoft(isDark) }]} numberOfLines={1}>{title}</Text>
@@ -67,7 +68,7 @@ const styles = StyleSheet.create({
   // Near-opaque, not glass: the text must read over whatever light content scrolls beneath.
   card: { borderRadius: 24, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth * 2 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingLeft: 10, paddingRight: 14 },
-  thumb: { width: 38, height: 50, borderRadius: 12, backgroundColor: 'rgba(18,20,23,0.06)' },
+  thumb: { width: 38, height: 50 },
   texts: { flex: 1, minWidth: 0, gap: 2 },
   title: { ...font('semibold'), fontSize: 15, lineHeight: 20 },
   subtitle: { ...font('regular'), fontSize: 13, lineHeight: 18 },

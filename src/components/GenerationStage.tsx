@@ -75,8 +75,8 @@ type Props = {
 
 /**
  * The window try-ons happen in: it slides up when the user taps "Try on",
- * shows the one generation view (GenerationView): the look develops in a volume
- * of light with one calm line of status, and comes through it from top to bottom. With several try-ons the window leafs
+ * shows the one generation view (GenerationView): the look develops in a grey placeholder
+ * with one calm line of status, and sharpens over it from top to bottom. With several try-ons the window leafs
  * through them, the first one first. Closing it early keeps them running.
  */
 export function GenerationStage({ pages, initialPage = 0, scrollTo, onPageChange, onClose, setup, banner }: Props) {

@@ -112,7 +112,7 @@ export function ProfileScreen({
               <AppPressable style={styles.photo} onPress={() => (modelUri ? setPreviewUri(modelUri) : handlePickModel())}
                 accessibilityRole={modelUri ? 'imagebutton' : 'button'} accessibilityLabel={t(modelUri ? 'Фото для примерки' : '+ Добавить фото модели')}>
                 {modelUri ? (
-                  <Image source={{ uri: modelUri }} style={styles.photoImage} resizeMode="cover" />
+                  <Image source={{ uri: modelUri }} style={styles.photoImage} resizeMode="contain" />
                 ) : (
                   <View style={[styles.photoImage, styles.photoEmpty, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)' }]}>
                     <PersonStanding size={30} strokeWidth={1.3} color={c.muted} />

@@ -31,7 +31,7 @@ import { useTheme } from '../constants/ThemeContext';
 import { useImageAspect } from './studio/useImageAspect';
 import { FittedFrame, FittedImage } from './ui/FittedFrame';
 import { GenerationView } from './studio/GenerationView';
-import { revealLedger } from './studio/generationFog';
+import { revealLedger } from './studio/generationReveal';
 import { pictureFit } from './studio/imageFit';
 import { useSheetGestureBlock } from './studio/SheetHandle';
 
@@ -60,7 +60,7 @@ type AiTryOnPreviewProps = {
   preview?: ReactNode;
   /** Card only: more about the look, always under the buttons. */
   details?: ReactNode;
-  /** The card is on screen: otherwise its fog stands still and a finished look's reveal waits. */
+  /** The card is on screen: otherwise its sweep stands still and a finished look's reveal waits. */
   visible?: boolean;
   /** The height of the list the card scrolls in: photo, thumbnails and buttons fit it whole. */
   viewport?: number;
@@ -175,7 +175,7 @@ export function AiTryOnPreview({
   // The newest finished look of this card, until its reveal has played here.
   const finishedJob = matchingJobs.find(job => job.status === 'succeeded' && job.result);
   const [revealPlayed, setRevealPlayed] = useState<string>();
-  // The ledger settles as the reveal starts: from then on this keeps the fog on the card until it has played.
+  // The ledger settles as the reveal starts: from then on this keeps the placeholder on the card until it has played.
   const [revealingId, setRevealingId] = useState<string>();
   const owedJob = !pendingJob && finishedJob && (revealingId === finishedJob.id || (revealPlayed !== finishedJob.id && revealLedger.owes(finishedJob.id, 'full'))) ? finishedJob : undefined;
   const liveJob = pendingJob || owedJob;
@@ -261,7 +261,7 @@ export function AiTryOnPreview({
     const latest = matchingJobs.find(job => job.status === 'succeeded' && job.result);
     if (!latest?.result || seenJobs.current.has(latest.id)) return;
     seenJobs.current.add(latest.id);
-    // An older look already on the card stays, unless this one still owes its reveal here: what the fog parts on must then be what stays.
+    // An older look already on the card stays, unless this one still owes its reveal here: what it sharpens into must then be what stays.
     if (controlledResultUri && latest.createdAt < mountedAt.current && !revealLedger.owes(latest.id, 'full')) return;
     const result = latest.result;
     setResultUri(result.imageUri); setResultQuality(result.qualityMode || 'quality');
@@ -313,7 +313,7 @@ export function AiTryOnPreview({
                   <Image
                     source={{ uri: reanchorTryOnUri(item.imageUri) || item.imageUri }}
                     style={styles.historyImage}
-                    resizeMode="cover"
+                    resizeMode="contain"
                     onError={() => setBrokenHistoryUris((prev) => ({ ...prev, [item.imageUri]: true }))}
                   />
                   {brokenHistoryUris[item.imageUri] ? (
@@ -407,7 +407,7 @@ export function AiTryOnPreview({
           <Image
             source={{ uri: showOriginal && modelUri ? modelUri : resultUri }}
             style={StyleSheet.absoluteFill}
-            resizeMode={showOriginal && modelUri ? 'cover' : framedFit}
+            resizeMode={showOriginal && modelUri ? 'contain' : framedFit}
             onLoadStart={() => {
               // Локальные файлы примерки уже на диске — рисуются мгновенно.
               // Полупрозрачный оверлей загрузки снимается только по onLoadEnd,

@@ -13,6 +13,9 @@ import { Pill } from './studio/Glass';
 import { GarmentImage } from './studio/Garment';
 import { StudioSheet } from './studio/StudioSheet';
 import { font, INK, isCutout } from './studio/studio';
+import { pictureFit } from './studio/imageFit';
+import { useImageAspect } from './studio/useImageAspect';
+import { FittedFrame } from './ui/FittedFrame';
 
 /** What can be shared: the finished try-on and the look's garments. */
 export type ShareRequest = { uri: string; items: WardrobeItem[]; title: string; daily?: boolean };
@@ -27,6 +30,7 @@ const PAPER = '#F4F0EA';
 export const SharePoster = forwardRef<View, { request: ShareRequest; width: number; onReady?: () => void }>(function SharePoster({ request, width, onReady }, ref) {
   const t = useT();
   const s = width / 360;
+  const aspect = useImageAspect(request.uri);
   const pieces = request.items.filter(item => item.imageUri).slice(0, PIECES);
   const title = lookName(request.items, t('и')) || request.title;
   // Only weather already known: the poster never asks for location, and a city never leaves the device on it.
@@ -39,7 +43,9 @@ export const SharePoster = forwardRef<View, { request: ShareRequest; width: numb
   const settled = () => { loaded.current += 1; if (loaded.current >= pieces.length + 1) ready(); };
   useEffect(() => { const timer = setTimeout(ready, LOAD_PATIENCE); return () => clearTimeout(timer); }, []);
   return <View ref={ref} collapsable={false} style={{ width, height: width * 16 / 9, backgroundColor: PAPER, padding: 16 * s }}>
-    <Image source={{ uri: request.uri }} resizeMode="cover" onLoadEnd={settled} style={{ flex: 1, width: '100%', borderRadius: 24 * s, backgroundColor: '#E6E1D9' }} />
+    <FittedFrame aspect={aspect} radius={24 * s} style={{ flex: 1, width: '100%' }}>
+      <Image source={{ uri: request.uri }} resizeMode={pictureFit(aspect)} onLoadEnd={settled} style={StyleSheet.absoluteFill} />
+    </FittedFrame>
     <View style={{ paddingTop: 14 * s, gap: 4 * s }}>
       <Text style={[font('regular'), { color: INK, opacity: 0.6, fontSize: 12 * s, lineHeight: 16 * s, letterSpacing: 0.4 * s }]} numberOfLines={1}>{t(request.daily ? 'Образ дня' : 'Мой образ')}{weatherText ? ` · ${weatherText}` : ''}</Text>
       <Text style={[font('semibold'), { color: INK, fontSize: 22 * s, lineHeight: 27 * s, letterSpacing: -0.5 * s }]} numberOfLines={2}>{title}</Text>

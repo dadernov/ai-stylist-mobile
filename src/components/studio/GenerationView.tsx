@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleProp, StyleSheet, Text, useWindowDimensions, View, ViewStyle } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
 import { useTheme } from '../../constants/ThemeContext';
 import { useT } from '../../constants/i18n';
 import { WardrobeItem } from '../../data/mock';
@@ -8,6 +9,7 @@ import { selectionHaptic, successHaptic } from '../../services/haptics';
 import { FittedFrame } from '../ui/FittedFrame';
 import { DevelopingImage } from './DevelopingImage';
 import { font, glassEdge, glassFill, INK, INK_ON_DARK, inkSoft, useReducedMotion } from './studio';
+import { lineLetters, letterWave, TEXT_WAVE_MS, WAVE_MAX_LETTERS } from './generationReveal';
 import { useFrameAspect } from './useImageAspect';
 import { RESULT_RADIUS } from './resultLayout';
 
@@ -22,7 +24,7 @@ type StatusProps = {
   note?: string;
 };
 
-/** Under the fog in every window: one calm status line, the stylist's remarks on this very look, and its pieces. */
+/** Under the picture in every window: one calm status line with light passing through it, the stylist's remarks on this very look, and its pieces. */
 export function GenerationStatus({ label, stage, items, active = true, note }: StatusProps) {
   const { isDark } = useTheme();
   const reduced = useReducedMotion();
@@ -47,11 +49,39 @@ export function GenerationStatus({ label, stage, items, active = true, note }: S
     if (stage && active) selectionHaptic();
   }, [stage, active]);
 
+  // One clock for the wave across the words and the sparkle's slow breath, both on the UI thread; still when out of sight or asked to be.
+  const wave = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!active || reduced) return;
+    const loop = Animated.loop(Animated.timing(wave, { toValue: 1, duration: TEXT_WAVE_MS, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [active, reduced, wave]);
+  const breath = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.55, 1, 0.55] });
+
   return (
     <View style={styles.status}>
-      <Animated.Text style={[styles.statusText, { color: ink, opacity: fade }]} numberOfLines={1} maxFontSizeMultiplier={1.3} accessibilityLiveRegion="polite">{shown}</Animated.Text>
+      <Animated.View style={[styles.statusRow, { opacity: fade }]} accessible accessibilityLabel={shown} accessibilityLiveRegion="polite">
+        <Animated.View style={{ opacity: reduced ? 1 : breath }}><Sparkles size={15} strokeWidth={1.8} color={ink} /></Animated.View>
+        <ShimmerLine line={shown} color={ink} wave={wave} still={reduced} pulse={breath} />
+      </Animated.View>
       <StylistWhile items={items} active={active} />
       {note ? <Text maxFontSizeMultiplier={1.3} style={[styles.note, { color: inkSoft(isDark) }]}>{note}</Text> : null}
+    </View>
+  );
+}
+
+/** The line, its letters brightening one after another as the wave passes: only opacity moves, so it runs on the UI thread with no mask. */
+function ShimmerLine({ line, color, wave, still, pulse }: { line: string; color: string; wave: Animated.Value; still: boolean; pulse: Animated.AnimatedInterpolation<number> }) {
+  const letters = useMemo(() => lineLetters(line), [line]);
+  if (still || letters.length > WAVE_MAX_LETTERS) {
+    return <Animated.Text style={[styles.statusText, { color, flexShrink: 1, opacity: still ? 1 : pulse }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>{line}</Animated.Text>;
+  }
+  return (
+    <View style={styles.letters} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+      {letters.map((letter, index) => (
+        <Animated.Text key={index} style={[styles.statusText, { color, opacity: wave.interpolate(letterWave(index, letters.length)) }]} maxFontSizeMultiplier={1.3}>{letter}</Animated.Text>
+      ))}
     </View>
   );
 }
@@ -98,7 +128,7 @@ function StylistWhile({ items, active }: { items: WardrobeItem[]; active: boolea
 }
 
 type Props = {
-  /** The try-on's id: its fog, and its reveal owed once, wherever it finished. */
+  /** The try-on's id: its reveal owed once, wherever it finished. */
   jobKey?: string;
   busy: boolean;
   label: string;
@@ -113,7 +143,7 @@ type Props = {
   radius?: number;
   frameStyle?: StyleProp<ViewStyle>;
   showBefore?: boolean;
-  /** The sharp look under the fog; `fit` is how it fills the frame. */
+  /** The sharp look; `fit` is how it fills the frame. */
   renderResult: (fit: 'contain' | 'cover') => ReactNode;
   /** Over the frame (the before/after pill). */
   overlay?: ReactNode;
@@ -124,7 +154,7 @@ type Props = {
 
 /**
  * THE generation view: every window a try-on is watched in shows this, big or small, staying or coming back.
- * The frame of fog over the photo, the look coming through it, and the status under it while it runs.
+ * The grey placeholder in the picture's shape, the look sharpening over it, and the status under it while it runs.
  */
 export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, photoUri, resultUri, active = true, radius = RESULT_RADIUS, frameStyle, showBefore = false, renderResult, overlay, note, onRevealStart, onRevealEnd }: Props) {
   const { isDark } = useTheme();
@@ -133,9 +163,9 @@ export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, p
   const { aspect, settling, fit } = useFrameAspect(sourceUri || photoUri, resultUri, busy);
   return (
     <>
-      <FittedFrame aspect={aspect} radius={radius} holdHeight={!done || settling} style={frameStyle} fill={photoUri || resultUri ? undefined : glassFill(isDark)}>
+      <FittedFrame aspect={aspect} radius={radius} holdHeight={!done || settling} style={frameStyle}>
         <DevelopingImage photoUri={photoUri} resultUri={resultUri} developing={busy || settling} isDark={isDark} active={active} beforeUri={sourceUri} showBefore={showBefore}
-          revealKey={jobKey} items={items} onRevealStart={() => { successHaptic(); onRevealStart?.(); }} onRevealEnd={onRevealEnd}>
+          revealKey={jobKey} fit={fit} onRevealStart={() => { successHaptic(); onRevealStart?.(); }} onRevealEnd={onRevealEnd}>
           {resultUri ? renderResult(fit) : null}
         </DevelopingImage>
         {overlay}
@@ -147,6 +177,8 @@ export function GenerationView({ jobKey, busy, label, stage, items, sourceUri, p
 
 const styles = StyleSheet.create({
   status: { paddingTop: 14, gap: 10, minHeight: 20 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  letters: { flexDirection: 'row', flexShrink: 1 },
   statusText: { ...font('medium'), fontSize: 15, lineHeight: 20, textAlign: 'center' },
   comment: { ...font('regular'), fontSize: 14, lineHeight: 20, minHeight: 60, textAlign: 'center' },
   thumbs: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
